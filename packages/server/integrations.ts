@@ -160,7 +160,7 @@ export function generateFilename(markdown: string, format?: string): string {
   // Sanitize: remove characters invalid in filenames
   const sanitized = result.replace(/[<>:"/\\|?*]/g, '').replace(/\s+/g, ' ').trim();
 
-  return `${sanitized}.md`;
+  return sanitized.endsWith('.md') ? sanitized : `${sanitized}.md`;
 }
 
 // --- Obsidian Integration ---

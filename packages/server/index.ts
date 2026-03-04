@@ -33,7 +33,8 @@ import {
 } from "./storage";
 import { getRepoInfo } from "./repo";
 import { detectProjectName } from "./project";
-import { handleImage, handleUpload, handleAgents, handleServerReady, type OpencodeClient } from "./shared-handlers";
+import { handleImage, handleUpload, handleAgents, handleServerReady, handleDraftSave, handleDraftLoad, handleDraftDelete, type OpencodeClient } from "./shared-handlers";
+import { contentHash, deleteDraft } from "./draft";
 import { handleDoc, handleObsidianVaults, handleObsidianFiles, handleObsidianDoc } from "./reference-handlers";
 
 // Re-export utilities
@@ -107,6 +108,7 @@ export async function startPlannotatorServer(
 
   const isRemote = isRemoteSession();
   const configuredPort = getServerPort();
+  const draftKey = contentHash(plan);
 
   // Generate slug for potential saving (actual save happens on decision)
   const slug = generateSlug(plan);
@@ -257,6 +259,13 @@ export async function startPlannotatorServer(
             return handleAgents(options.opencodeClient);
           }
 
+          // API: Annotation draft persistence
+          if (url.pathname === "/api/draft") {
+            if (req.method === "POST") return handleDraftSave(req, draftKey);
+            if (req.method === "DELETE") return handleDraftDelete(draftKey);
+            return handleDraftLoad(draftKey);
+          }
+
           // API: Save to notes (decoupled from approve/deny)
           if (url.pathname === "/api/save-notes" && req.method === "POST") {
             const results: { obsidian?: IntegrationResult; bear?: IntegrationResult } = {};
@@ -365,6 +374,9 @@ export async function startPlannotatorServer(
               savedPath = saveFinalSnapshot(slug, "approved", plan, annotations, planSaveCustomPath);
             }
 
+            // Clean up draft on successful submit
+            deleteDraft(draftKey);
+
             // Use permission mode from client request if provided, otherwise fall back to hook input
             const effectivePermissionMode = requestedPermissionMode || permissionMode;
             resolveDecision({ approved: true, feedback, savedPath, agentSwitch, permissionMode: effectivePermissionMode });
@@ -399,6 +411,7 @@ export async function startPlannotatorServer(
               savedPath = saveFinalSnapshot(slug, "denied", plan, feedback, planSaveCustomPath);
             }
 
+            deleteDraft(draftKey);
             resolveDecision({ approved: false, feedback, savedPath });
             return Response.json({ ok: true, savedPath });
           }

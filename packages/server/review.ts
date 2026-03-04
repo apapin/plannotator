@@ -12,7 +12,8 @@
 import { isRemoteSession, getServerPort } from "./remote";
 import { type DiffType, type GitContext, runGitDiff } from "./git";
 import { getRepoInfo } from "./repo";
-import { handleImage, handleUpload, handleAgents, handleServerReady, type OpencodeClient } from "./shared-handlers";
+import { handleImage, handleUpload, handleAgents, handleServerReady, handleDraftSave, handleDraftLoad, handleDraftDelete, type OpencodeClient } from "./shared-handlers";
+import { contentHash, deleteDraft } from "./draft";
 
 // Re-export utilities
 export { isRemoteSession, getServerPort } from "./remote";
@@ -81,6 +82,8 @@ export async function startReviewServer(
   options: ReviewServerOptions
 ): Promise<ReviewServerResult> {
   const { htmlContent, origin, gitContext, sharingEnabled = true, shareBaseUrl, onReady } = options;
+
+  const draftKey = contentHash(options.rawPatch);
 
   // Mutable state for diff switching
   let currentPatch = options.rawPatch;
@@ -185,6 +188,13 @@ export async function startReviewServer(
             return handleAgents(options.opencodeClient);
           }
 
+          // API: Annotation draft persistence
+          if (url.pathname === "/api/draft") {
+            if (req.method === "POST") return handleDraftSave(req, draftKey);
+            if (req.method === "DELETE") return handleDraftDelete(draftKey);
+            return handleDraftLoad(draftKey);
+          }
+
           // API: Submit review feedback
           if (url.pathname === "/api/feedback" && req.method === "POST") {
             try {
@@ -194,6 +204,7 @@ export async function startReviewServer(
                 agentSwitch?: string;
               };
 
+              deleteDraft(draftKey);
               resolveDecision({
                 feedback: body.feedback || "",
                 annotations: body.annotations || [],

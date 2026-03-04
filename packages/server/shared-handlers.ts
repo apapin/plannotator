@@ -8,6 +8,7 @@
 import { mkdirSync } from "fs";
 import { openBrowser } from "./browser";
 import { validateImagePath, validateUploadExtension, UPLOAD_DIR } from "./image";
+import { saveDraft, loadDraft, deleteDraft } from "./draft";
 
 /** Serve images from local paths or temp uploads. Used by all 3 servers. */
 export async function handleImage(req: Request): Promise<Response> {
@@ -80,6 +81,34 @@ export async function handleAgents(opencodeClient?: OpencodeClient): Promise<Res
   } catch {
     return Response.json({ agents: [], error: "Failed to fetch agents" });
   }
+}
+
+/** Save annotation draft. Used by all 3 servers. */
+export async function handleDraftSave(req: Request, contentKey: string): Promise<Response> {
+  try {
+    const body = await req.json();
+    saveDraft(contentKey, body);
+    return Response.json({ ok: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to save draft";
+    console.error(`[draft] save failed: ${message}`);
+    return Response.json({ error: message }, { status: 500 });
+  }
+}
+
+/** Load annotation draft. Used by all 3 servers. */
+export function handleDraftLoad(contentKey: string): Response {
+  const draft = loadDraft(contentKey);
+  if (!draft) {
+    return Response.json({ found: false }, { status: 404 });
+  }
+  return Response.json(draft);
+}
+
+/** Delete annotation draft. Used by all 3 servers. */
+export function handleDraftDelete(contentKey: string): Response {
+  deleteDraft(contentKey);
+  return Response.json({ ok: true });
 }
 
 /** Open browser for local sessions. Used by all 3 servers. */

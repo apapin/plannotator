@@ -10,6 +10,8 @@ import { getIdentity } from '@plannotator/ui/utils/identity';
 import { getAgentSwitchSettings, getEffectiveAgentName } from '@plannotator/ui/utils/agentSwitch';
 import { CodeAnnotation, CodeAnnotationType, SelectedLineRange } from '@plannotator/ui/types';
 import { useResizablePanel } from '@plannotator/ui/hooks/useResizablePanel';
+import { useCodeAnnotationDraft } from '@plannotator/ui/hooks/useCodeAnnotationDraft';
+import { ConfirmDialog } from '@plannotator/ui/components/ConfirmDialog';
 import { ResizeHandle } from '@plannotator/ui/components/ResizeHandle';
 import { DiffViewer } from './components/DiffViewer';
 import { ReviewPanel } from './components/ReviewPanel';
@@ -158,6 +160,18 @@ const ReviewApp: React.FC = () => {
   const [repoInfo, setRepoInfo] = useState<{ display: string; branch?: string } | null>(null);
 
   const identity = useMemo(() => getIdentity(), []);
+
+  // Auto-save code annotation drafts
+  const { draftBanner, restoreDraft, dismissDraft } = useCodeAnnotationDraft({
+    annotations,
+    isApiMode: !!origin,
+    submitted: !!submitted,
+  });
+
+  const handleRestoreDraft = useCallback(() => {
+    const restored = restoreDraft();
+    if (restored.length > 0) setAnnotations(restored);
+  }, [restoreDraft]);
 
   // Resizable panels
   const panelResize = useResizablePanel({ storageKey: 'plannotator-review-panel-width' });
@@ -769,6 +783,16 @@ const ReviewApp: React.FC = () => {
 
           {/* Diff viewer */}
           <main className="flex-1 min-w-0 overflow-hidden">
+            <ConfirmDialog
+              isOpen={!!draftBanner}
+              onClose={dismissDraft}
+              onConfirm={handleRestoreDraft}
+              title="Draft Recovered"
+              message={draftBanner ? `Found ${draftBanner.count} annotation${draftBanner.count !== 1 ? 's' : ''} from ${draftBanner.timeAgo}. Would you like to restore them?` : ''}
+              confirmText="Restore"
+              cancelText="Dismiss"
+              showCancel
+            />
             {activeFile ? (
               <DiffViewer
                 patch={activeFile.patch}

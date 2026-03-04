@@ -42,6 +42,8 @@ import { useSidebar } from '@plannotator/ui/hooks/useSidebar';
 import { usePlanDiff, type VersionInfo } from '@plannotator/ui/hooks/usePlanDiff';
 import { useLinkedDoc } from '@plannotator/ui/hooks/useLinkedDoc';
 import { useVaultBrowser } from '@plannotator/ui/hooks/useVaultBrowser';
+import { useAnnotationDraft } from '@plannotator/ui/hooks/useAnnotationDraft';
+import { ConfirmDialog } from '@plannotator/ui/components/ConfirmDialog';
 import { isVaultBrowserEnabled } from '@plannotator/ui/utils/obsidian';
 import { SidebarTabs } from '@plannotator/ui/components/sidebar/SidebarTabs';
 import { SidebarContainer } from '@plannotator/ui/components/sidebar/SidebarContainer';
@@ -524,6 +526,27 @@ const App: React.FC = () => {
     shareBaseUrl,
     pasteApiUrl
   );
+
+  // Auto-save annotation drafts
+  const { draftBanner, restoreDraft, dismissDraft } = useAnnotationDraft({
+    annotations,
+    globalAttachments,
+    isApiMode,
+    isSharedSession,
+    submitted: !!submitted,
+  });
+
+  const handleRestoreDraft = () => {
+    const { annotations: restored, globalAttachments: restoredGlobal } = restoreDraft();
+    if (restored.length > 0) {
+      setAnnotations(restored);
+      if (restoredGlobal.length > 0) setGlobalAttachments(restoredGlobal);
+      // Apply highlights to DOM after a tick
+      setTimeout(() => {
+        viewerRef.current?.applySharedAnnotations(restored);
+      }, 100);
+    }
+  };
 
   // Fetch available agents for OpenCode (for validation on approve)
   const { agents: availableAgents, validateAgent, getAgentWarning } = useAgents(origin);
@@ -1298,6 +1321,16 @@ const App: React.FC = () => {
 
           {/* Document Area */}
           <main ref={containerRef} className="flex-1 min-w-0 overflow-y-auto bg-grid">
+            <ConfirmDialog
+              isOpen={!!draftBanner}
+              onClose={dismissDraft}
+              onConfirm={handleRestoreDraft}
+              title="Draft Recovered"
+              message={draftBanner ? `Found ${draftBanner.count} annotation${draftBanner.count !== 1 ? 's' : ''} from ${draftBanner.timeAgo}. Would you like to restore them?` : ''}
+              confirmText="Restore"
+              cancelText="Dismiss"
+              showCancel
+            />
             <div className="min-h-full flex flex-col items-center px-4 py-3 md:px-10 md:py-8 xl:px-16">
               {/* Mode Switcher (hidden during plan diff) */}
               {!isPlanDiffActive && (

@@ -13,7 +13,8 @@
 
 import { isRemoteSession, getServerPort } from "./remote";
 import { getRepoInfo } from "./repo";
-import { handleImage, handleUpload, handleServerReady } from "./shared-handlers";
+import { handleImage, handleUpload, handleServerReady, handleDraftSave, handleDraftLoad, handleDraftDelete } from "./shared-handlers";
+import { contentHash, deleteDraft } from "./draft";
 
 // Re-export utilities
 export { isRemoteSession, getServerPort } from "./remote";
@@ -83,6 +84,7 @@ export async function startAnnotateServer(
 
   const isRemote = isRemoteSession();
   const configuredPort = getServerPort();
+  const draftKey = contentHash(markdown);
 
   // Detect repo info (cached for this session)
   const repoInfo = await getRepoInfo();
@@ -133,6 +135,13 @@ export async function startAnnotateServer(
             return handleUpload(req);
           }
 
+          // API: Annotation draft persistence
+          if (url.pathname === "/api/draft") {
+            if (req.method === "POST") return handleDraftSave(req, draftKey);
+            if (req.method === "DELETE") return handleDraftDelete(draftKey);
+            return handleDraftLoad(draftKey);
+          }
+
           // API: Submit annotation feedback
           if (url.pathname === "/api/feedback" && req.method === "POST") {
             try {
@@ -141,6 +150,7 @@ export async function startAnnotateServer(
                 annotations: unknown[];
               };
 
+              deleteDraft(draftKey);
               resolveDecision({
                 feedback: body.feedback || "",
                 annotations: body.annotations || [],

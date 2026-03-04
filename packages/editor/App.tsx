@@ -535,7 +535,7 @@ const App: React.FC = () => {
     submitted: !!submitted,
   });
 
-  const handleRestoreDraft = () => {
+  const handleRestoreDraft = React.useCallback(() => {
     const { annotations: restored, globalAttachments: restoredGlobal } = restoreDraft();
     if (restored.length > 0) {
       setAnnotations(restored);
@@ -545,7 +545,7 @@ const App: React.FC = () => {
         viewerRef.current?.applySharedAnnotations(restored);
       }, 100);
     }
-  };
+  }, [restoreDraft]);
 
   // Fetch available agents for OpenCode (for validation on approve)
   const { agents: availableAgents, validateAgent, getAgentWarning } = useAgents(origin);

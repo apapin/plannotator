@@ -1,8 +1,9 @@
 /**
  * Shared route handlers used by plan, review, and annotate servers.
  *
- * Eliminates duplication of /api/image, /api/upload, and the server-ready
- * handler across all three server files. Also shares /api/agents for plan + review.
+ * Eliminates duplication of /api/image, /api/upload, /api/draft, and the
+ * server-ready handler across all three server files. Also shares /api/agents
+ * for plan + review.
  */
 
 import { mkdirSync } from "fs";

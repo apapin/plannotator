@@ -34,6 +34,8 @@ import {
 } from '@plannotator/ui/utils/permissionMode';
 import { PermissionModeSetup } from '@plannotator/ui/components/PermissionModeSetup';
 import { UIFeaturesSetup } from '@plannotator/ui/components/UIFeaturesSetup';
+import { PlanDiffMarketing } from '@plannotator/ui/components/plan-diff/PlanDiffMarketing';
+import { needsPlanDiffMarketingDialog } from '@plannotator/ui/utils/planDiffMarketing';
 import { WhatsNewV011 } from '@plannotator/ui/components/WhatsNewV011';
 import { needsWhatsNewDialog } from '@plannotator/ui/utils/whatsNew';
 import { ImageAnnotator } from '@plannotator/ui/components/ImageAnnotator';
@@ -371,6 +373,7 @@ const App: React.FC = () => {
   const [pendingPasteImage, setPendingPasteImage] = useState<{ file: File; blobUrl: string; initialName: string } | null>(null);
   const [showPermissionModeSetup, setShowPermissionModeSetup] = useState(false);
   const [showUIFeaturesSetup, setShowUIFeaturesSetup] = useState(false);
+  const [showPlanDiffMarketing, setShowPlanDiffMarketing] = useState(false);
   const [showWhatsNew, setShowWhatsNew] = useState(false);
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('bypassPermissions');
   const [sharingEnabled, setSharingEnabled] = useState(true);
@@ -617,6 +620,8 @@ const App: React.FC = () => {
             setShowPermissionModeSetup(true);
           } else if (needsUIFeaturesSetup()) {
             setShowUIFeaturesSetup(true);
+          } else if (needsPlanDiffMarketingDialog()) {
+            setShowPlanDiffMarketing(true);
           } else if (needsWhatsNewDialog()) {
             setShowWhatsNew(true);
           }
@@ -806,7 +811,7 @@ const App: React.FC = () => {
 
       // Don't intercept if any modal is open
       if (showExport || showImport || showFeedbackPrompt || showClaudeCodeWarning ||
-          showAgentWarning || showPermissionModeSetup || showUIFeaturesSetup || showWhatsNew || pendingPasteImage) return;
+          showAgentWarning || showPermissionModeSetup || showUIFeaturesSetup || showPlanDiffMarketing || showWhatsNew || pendingPasteImage) return;
 
       // Don't intercept if already submitted or submitting
       if (submitted || isSubmitting) return;
@@ -977,7 +982,7 @@ const App: React.FC = () => {
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
 
       if (showExport || showFeedbackPrompt || showClaudeCodeWarning ||
-          showAgentWarning || showPermissionModeSetup || showUIFeaturesSetup || showWhatsNew || pendingPasteImage) return;
+          showAgentWarning || showPermissionModeSetup || showUIFeaturesSetup || showPlanDiffMarketing || showWhatsNew || pendingPasteImage) return;
 
       if (submitted || !isApiMode) return;
 
@@ -1537,6 +1542,8 @@ const App: React.FC = () => {
             setShowPermissionModeSetup(false);
             if (needsUIFeaturesSetup()) {
               setShowUIFeaturesSetup(true);
+            } else if (needsPlanDiffMarketingDialog()) {
+              setShowPlanDiffMarketing(true);
             } else if (needsWhatsNewDialog()) {
               setShowWhatsNew(true);
             }
@@ -1549,6 +1556,20 @@ const App: React.FC = () => {
           onComplete={(prefs) => {
             setUiPrefs(prefs);
             setShowUIFeaturesSetup(false);
+            if (needsPlanDiffMarketingDialog()) {
+              setShowPlanDiffMarketing(true);
+            } else if (needsWhatsNewDialog()) {
+              setShowWhatsNew(true);
+            }
+          }}
+        />
+
+        {/* Plan Diff Marketing (feature announcement) */}
+        <PlanDiffMarketing
+          isOpen={showPlanDiffMarketing}
+          origin={origin}
+          onComplete={() => {
+            setShowPlanDiffMarketing(false);
             if (needsWhatsNewDialog()) {
               setShowWhatsNew(true);
             }

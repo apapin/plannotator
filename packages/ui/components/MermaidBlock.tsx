@@ -117,11 +117,12 @@ export const MermaidBlock: React.FC<{ block: Block }> = ({ block }) => {
   }, [block.content, block.id]);
 
   // Reset zoom and pan when content changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: block.content triggers zoom reset
   useEffect(() => {
     zoomLevelRef.current = 1.0;
     baseViewBoxRef.current = null;
     panOffsetRef.current = { x: 0, y: 0 };
-  }, []);
+  }, [block.content]);
 
   // Reset zoom and pan when switching from source back to diagram
   useEffect(() => {

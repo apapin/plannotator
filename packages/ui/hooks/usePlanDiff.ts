@@ -70,18 +70,20 @@ export function usePlanDiff(
   const [fetchingVersion, setFetchingVersion] = useState<number | null>(null);
 
   // Sync diffBasePlan when initialPreviousPlan arrives after mount (API response)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: one-shot sync when initialPreviousPlan arrives
   useEffect(() => {
     if (initialPreviousPlan && !diffBasePlan) {
       setDiffBasePlan(initialPreviousPlan);
     }
-  }, [initialPreviousPlan, diffBasePlan]);
+  }, [initialPreviousPlan]);
 
   // Sync diffBaseVersion when versionInfo arrives after mount
+  // biome-ignore lint/correctness/useExhaustiveDependencies: one-shot sync when versionInfo arrives
   useEffect(() => {
     if (versionInfo && versionInfo.version > 1 && diffBaseVersion === null) {
       setDiffBaseVersion(versionInfo.version - 1);
     }
-  }, [versionInfo, diffBaseVersion]);
+  }, [versionInfo]);
 
   const hasPreviousVersion =
     versionInfo !== null && versionInfo.totalVersions > 1 && diffBasePlan !== null;

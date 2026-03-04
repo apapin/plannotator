@@ -200,9 +200,10 @@ export function useSharing(
   }, [setMarkdown, setAnnotations, setGlobalAttachments, onSharedLoad, pasteApiUrl]);
 
   // Load from hash on mount
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally mount-only
   useEffect(() => {
     loadFromHash().finally(() => setIsLoadingShared(false));
-  }, [loadFromHash]); // Only run on mount
+  }, []);
 
   // Listen for hash changes (when user pastes a new share URL)
   useEffect(() => {
@@ -236,10 +237,11 @@ export function useSharing(
 
   // Clear stale short URL when content changes (does NOT auto-regenerate —
   // the user must explicitly click "Create short link" again)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: markdown and annotations are intentional triggers for clearing
   useEffect(() => {
     setShortShareUrl('');
     setShortUrlError('');
-  }, []);
+  }, [markdown, annotations]);
 
   /**
    * Generate a short URL via the paste service.

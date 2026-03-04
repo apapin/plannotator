@@ -37,6 +37,7 @@ export const ImageAnnotator: React.FC<ImageAnnotatorProps> = ({
   }, [isOpen, initialName]);
 
   // Keyboard shortcuts
+  // biome-ignore lint/correctness/useExhaustiveDependencies: handlers are stable useCallbacks with empty deps
   useEffect(() => {
     if (!isOpen) return;
 
@@ -74,7 +75,7 @@ export const ImageAnnotator: React.FC<ImageAnnotatorProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, handleAccept, handleUndo]);
+  }, [isOpen, state.strokes]);
 
   const handleStrokeStart = useCallback((point: Point) => {
     const id = crypto.randomUUID();

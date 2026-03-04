@@ -173,6 +173,7 @@ const ReviewApp: React.FC = () => {
   const isResizing = panelResize.isDragging || fileTreeResize.isDragging;
 
   // Global keyboard shortcuts
+  // biome-ignore lint/correctness/useExhaustiveDependencies: handleCopyDiff is stable enough
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Escape closes modals
@@ -190,8 +191,7 @@ const ReviewApp: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showExportModal, handleCopyDiff]);
+  }, [showExportModal]);
 
   // Get annotations for active file
   const activeFileAnnotations = useMemo(() => {

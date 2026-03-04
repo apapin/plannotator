@@ -286,7 +286,7 @@ export default function plannotator(pi: ExtensionAPI): void {
       ),
     }),
 
-    async execute(_toolCallId, _params, _signal, _update, ctx) {
+    async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
       // Guard: must be in planning phase
       if (phase !== 'planning') {
         return {

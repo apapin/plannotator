@@ -19,13 +19,13 @@
       "suspicious": {
         "noArrayIndexKey": "warn",
         "noExplicitAny": "warn",
-        "noAssignInExpressions": "off",
+        "noAssignInExpressions": "error",
         "useIterableCallbackReturn": "warn"
       },
       "correctness": {
-        "useExhaustiveDependencies": "warn",
+        "useExhaustiveDependencies": "error",
         "noUnusedFunctionParameters": "warn",
-        "noInvalidUseBeforeDeclaration": "off"
+        "noInvalidUseBeforeDeclaration": "error"
       },
       "security": {
         "noDangerouslySetInnerHtml": "warn"

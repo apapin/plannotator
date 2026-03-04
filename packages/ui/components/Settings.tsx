@@ -96,6 +96,7 @@ export const Settings: React.FC<SettingsProps> = ({
     return t;
   }, [mode]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-read settings when availableAgents loads
   useEffect(() => {
     if (showDialog) {
       setIdentity(getIdentity());
@@ -113,7 +114,7 @@ export const Settings: React.FC<SettingsProps> = ({
         setAgentWarning(getAgentWarning());
       }
     }
-  }, [showDialog, origin, getAgentWarning]);
+  }, [showDialog, availableAgents, origin, getAgentWarning]);
 
   // Fetch detected vaults when Obsidian is enabled
   useEffect(() => {
@@ -125,6 +126,7 @@ export const Settings: React.FC<SettingsProps> = ({
           setDetectedVaults(data.vaults || []);
           // Auto-select first vault if none set
           if (data.vaults?.length > 0 && !obsidian.vaultPath) {
+            // biome-ignore lint/correctness/noInvalidUseBeforeDeclaration: handleObsidianChange defined after this effect but stable
             handleObsidianChange({ vaultPath: data.vaults[0] });
           }
         })
@@ -134,6 +136,8 @@ export const Settings: React.FC<SettingsProps> = ({
   }, [
     obsidian.enabled,
     detectedVaults.length,
+    // biome-ignore lint/correctness/useExhaustiveDependencies: handleObsidianChange is defined below but stable
+    // biome-ignore lint/correctness/noInvalidUseBeforeDeclaration: handleObsidianChange is defined below but stable
     handleObsidianChange,
     obsidian.vaultPath,
     vaultsLoading,

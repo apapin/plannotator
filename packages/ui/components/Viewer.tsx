@@ -279,6 +279,7 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(
       const walker = document.createTreeWalker(containerRef.current, NodeFilter.SHOW_TEXT, null);
 
       let node: Text | null;
+      // biome-ignore lint/suspicious/noAssignInExpressions: standard TreeWalker loop pattern
       while ((node = walker.nextNode() as Text | null)) {
         const text = node.textContent || '';
         const index = text.indexOf(searchText);
@@ -308,6 +309,7 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(
       let endNode: Text | null = null;
       let endOffset = 0;
 
+      // biome-ignore lint/suspicious/noAssignInExpressions: standard TreeWalker loop pattern
       while ((node = walker2.nextNode() as Text | null)) {
         const nodeLength = node.textContent?.length || 0;
 
@@ -335,6 +337,7 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(
       return null;
     }, []);
 
+    // biome-ignore lint/correctness/useExhaustiveDependencies: blocks.find changes every render, blocks is stable enough
     useImperativeHandle(
       ref,
       () => ({
@@ -435,6 +438,7 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(
               let node: Text | null;
               let inRange = false;
 
+              // biome-ignore lint/suspicious/noAssignInExpressions: standard TreeWalker loop pattern
               while ((node = walker.nextNode() as Text | null)) {
                 // Check if this node is the start container
                 if (node === range.startContainer) {
@@ -505,7 +509,7 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(
           });
         },
       }),
-      [findTextInDOM, onSelectAnnotation, blocks.find],
+      [findTextInDOM, onSelectAnnotation],
     );
 
     useEffect(() => {
@@ -565,6 +569,7 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(
       return () => highlighter.dispose();
     }, [
       onSelectAnnotation, // Auto-delete in redline mode
+      // biome-ignore lint/correctness/useExhaustiveDependencies: createAnnotationFromSource is stable (only depends on refs and props)
       createAnnotationFromSource,
     ]);
 
@@ -1322,6 +1327,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ block, onHover, onLeave, isHovere
   const codeRef = useRef<HTMLElement>(null);
 
   // Highlight code block on mount and when content/language changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: block.content triggers re-highlight when code changes
   useEffect(() => {
     if (codeRef.current) {
       // Reset any previous highlighting
@@ -1329,7 +1335,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ block, onHover, onLeave, isHovere
       codeRef.current.className = `hljs font-mono${block.language ? ` language-${block.language}` : ''}`;
       hljs.highlightElement(codeRef.current);
     }
-  }, [block.language]);
+  }, [block.content, block.language]);
 
   const handleCopy = useCallback(async () => {
     try {

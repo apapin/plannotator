@@ -41,6 +41,7 @@ function renderInline(text: string, startKey: number): React.ReactNode[] {
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
+  // biome-ignore lint/suspicious/noAssignInExpressions: standard regex exec loop pattern
   while ((match = regex.exec(text)) !== null) {
     // Text before match
     if (match.index > lastIndex) {

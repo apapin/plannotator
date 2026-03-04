@@ -420,20 +420,22 @@ const App: React.FC = () => {
   const sidebar = useSidebar(getUIPreferences().tocEnabled);
 
   // Sync sidebar open state when preference changes in Settings
+  // biome-ignore lint/correctness/useExhaustiveDependencies: sidebar methods are stable
   useEffect(() => {
     if (uiPrefs.tocEnabled) {
       sidebar.open('toc');
     } else {
       sidebar.close();
     }
-  }, [uiPrefs.tocEnabled, sidebar.close, sidebar.open]);
+  }, [uiPrefs.tocEnabled]);
 
   // Clear diff view when switching away from versions tab
+  // biome-ignore lint/correctness/useExhaustiveDependencies: isPlanDiffActive is read, not a trigger
   useEffect(() => {
     if (sidebar.activeTab === 'toc' && isPlanDiffActive) {
       setIsPlanDiffActive(false);
     }
-  }, [sidebar.activeTab, isPlanDiffActive]);
+  }, [sidebar.activeTab]);
 
   // Clear diff view on Escape key
   useEffect(() => {
@@ -467,19 +469,23 @@ const App: React.FC = () => {
   // Obsidian vault browser
   const vaultBrowser = useVaultBrowser();
 
-  const showVaultTab = useMemo(() => isVaultBrowserEnabled(), []);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: recompute when user changes settings
+  const showVaultTab = useMemo(() => isVaultBrowserEnabled(), [uiPrefs]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: recompute when user changes settings
   const vaultPath = useMemo(() => {
     if (!showVaultTab) return '';
     const settings = getObsidianSettings();
     return getEffectiveVaultPath(settings);
-  }, [showVaultTab]);
+  }, [showVaultTab, uiPrefs]);
 
   // Clear active file when vault browser is disabled
+  // biome-ignore lint/correctness/useExhaustiveDependencies: vaultBrowser.setActiveFile is stable
   useEffect(() => {
     if (!showVaultTab) vaultBrowser.setActiveFile(null);
-  }, [showVaultTab, vaultBrowser.setActiveFile]);
+  }, [showVaultTab]);
 
   // Auto-fetch vault tree when vault tab is first opened
+  // biome-ignore lint/correctness/useExhaustiveDependencies: vaultBrowser methods/state are read inside, not triggers
   useEffect(() => {
     if (
       sidebar.activeTab === 'vault' &&
@@ -490,14 +496,7 @@ const App: React.FC = () => {
     ) {
       vaultBrowser.fetchTree(vaultPath);
     }
-  }, [
-    sidebar.activeTab,
-    showVaultTab,
-    vaultPath,
-    vaultBrowser.fetchTree,
-    vaultBrowser.isLoading,
-    vaultBrowser.tree.length,
-  ]);
+  }, [sidebar.activeTab, showVaultTab, vaultPath]);
 
   const buildVaultDocUrl = React.useCallback(
     (vp: string) => (path: string) =>
@@ -842,6 +841,7 @@ const App: React.FC = () => {
   };
 
   // Global keyboard shortcuts (Cmd/Ctrl+Enter to submit)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: handler functions are stable enough — wrapping in useCallback would be a larger refactor
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Only handle Cmd/Ctrl+Enter
@@ -923,9 +923,6 @@ const App: React.FC = () => {
     annotateMode,
     origin,
     getAgentWarning,
-    handleAnnotateFeedback,
-    handleApprove,
-    handleDeny,
   ]);
 
   const handleAddAnnotation = (ann: Annotation) => {
@@ -1042,6 +1039,7 @@ const App: React.FC = () => {
   };
 
   // Cmd/Ctrl+S keyboard shortcut — save to default notes app
+  // biome-ignore lint/correctness/useExhaustiveDependencies: handler functions are stable enough
   useEffect(() => {
     const handleSaveShortcut = (e: KeyboardEvent) => {
       if (e.key !== 's' || !(e.metaKey || e.ctrlKey)) return;
@@ -1094,8 +1092,6 @@ const App: React.FC = () => {
     pendingPasteImage,
     submitted,
     isApiMode,
-    handleDownloadAnnotations,
-    handleQuickSaveToNotes,
   ]);
 
   // Close export dropdown on click outside

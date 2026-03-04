@@ -252,13 +252,14 @@ const SimpleBlockRenderer: React.FC<{ block: Block }> = ({ block }) => {
 const SimpleCodeBlock: React.FC<{ block: Block }> = ({ block }) => {
   const codeRef = useRef<HTMLElement>(null);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: block.content triggers re-highlight when code changes
   useEffect(() => {
     if (codeRef.current) {
       codeRef.current.removeAttribute('data-highlighted');
       codeRef.current.className = `hljs font-mono${block.language ? ` language-${block.language}` : ''}`;
       hljs.highlightElement(codeRef.current);
     }
-  }, [block.language]);
+  }, [block.content, block.language]);
 
   return (
     <div className="relative group my-5">

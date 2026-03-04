@@ -73,6 +73,7 @@ export const AnnotationToolbar: React.FC<AnnotationToolbarProps> = ({
   };
 
   // Focus input when entering input step (including on mount with initialStep='input')
+  // biome-ignore lint/correctness/useExhaustiveDependencies: element triggers refocus on new selection
   useEffect(() => {
     if (step === 'input') {
       // Use setTimeout to ensure DOM is fully ready (portals can have timing issues)
@@ -86,16 +87,17 @@ export const AnnotationToolbar: React.FC<AnnotationToolbarProps> = ({
       }, 0);
       return () => clearTimeout(timeoutId);
     }
-  }, [step]); // Also re-run when element changes (new selection)
+  }, [step, element]);
 
   // Reset state when element changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: element triggers reset on new selection
   useEffect(() => {
     setStep(initialStep);
     setActiveType(initialType ?? null);
     setInputValue('');
     setImages([]);
     setCopied(false);
-  }, [initialStep, initialType]);
+  }, [element, initialStep, initialType]);
 
   // Notify parent when locked (in input mode)
   useEffect(() => {

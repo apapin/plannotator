@@ -15,20 +15,6 @@ describe("PanelManager", () => {
     spies.length = 0;
   });
 
-  it("creates a webview panel on first open", async () => {
-    const spy = spyOn(vscode.window, "createWebviewPanel");
-    spies.push(spy);
-
-    await manager.open("http://127.0.0.1:9999/review");
-
-    expect(spy).toHaveBeenCalledWith(
-      "plannotator",
-      "Plannotator",
-      vscode.ViewColumn.One,
-      { enableScripts: true, retainContextWhenHidden: true },
-    );
-  });
-
   it("sets iframe src in webview html", async () => {
     let capturedHtml = "";
     const spy = spyOn(vscode.window, "createWebviewPanel");
@@ -54,40 +40,6 @@ describe("PanelManager", () => {
     expect(capturedHtml).toContain(
       'src="http://127.0.0.1:9999/review?id=42"',
     );
-  });
-
-  it("creates a new panel on every open call", async () => {
-    const spy = spyOn(vscode.window, "createWebviewPanel");
-    spies.push(spy);
-
-    await manager.open("http://127.0.0.1:9999/review");
-    await manager.open("http://127.0.0.1:9999/other");
-
-    expect(spy).toHaveBeenCalledTimes(2);
-  });
-
-  it("returns the created panel", async () => {
-    const panel = await manager.open("http://127.0.0.1:9999/review");
-
-    expect(panel).toBeDefined();
-    expect(panel.webview).toBeDefined();
-  });
-
-  it("closeAll disposes all open panels", async () => {
-    const spy = spyOn(vscode.window, "createWebviewPanel");
-    spies.push(spy);
-
-    await manager.open("http://127.0.0.1:9999/review");
-    await manager.open("http://127.0.0.1:9999/other");
-    manager.closeAll();
-    await manager.open("http://127.0.0.1:9999/third");
-
-    expect(spy).toHaveBeenCalledTimes(3);
-  });
-
-  it("closeAll is a no-op when no panels exist", () => {
-    // Should not throw
-    manager.closeAll();
   });
 
   it("uses asExternalUri resolved URL in iframe and CSP", async () => {

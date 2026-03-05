@@ -3,14 +3,16 @@
   "displayName": "Plannotator",
   "description": "Opens Plannotator plan reviews inside VS Code tabs instead of an external browser",
   "version": "0.5.1",
-  "publisher": "7tg",
+  "private": true,
+  "publisher": "backnotprop",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/7tg/plannotator-vscode"
+    "url": "git+https://github.com/backnotprop/plannotator.git",
+    "directory": "apps/vscode-extension"
   },
   "bugs": {
-    "url": "https://github.com/7tg/plannotator-vscode/issues"
+    "url": "https://github.com/backnotprop/plannotator/issues"
   },
   "icon": "images/icon.png",
   "categories": ["Other"],

@@ -36,6 +36,7 @@ import { detectProjectName } from "./project";
 import { handleImage, handleUpload, handleAgents, handleServerReady, handleDraftSave, handleDraftLoad, handleDraftDelete, type OpencodeClient } from "./shared-handlers";
 import { contentHash, deleteDraft } from "./draft";
 import { handleDoc, handleObsidianVaults, handleObsidianFiles, handleObsidianDoc } from "./reference-handlers";
+import { createEditorAnnotationHandler } from "./editor-annotations";
 
 // Re-export utilities
 export { isRemoteSession, getServerPort } from "./remote";
@@ -109,6 +110,7 @@ export async function startPlannotatorServer(
   const isRemote = isRemoteSession();
   const configuredPort = getServerPort();
   const draftKey = contentHash(plan);
+  const editorAnnotations = createEditorAnnotationHandler();
 
   // Generate slug for potential saving (actual save happens on decision)
   const slug = generateSlug(plan);
@@ -265,6 +267,10 @@ export async function startPlannotatorServer(
             if (req.method === "DELETE") return handleDraftDelete(draftKey);
             return handleDraftLoad(draftKey);
           }
+
+          // API: Editor annotations (VS Code extension)
+          const editorResponse = await editorAnnotations.handle(req, url);
+          if (editorResponse) return editorResponse;
 
           // API: Save to notes (decoupled from approve/deny)
           if (url.pathname === "/api/save-notes" && req.method === "POST") {

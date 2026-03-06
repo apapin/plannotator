@@ -12,15 +12,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const panelManager = new PanelManager();
   panelManager.setExtensionPath(context.extensionPath);
 
-  let lastOpenTime = 0;
-
   const openInPanel = async (url: string) => {
-    const now = Date.now();
-    if (now - lastOpenTime < 1000) {
-      log.info(`[open] skipped duplicate (${now - lastOpenTime}ms since last): ${url}`);
-      return;
-    }
-    lastOpenTime = now;
     log.info(`[open] received url: ${url}`);
 
     // Each panel gets its own cookie proxy so multiple agents

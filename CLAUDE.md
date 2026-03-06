@@ -24,10 +24,14 @@ plannotator/
 │   │   ├── core/                 # Platform-agnostic logic (handler, storage interface, cors)
 │   │   ├── stores/               # Storage backends (fs, kv, s3)
 │   │   └── targets/              # Deployment entries (bun.ts, cloudflare.ts)
-│   └── review/                   # Standalone review server (for development)
-│       ├── index.html
-│       ├── index.tsx
-│       └── vite.config.ts
+│   ├── review/                   # Standalone review server (for development)
+│   │   ├── index.html
+│   │   ├── index.tsx
+│   │   └── vite.config.ts
+│   └── vscode-extension/         # VS Code extension — opens plans in editor tabs
+│       ├── bin/                   # Router scripts (open-in-vscode, xdg-open)
+│       ├── src/                   # extension.ts, cookie-proxy.ts, ipc-server.ts, panel-manager.ts
+│       └── package.json           # Extension manifest (publisher: backnotprop)
 ├── packages/
 │   ├── server/                   # Shared server implementation
 │   │   ├── index.ts              # startPlannotatorServer(), handleServerReady()
@@ -348,6 +352,7 @@ bun run dev:hook       # Hook server (plan review)
 bun run dev:review     # Review editor (code review)
 bun run dev:portal     # Portal editor
 bun run dev:marketing  # Marketing site
+bun run dev:vscode     # VS Code extension (watch mode)
 ```
 
 ## Build
@@ -358,6 +363,8 @@ bun run build:review     # Code review editor
 bun run build:opencode   # OpenCode plugin (copies HTML from hook + review)
 bun run build:portal     # Static build for share.plannotator.ai
 bun run build:marketing  # Static build for plannotator.ai
+bun run build:vscode     # VS Code extension bundle
+bun run package:vscode   # Package .vsix for marketplace
 bun run build            # Build hook + opencode (main targets)
 ```
 

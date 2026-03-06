@@ -51,7 +51,11 @@ export async function openBrowser(url: string): Promise<boolean> {
     if (browser) {
       const plannotatorBrowser = process.env.PLANNOTATOR_BROWSER;
       if (plannotatorBrowser && platform === "darwin") {
-        await $`open -a ${plannotatorBrowser} ${url}`.quiet();
+        if (plannotatorBrowser.includes("/") && !plannotatorBrowser.endsWith(".app")) {
+          await $`${plannotatorBrowser} ${url}`.quiet();
+        } else {
+          await $`open -a ${plannotatorBrowser} ${url}`.quiet();
+        }
       } else if ((platform === "win32" || wsl) && plannotatorBrowser) {
         await $`cmd.exe /c start "" ${plannotatorBrowser} ${url}`.quiet();
       } else {

@@ -16,6 +16,9 @@ dist-ssr
 # npm pack output
 *.tgz
 
+# VS Code extension package
+*.vsix
+
 # OpenCode plugin build artifacts (generated from hook/review dist)
 apps/opencode-plugin/plannotator.html
 apps/opencode-plugin/review-editor.html

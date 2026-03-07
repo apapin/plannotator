@@ -196,6 +196,40 @@ async function getUntrackedFileDiffs(srcPrefix = 'a/', dstPrefix = 'b/', cwd?: s
 }
 
 /**
+ * Parse a worktree diff type like `worktree:/path:last-commit` into path + sub-type.
+ * Falls back to `uncommitted` if no sub-type suffix (backwards compatible).
+ */
+const WORKTREE_SUB_TYPES = new Set(["uncommitted", "last-commit", "branch"]);
+
+function parseWorktreeDiffType(diffType: string): { path: string; subType: string } | null {
+  if (!diffType.startsWith("worktree:")) return null;
+  const rest = diffType.slice("worktree:".length);
+  const lastColon = rest.lastIndexOf(":");
+  if (lastColon !== -1) {
+    const maybeSub = rest.slice(lastColon + 1);
+    if (WORKTREE_SUB_TYPES.has(maybeSub)) {
+      return { path: rest.slice(0, lastColon), subType: maybeSub };
+    }
+  }
+  return { path: rest, subType: "uncommitted" };
+}
+
+/**
+ * Build diff options for worktree mode: back-to-main, separator, then
+ * standard diff types with the worktree path baked into each id.
+ */
+export function getWorktreeDiffOptions(worktreePath: string, defaultBranch: string): DiffOption[] {
+  const prefix = `worktree:${worktreePath}:`;
+  return [
+    { id: "back-to-main" as DiffType, label: "\u2190 Back to main repo" },
+    { id: "separator", label: "" },
+    { id: `${prefix}uncommitted` as DiffType, label: "Uncommitted changes" },
+    { id: `${prefix}last-commit` as DiffType, label: "Last commit" },
+    { id: `${prefix}branch` as DiffType, label: `vs ${defaultBranch}` },
+  ];
+}
+
+/**
  * Run git diff with the specified type
  */
 export async function runGitDiff(
@@ -207,22 +241,46 @@ export async function runGitDiff(
 
   // Handle worktree diffs — run git commands in the worktree's directory
   if (diffType.startsWith("worktree:")) {
-    const worktreePath = diffType.slice("worktree:".length);
-    try {
-      const trackedDiff = (await $`git diff HEAD --src-prefix=a/ --dst-prefix=b/`.quiet().cwd(worktreePath)).text();
-      const untrackedDiff = await getUntrackedFileDiffs('a/', 'b/', worktreePath);
-      patch = trackedDiff + untrackedDiff;
+    const parsed = parseWorktreeDiffType(diffType);
+    if (!parsed) {
+      return { patch: "", label: "Worktree error", error: "Could not parse worktree diff type" };
+    }
 
-      // Derive label from branch name in the worktree
+    const { path: wtPath, subType } = parsed;
+
+    try {
+      switch (subType) {
+        case "uncommitted": {
+          const trackedDiff = (await $`git diff HEAD --src-prefix=a/ --dst-prefix=b/`.quiet().cwd(wtPath)).text();
+          const untrackedDiff = await getUntrackedFileDiffs('a/', 'b/', wtPath);
+          patch = trackedDiff + untrackedDiff;
+          label = "Uncommitted changes";
+          break;
+        }
+        case "last-commit":
+          patch = (await $`git diff HEAD~1..HEAD --src-prefix=a/ --dst-prefix=b/`.quiet().cwd(wtPath)).text();
+          label = "Last commit";
+          break;
+        case "branch":
+          patch = (await $`git diff ${defaultBranch}..HEAD --src-prefix=a/ --dst-prefix=b/`.quiet().cwd(wtPath)).text();
+          label = `Changes vs ${defaultBranch}`;
+          break;
+        default:
+          patch = "";
+          label = "Unknown worktree diff type";
+      }
+
+      // Prefix label with worktree branch name for context
       try {
-        const branch = (await $`git rev-parse --abbrev-ref HEAD`.quiet().cwd(worktreePath)).text().trim();
-        label = `Worktree: ${branch}`;
+        const branch = (await $`git rev-parse --abbrev-ref HEAD`.quiet().cwd(wtPath)).text().trim();
+        label = `${branch}: ${label}`;
       } catch {
-        label = `Worktree: ${worktreePath.split("/").pop()}`;
+        label = `${wtPath.split("/").pop()}: ${label}`;
       }
 
       return { patch, label };
     } catch (error) {
+      console.error(`Git diff error for ${diffType}:`, error);
       const errorMessage = error instanceof Error ? error.message : String(error);
       return { patch: "", label: "Worktree error", error: errorMessage };
     }

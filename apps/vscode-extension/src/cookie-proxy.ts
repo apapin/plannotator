@@ -1,5 +1,6 @@
 import * as http from "http";
 import { EventEmitter } from "events";
+import { buildThemeListenerScript } from "./vscode-theme";
 
 export interface CookieProxyOptions {
   loadCookies: () => string;
@@ -144,10 +145,11 @@ function parseCookieString(str: string): Record<string, string> {
 
 function injectScript(html: string, savedCookies: string): string {
   const initial = JSON.stringify(parseCookieString(savedCookies));
+  const themeListener = buildThemeListenerScript();
 
   // Virtual cookie jar: overrides document.cookie so plannotator works even
   // when the browser blocks third-party cookies inside the iframe.
-  const script = `<script>(function(){
+  const script = themeListener + `<script>(function(){
       var S=${initial};S["plannotator-auto-close"]="true";
       Object.defineProperty(document,"cookie",{configurable:true,
         get:function(){return Object.keys(S).map(function(k){return k+"="+S[k]}).join("; ");},

@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import * as path from "path";
+import { buildWrapperThemeScript } from "./vscode-theme";
 
 export class PanelManager {
   private panels: Set<vscode.WebviewPanel> = new Set();
@@ -39,13 +40,14 @@ export class PanelManager {
 }
 
 function getHtml(url: string, origin: string): string {
+  const themeScript = buildWrapperThemeScript();
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; style-src 'unsafe-inline'; frame-src ${origin};">
+        content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; frame-src ${origin};">
   <style>
     body { margin: 0; padding: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
     iframe { flex: 1; width: 100%; border: none; }
@@ -53,6 +55,7 @@ function getHtml(url: string, origin: string): string {
 </head>
 <body>
   <iframe src="${url}"></iframe>
+  ${themeScript}
 </body>
 </html>`;
 }

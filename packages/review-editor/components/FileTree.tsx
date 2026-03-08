@@ -1,5 +1,7 @@
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useState, useMemo } from 'react';
 import { CodeAnnotation } from '@plannotator/ui/types';
+import { buildFileTree, getAncestorPaths, getAllFolderPaths } from '../utils/buildFileTree';
+import { FileTreeNodeItem } from './FileTreeNode';
 
 interface DiffFile {
   path: string;
@@ -78,10 +80,54 @@ export const FileTree: React.FC<FileTreeProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
-  // Get annotation count per file
-  const getAnnotationCount = (filePath: string) => {
-    return annotations.filter(a => a.filePath === filePath).length;
-  };
+  const annotationCountMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const a of annotations) {
+      map.set(a.filePath, (map.get(a.filePath) ?? 0) + 1);
+    }
+    return map;
+  }, [annotations]);
+
+  const getAnnotationCount = useCallback((filePath: string) => {
+    return annotationCountMap.get(filePath) ?? 0;
+  }, [annotationCountMap]);
+
+  const tree = useMemo(() => buildFileTree(files), [files]);
+
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  const [prevTree, setPrevTree] = useState(tree);
+
+  // Expand all folders when tree changes (initial render + diff switch)
+  if (tree !== prevTree) {
+    setPrevTree(tree);
+    setExpandedFolders(new Set(getAllFolderPaths(tree)));
+  }
+
+  // Auto-expand ancestors of the active file so j/k nav always reveals the target
+  useEffect(() => {
+    if (files[activeFileIndex]) {
+      const ancestors = getAncestorPaths(files[activeFileIndex].path);
+      setExpandedFolders(prev => {
+        const missing = ancestors.filter(p => !prev.has(p));
+        if (missing.length === 0) return prev;
+        const next = new Set(prev);
+        for (const p of missing) next.add(p);
+        return next;
+      });
+    }
+  }, [activeFileIndex, files]);
+
+  const handleToggleFolder = useCallback((path: string) => {
+    setExpandedFolders(prev => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  }, []);
 
   return (
     <aside className="border-r border-border bg-card/30 flex flex-col flex-shrink-0 overflow-hidden" style={{ width: width ?? 256 }}>
@@ -156,56 +202,22 @@ export const FileTree: React.FC<FileTreeProps> = ({
         </div>
       )}
 
-      {/* File list */}
+      {/* File tree */}
       <div className="flex-1 overflow-y-auto p-2">
-        {files.map((file, index) => {
-          const annotationCount = getAnnotationCount(file.path);
-          const isActive = index === activeFileIndex;
-          const isViewed = viewedFiles.has(file.path);
-          const fileName = file.path.split('/').pop() || file.path;
-
-          if (hideViewedFiles && isViewed && !isActive) {
-            return null;
-          }
-
-          return (
-            <button
-              key={file.path}
-              onClick={() => onSelectFile(index)}
-              className={`file-tree-item w-full text-left group ${isActive ? 'active' : ''} ${annotationCount > 0 ? 'has-annotations' : ''}`}
-            >
-              <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                <span
-                  role="checkbox"
-                  aria-checked={isViewed}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleViewed?.(file.path);
-                  }}
-                  className="flex-shrink-0 p-0.5 rounded hover:bg-muted/50 cursor-pointer"
-                >
-                  {isViewed ? (
-                    <svg className="w-3.5 h-3.5 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  ) : (
-                    <svg className="w-3.5 h-3.5 text-muted-foreground opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <circle cx="12" cy="12" r="9" />
-                    </svg>
-                  )}
-                </span>
-                <span className="truncate">{fileName}</span>
-              </div>
-              <div className="flex items-center gap-1.5 flex-shrink-0 text-[10px]">
-                {annotationCount > 0 && (
-                  <span className="text-primary font-medium">{annotationCount}</span>
-                )}
-                <span className="additions">+{file.additions}</span>
-                <span className="deletions">-{file.deletions}</span>
-              </div>
-            </button>
-          );
-        })}
+        {tree.map(node => (
+          <FileTreeNodeItem
+            key={node.type === 'file' ? node.path : `folder:${node.path}`}
+            node={node}
+            expandedFolders={expandedFolders}
+            onToggleFolder={handleToggleFolder}
+            activeFileIndex={activeFileIndex}
+            onSelectFile={onSelectFile}
+            viewedFiles={viewedFiles}
+            onToggleViewed={onToggleViewed}
+            hideViewedFiles={hideViewedFiles}
+            getAnnotationCount={getAnnotationCount}
+          />
+        ))}
       </div>
 
       {/* Footer */}

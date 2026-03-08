@@ -159,7 +159,6 @@ const ReviewApp: React.FC = () => {
   const [diffType, setDiffType] = useState<string>('uncommitted');
   const [gitContext, setGitContext] = useState<GitContext | null>(null);
   const [isLoadingDiff, setIsLoadingDiff] = useState(false);
-  const [activeWorktreePath, setActiveWorktreePath] = useState<string | null>(null);
   const [diffError, setDiffError] = useState<string | null>(null);
   const [isSendingFeedback, setIsSendingFeedback] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
@@ -363,15 +362,20 @@ const ReviewApp: React.FC = () => {
     });
   }, []);
 
-  // Derive base diff type (strip worktree prefix) for the dropdown
-  const activeDiffBase = useMemo(() => {
+  // Derive worktree path and base diff type from the composite diffType string
+  const { activeWorktreePath, activeDiffBase } = useMemo(() => {
     if (diffType.startsWith('worktree:')) {
-      const lastColon = diffType.lastIndexOf(':');
-      const suffix = diffType.slice(lastColon + 1);
-      if (['uncommitted', 'last-commit', 'branch'].includes(suffix)) return suffix;
-      return 'uncommitted';
+      const rest = diffType.slice('worktree:'.length);
+      const lastColon = rest.lastIndexOf(':');
+      if (lastColon !== -1) {
+        const sub = rest.slice(lastColon + 1);
+        if (['uncommitted', 'last-commit', 'branch'].includes(sub)) {
+          return { activeWorktreePath: rest.slice(0, lastColon), activeDiffBase: sub };
+        }
+      }
+      return { activeWorktreePath: rest, activeDiffBase: 'uncommitted' };
     }
-    return diffType;
+    return { activeWorktreePath: null, activeDiffBase: diffType };
   }, [diffType]);
 
   // Shared helper: fetch a diff switch and update state
@@ -418,7 +422,6 @@ const ReviewApp: React.FC = () => {
   // Switch worktree context (or back to main repo)
   const handleWorktreeSwitch = useCallback(async (worktreePath: string | null) => {
     if (worktreePath === activeWorktreePath) return;
-    setActiveWorktreePath(worktreePath);
     const fullDiffType = worktreePath
       ? `worktree:${worktreePath}:uncommitted`
       : 'uncommitted';

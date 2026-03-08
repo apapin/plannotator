@@ -1,5 +1,6 @@
 import React, { useEffect, useCallback, useState, useMemo } from 'react';
 import { CodeAnnotation } from '@plannotator/ui/types';
+import type { DiffOption, WorktreeInfo } from '@plannotator/shared/types';
 import { buildFileTree, getAncestorPaths, getAllFolderPaths } from '../utils/buildFileTree';
 import { FileTreeNodeItem } from './FileTreeNode';
 
@@ -9,17 +10,6 @@ interface DiffFile {
   patch: string;
   additions: number;
   deletions: number;
-}
-
-interface DiffOption {
-  id: string;
-  label: string;
-}
-
-interface WorktreeInfo {
-  path: string;
-  branch: string | null;
-  head: string;
 }
 
 interface FileTreeProps {

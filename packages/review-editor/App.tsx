@@ -18,6 +18,7 @@ import { DiffViewer } from './components/DiffViewer';
 import { ReviewPanel } from './components/ReviewPanel';
 import { FileTree } from './components/FileTree';
 import { DEMO_DIFF } from './demoData';
+import type { DiffOption, WorktreeInfo, GitContext } from '@plannotator/shared/types';
 
 declare const __APP_VERSION__: string;
 
@@ -27,24 +28,6 @@ interface DiffFile {
   patch: string;
   additions: number;
   deletions: number;
-}
-
-interface DiffOption {
-  id: string;
-  label: string;
-}
-
-interface WorktreeInfo {
-  path: string;
-  branch: string | null;
-  head: string;
-}
-
-interface GitContext {
-  currentBranch: string;
-  defaultBranch: string;
-  diffOptions: DiffOption[];
-  worktrees: WorktreeInfo[];
 }
 
 interface DiffData {

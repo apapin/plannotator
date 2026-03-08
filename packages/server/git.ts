@@ -7,6 +7,8 @@
 
 import { $ } from "bun";
 
+export type { DiffOption, WorktreeInfo, GitContext } from "@plannotator/shared/types";
+
 export type DiffType =
   | "uncommitted"
   | "staged"
@@ -14,24 +16,6 @@ export type DiffType =
   | "last-commit"
   | "branch"
   | `worktree:${string}`;
-
-export interface DiffOption {
-  id: DiffType | "separator";
-  label: string;
-}
-
-export interface WorktreeInfo {
-  path: string;
-  branch: string | null; // null = detached HEAD
-  head: string;
-}
-
-export interface GitContext {
-  currentBranch: string;
-  defaultBranch: string;
-  diffOptions: DiffOption[];
-  worktrees: WorktreeInfo[];
-}
 
 export interface DiffResult {
   patch: string;

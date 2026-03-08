@@ -55,10 +55,11 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
   const [fileContents, setFileContents] = useState<{ forPath: string; old: string | null; new: string | null } | null>(null);
 
   useEffect(() => {
+    const controller = new AbortController();
     setFileContents(null);
     const params = new URLSearchParams({ path: filePath });
     if (oldPath) params.set('oldPath', oldPath);
-    fetch(`/api/file-content?${params}`)
+    fetch(`/api/file-content?${params}`, { signal: controller.signal })
       .then(res => res.ok ? res.json() : null)
       .then((data: { oldContent: string | null; newContent: string | null } | null) => {
         if (data && (data.oldContent != null || data.newContent != null)) {
@@ -66,6 +67,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
         }
       })
       .catch(() => {}); // Silent fallback — no expansion in demo mode
+    return () => controller.abort();
   }, [filePath, oldPath]);
 
   // Re-parse the patch with full file contents so hunk indices are computed

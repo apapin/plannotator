@@ -204,7 +204,13 @@ export async function startReviewServer(
             if (!filePath) {
               return Response.json({ error: "Missing path" }, { status: 400 });
             }
+            if (filePath.includes("..") || filePath.startsWith("/")) {
+              return Response.json({ error: "Invalid path" }, { status: 400 });
+            }
             const oldPath = url.searchParams.get("oldPath") || undefined;
+            if (oldPath && (oldPath.includes("..") || oldPath.startsWith("/"))) {
+              return Response.json({ error: "Invalid path" }, { status: 400 });
+            }
             const defaultBranch = gitContext?.defaultBranch || "main";
             const result = await getFileContentsForDiff(
               currentDiffType,

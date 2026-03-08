@@ -8,7 +8,7 @@
   },
   "dependencies": {
     "@plannotator/ui": "workspace:*",
-    "@pierre/diffs": "^1.0.4",
+    "@pierre/diffs": "^1.1.0-beta.19",
     "highlight.js": "^11.11.1",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",

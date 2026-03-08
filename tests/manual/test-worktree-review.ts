@@ -1,9 +1,9 @@
 /**
- * Test script for worktree support in Code Review
+ * Test script for worktree support and expandable diff context in Code Review
  *
  * Creates a temporary git repo with multiple worktrees, each with different
  * kinds of changes, then launches the review server so you can manually test
- * the worktree dropdown and diff switching.
+ * the worktree dropdown, diff switching, and expandable context features.
  *
  * Usage:
  *   bun run tests/manual/test-worktree-review.ts [--keep]
@@ -12,6 +12,8 @@
  *   --keep  Don't clean up the temp repo on exit (for debugging)
  *
  * What to test:
+ *
+ * WORKTREE FEATURES:
  *   1. Dropdown shows worktrees below a separator
  *   2. Selecting a worktree enters "worktree mode" — dropdown shows
  *      Back to main / Uncommitted / Last commit / vs main
@@ -20,6 +22,22 @@
  *   5. "Back to main repo" restores the original dropdown
  *   6. Empty worktree shows appropriate empty state messages
  *   7. Detached HEAD worktree uses directory name as label
+ *
+ * EXPANDABLE DIFF CONTEXT:
+ *   8.  service-registry.ts — 4 disjoint hunks with gaps of 10-30 lines between them.
+ *       Each gap shows "N unmodified lines" separator with expand up/down/both buttons.
+ *   9.  Expand up/down reveals 100 lines at a time; small gaps (<100 lines) show
+ *       a single "expand all" button instead.
+ *   10. Top of file (above first hunk) and bottom of file (below last hunk) are expandable.
+ *   11. deprecated-helper.ts — a deleted file. Should show expansion above hunks only
+ *       (newContent is null, so newLines = []).
+ *   12. string-utils.ts → text-utils.ts — a renamed file. Expansion should use
+ *       oldPath for old content and filePath for new content.
+ *   13. event-emitter.ts — a brand-new file with only additions. Expansion above
+ *       the single hunk only (oldContent is null, so oldLines = []).
+ *   14. Switching diff types (uncommitted → last-commit → vs main) re-fetches
+ *       file contents for expansion — verify separators appear in all modes.
+ *   15. Split and unified views both show expansion separators.
  */
 
 import { $ } from "bun";
@@ -35,6 +53,10 @@ import { getGitContext, runGitDiff } from "@plannotator/server/git";
 import html from "../../apps/review/dist/index.html" with { type: "text" };
 
 const KEEP = process.argv.includes("--keep");
+
+// --- Load fixtures ---
+const FIXTURES_DIR = path.join(import.meta.dir, "fixtures");
+const fixture = (name: string) => Bun.file(path.join(FIXTURES_DIR, name)).text();
 
 // --- Setup temp repo with worktrees ---
 
@@ -52,6 +74,7 @@ await $`git init`.quiet().cwd(mainRepo);
 await $`git checkout -b main`.quiet().cwd(mainRepo);
 
 // Initial commit — a realistic small TypeScript project
+// Large files loaded from fixtures, small ones inlined
 const files: Record<string, string> = {
   "src/index.ts": [
     `import { App } from './app';`,
@@ -306,6 +329,10 @@ const files: Record<string, string> = {
     `- \`src/utils/\` — Shared utilities (logging, parsing, formatting)`,
     ``,
   ].join("\n"),
+  // Large files from fixtures — test expandable diff context
+  "src/services/registry.ts": await fixture("service-registry.ts"),
+  "src/utils/deprecated-helper.ts": await fixture("deprecated-helper.ts"),
+  "src/utils/string-utils.ts": await fixture("string-utils.ts"),
 };
 
 for (const [filePath, content] of Object.entries(files)) {
@@ -365,7 +392,36 @@ await Bun.write(
   ].join("\n"),
 );
 
-console.error("Created main repo with uncommitted changes (2 files modified)");
+// Disjoint hunks: service-registry.ts with 4 scattered edits (from fixture)
+await Bun.write(
+  path.join(mainRepo, "src/services/registry.ts"),
+  await fixture("service-registry-modified.ts"),
+);
+
+// Deleted file: deprecated-helper.ts removed entirely
+await $`git rm src/utils/deprecated-helper.ts`.quiet().cwd(mainRepo);
+
+// Renamed file: string-utils.ts → text-utils.ts with additions
+await $`git mv src/utils/string-utils.ts src/utils/text-utils.ts`.quiet().cwd(mainRepo);
+await Bun.write(
+  path.join(mainRepo, "src/utils/text-utils.ts"),
+  await fixture("text-utils.ts"),
+);
+
+// New file (only additions): event-emitter.ts — brand new with no old version
+await $`mkdir -p ${path.join(mainRepo, "src/events")}`.quiet();
+await Bun.write(
+  path.join(mainRepo, "src/events/emitter.ts"),
+  await fixture("event-emitter.ts"),
+);
+
+console.error("Created main repo with uncommitted changes:")
+console.error("  - src/index.ts — small edits (2 hunks)")
+console.error("  - src/utils/format.ts — modified + new function")
+console.error("  - src/services/registry.ts — 4 disjoint hunks (expansion test)")
+console.error("  - src/utils/deprecated-helper.ts — deleted file")
+console.error("  - src/utils/string-utils.ts → text-utils.ts — renamed + additions")
+console.error("  - src/events/emitter.ts — brand new file");
 
 // --- Worktree 1: feature-auth ---
 // Tests the basic case: a new untracked file (auth.ts) and a modified tracked
@@ -1032,15 +1088,27 @@ console.error("");
 console.error("Starting review server...");
 console.error("Browser should open automatically.");
 console.error("");
-console.error("Things to test:");
+console.error("=== WORKTREE TESTS ===");
 console.error("  1. Dropdown shows worktrees below a separator");
-console.error("  2. Select 'feature-auth' — dropdown switches to worktree mode");
-console.error("     (Back to main / Uncommitted / Last commit / vs main)");
-console.error("  3. 'Uncommitted' shows the rate-limit.ts file");
-console.error("  4. 'Last commit' shows the committed auth module (5 files)");
+console.error("  2. Select 'feature-auth' → worktree mode (Back / Uncommitted / Last commit / vs main)");
+console.error("  3. 'Uncommitted' shows rate-limit.ts");
+console.error("  4. 'Last commit' shows committed auth module (5 files)");
 console.error("  5. 'Back to main repo' restores original dropdown");
-console.error("  6. Select 'empty-branch' — worktree mode, all options empty");
-console.error("  7. Select 'wt-detached' — label uses directory name, not branch");
+console.error("  6. 'empty-branch' → worktree mode, all options empty");
+console.error("  7. 'wt-detached' → label uses directory name, not branch");
+console.error("");
+console.error("=== EXPANDABLE DIFF CONTEXT TESTS ===");
+console.error("  8.  registry.ts — 4 disjoint hunks. Between each pair, you should see");
+console.error("      'N unmodified lines' separators with expand up/down/both buttons.");
+console.error("  9.  Click expand up/down — reveals lines incrementally.");
+console.error("      Small gaps show a single 'expand all' button instead.");
+console.error("  10. Top-of-file (above first hunk) and bottom-of-file (below last hunk)");
+console.error("      should also be expandable.");
+console.error("  11. deprecated-helper.ts — DELETED file. Only old content for expansion.");
+console.error("  12. string-utils.ts → text-utils.ts — RENAMED. Old path used for old side.");
+console.error("  13. events/emitter.ts — NEW file. Only new content, expansion above hunk.");
+console.error("  14. Switch diff types (uncommitted → last-commit → vs main) — expansion works in all.");
+console.error("  15. Toggle split/unified — expansion separators appear in both views.");
 console.error("");
 
 const server = await startReviewServer({

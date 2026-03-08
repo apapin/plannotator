@@ -1,5 +1,5 @@
 #!/bin/bash
-# Test script for worktree support in code review
+# Test script for worktree support and expandable diff context in code review
 #
 # Usage:
 #   ./test-worktree-review.sh [--keep]
@@ -9,13 +9,12 @@
 #
 # What it does:
 #   1. Builds the review app (ensures latest code)
-#   2. Creates a temp git repo with 4 worktrees:
-#      - feature-auth: new file + modified file
-#      - fix-parser: modified file + untracked file
-#      - empty-branch: no changes (tests empty state)
-#      - detached HEAD: new file on detached HEAD
+#   2. Creates a temp git repo with:
+#      - Main repo: 6 uncommitted changes including disjoint hunks, deleted file,
+#        renamed file, and new file (for expandable diff context testing)
+#      - 4 worktrees: feature-auth, fix-parser, empty-branch, detached HEAD
 #   3. Launches review server — browser opens automatically
-#   4. You test the worktree dropdown and diff switching
+#   4. You test worktree dropdown, diff switching, and expandable context
 #   5. Cleans up on exit (unless --keep)
 
 set -e

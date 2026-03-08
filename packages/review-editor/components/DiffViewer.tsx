@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useEffect, useCallback, useState } from 'react';
 import { FileDiff } from '@pierre/diffs/react';
-import { getSingularPatch } from '@pierre/diffs';
+import { getSingularPatch, processFile } from '@pierre/diffs';
 import { CodeAnnotation, CodeAnnotationType, SelectedLineRange, DiffAnnotationMetadata } from '@plannotator/ui/types';
 import { useTheme } from '@plannotator/ui/components/ThemeProvider';
 import { detectLanguage } from '../utils/detectLanguage';
@@ -52,30 +52,32 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
   const fileDiff = useMemo(() => getSingularPatch(patch), [patch]);
 
   // Fetch full file contents for expandable context
-  const [fileLines, setFileLines] = useState<{ old: string[]; new: string[] } | null>(null);
+  const [fileContents, setFileContents] = useState<{ forPath: string; old: string | null; new: string | null } | null>(null);
 
   useEffect(() => {
-    setFileLines(null);
+    setFileContents(null);
     const params = new URLSearchParams({ path: filePath });
     if (oldPath) params.set('oldPath', oldPath);
     fetch(`/api/file-content?${params}`)
       .then(res => res.ok ? res.json() : null)
       .then((data: { oldContent: string | null; newContent: string | null } | null) => {
-        if (data) {
-          setFileLines({
-            old: data.oldContent?.split('\n') ?? [],
-            new: data.newContent?.split('\n') ?? [],
-          });
+        if (data && (data.oldContent != null || data.newContent != null)) {
+          setFileContents({ forPath: filePath, old: data.oldContent, new: data.newContent });
         }
       })
       .catch(() => {}); // Silent fallback — no expansion in demo mode
   }, [filePath, oldPath]);
 
-  // Augment parsed diff with file contents for expansion
+  // Re-parse the patch with full file contents so hunk indices are computed
+  // against the complete file (isPartial: false), enabling expansion.
   const augmentedDiff = useMemo(() => {
-    if (!fileLines) return fileDiff;
-    return { ...fileDiff, oldLines: fileLines.old, newLines: fileLines.new };
-  }, [fileDiff, fileLines]);
+    if (!fileContents || fileContents.forPath !== filePath || (fileContents.old == null && fileContents.new == null)) return fileDiff;
+    const result = processFile(patch, {
+      oldFile: fileContents.old != null ? { name: oldPath || filePath, contents: fileContents.old } : undefined,
+      newFile: fileContents.new != null ? { name: filePath, contents: fileContents.new } : undefined,
+    });
+    return result || fileDiff;
+  }, [patch, filePath, oldPath, fileContents, fileDiff]);
 
   // Clear pending selection when file changes
   const prevFilePathRef = useRef(filePath);

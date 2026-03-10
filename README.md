@@ -47,9 +47,6 @@ Plannotator lets you privately share plans, annotations, and feedback with colle
 - No accounts, no tracking, no cookies on the share portal
 - Fully open source and self-hostable ([see docs](https://plannotator.ai/docs/guides/sharing-and-collaboration/))
 
-> [!NOTE]
-> Short links are end-to-end encrypted. A single-use AES-256-GCM key is generated in your browser via the [Web Crypto API](https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/generateKey), used to encrypt the plan, and embedded in the URL fragment (`#key=...`). The key never leaves the browser — it is never sent to the paste service or any server. Only someone with the exact URL can decrypt the plan.
-
 ## Install
 
 - [Claude Code](#install-for-claude-code)
@@ -139,7 +136,7 @@ curl -fsSL https://plannotator.ai/install.sh | bash
 irm https://plannotator.ai/install.ps1 | iex
 ```
 
-**Then in Codex, run directly:**
+**Then in Codex — feedback flows back into the agent loop automatically:**
 
 ```
 !plannotator review           # Code review for current changes

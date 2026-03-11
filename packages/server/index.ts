@@ -10,7 +10,7 @@
  */
 
 import { resolve } from "path";
-import { isRemoteSession, getServerPort } from "./remote";
+import { startServer } from "./serve";
 import { openEditorDiff } from "./ide";
 import {
   saveToObsidian,
@@ -90,9 +90,6 @@ export interface ServerResult {
 
 // --- Server Implementation ---
 
-const MAX_RETRIES = 5;
-const RETRY_DELAY_MS = 500;
-
 /**
  * Start the Plannotator server
  *
@@ -107,8 +104,6 @@ export async function startPlannotatorServer(
 ): Promise<ServerResult> {
   const { plan, origin, htmlContent, permissionMode, sharingEnabled = true, shareBaseUrl, pasteApiUrl, onReady } = options;
 
-  const isRemote = isRemoteSession();
-  const configuredPort = getServerPort();
   const draftKey = contentHash(plan);
   const editorAnnotations = createEditorAnnotationHandler();
 
@@ -132,7 +127,6 @@ export async function startPlannotatorServer(
     project,
   };
 
-
   // Decision promise
   let resolveDecision: (result: {
     approved: boolean;
@@ -151,19 +145,12 @@ export async function startPlannotatorServer(
     resolveDecision = resolve;
   });
 
-  // Start server with retry logic
-  let server: ReturnType<typeof Bun.serve> | null = null;
+  const { server, port, url: serverUrl, isRemote } = await startServer({
+    fetch: async (req) => {
+      const url = new URL(req.url);
 
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      server = Bun.serve({
-        port: configuredPort,
-
-        async fetch(req) {
-          const url = new URL(req.url);
-
-          // API: Get a specific plan version from history
-          if (url.pathname === "/api/plan/version") {
+      // API: Get a specific plan version from history
+      if (url.pathname === "/api/plan/version") {
             const vParam = url.searchParams.get("v");
             if (!vParam) {
               return new Response("Missing v parameter", { status: 400 });
@@ -426,41 +413,16 @@ export async function startPlannotatorServer(
           return new Response(htmlContent, {
             headers: { "Content-Type": "text/html" },
           });
-        },
-      });
-
-      break; // Success, exit retry loop
-    } catch (err: unknown) {
-      const isAddressInUse =
-        err instanceof Error && err.message.includes("EADDRINUSE");
-
-      if (isAddressInUse && attempt < MAX_RETRIES) {
-        await Bun.sleep(RETRY_DELAY_MS);
-        continue;
-      }
-
-      if (isAddressInUse) {
-        const hint = isRemote ? " (set PLANNOTATOR_PORT to use different port)" : "";
-        throw new Error(`Port ${configuredPort} in use after ${MAX_RETRIES} retries${hint}`);
-      }
-
-      throw err;
-    }
-  }
-
-  if (!server) {
-    throw new Error("Failed to start server");
-  }
-
-  const serverUrl = `http://localhost:${server.port}`;
+    },
+  });
 
   // Notify caller that server is ready
   if (onReady) {
-    onReady(serverUrl, isRemote, server.port);
+    onReady(serverUrl, isRemote, port);
   }
 
   return {
-    port: server.port,
+    port,
     url: serverUrl,
     isRemote,
     waitForDecision: () => decisionPromise,

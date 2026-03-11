@@ -4,6 +4,7 @@
   "private": true,
   "exports": {
     "./compress": "./compress.ts",
-    "./crypto": "./crypto.ts"
+    "./crypto": "./crypto.ts",
+    "./checklist-types": "./checklist-types.ts"
   }
 }

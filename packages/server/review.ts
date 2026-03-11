@@ -9,7 +9,7 @@
  *   PLANNOTATOR_PORT   - Fixed port to use (default: random locally, 19432 for remote)
  */
 
-import { isRemoteSession, getServerPort } from "./remote";
+import { startServer } from "./serve";
 import { type DiffType, type GitContext, runGitDiff, getFileContentsForDiff, gitAddFile, gitResetFile, parseWorktreeDiffType, validateFilePath } from "./git";
 import { getRepoInfo } from "./repo";
 import { handleImage, handleUpload, handleAgents, handleServerReady, handleDraftSave, handleDraftLoad, handleDraftDelete, type OpencodeClient } from "./shared-handlers";
@@ -68,9 +68,6 @@ export interface ReviewServerResult {
 
 // --- Server Implementation ---
 
-const MAX_RETRIES = 5;
-const RETRY_DELAY_MS = 500;
-
 /**
  * Start the Code Review server
  *
@@ -93,9 +90,6 @@ export async function startReviewServer(
   let currentDiffType: DiffType = options.diffType || "uncommitted";
   let currentError = options.error;
 
-  const isRemote = isRemoteSession();
-  const configuredPort = getServerPort();
-
   // Detect repo info (cached for this session)
   const repoInfo = await getRepoInfo();
 
@@ -113,211 +107,179 @@ export async function startReviewServer(
     resolveDecision = resolve;
   });
 
-  // Start server with retry logic
-  let server: ReturnType<typeof Bun.serve> | null = null;
+  const { server, port, url: serverUrl, isRemote } = await startServer({
+    fetch: async (req) => {
+      const url = new URL(req.url);
 
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      server = Bun.serve({
-        port: configuredPort,
+      // API: Get diff content
+      if (url.pathname === "/api/diff" && req.method === "GET") {
+        return Response.json({
+          rawPatch: currentPatch,
+          gitRef: currentGitRef,
+          origin,
+          diffType: currentDiffType,
+          gitContext,
+          sharingEnabled,
+          shareBaseUrl,
+          repoInfo,
+          ...(currentError && { error: currentError }),
+        });
+      }
 
-        async fetch(req) {
-          const url = new URL(req.url);
+      // API: Switch diff type
+      if (url.pathname === "/api/diff/switch" && req.method === "POST") {
+        try {
+          const body = (await req.json()) as { diffType: DiffType };
+          let newDiffType = body.diffType;
 
-          // API: Get diff content
-          if (url.pathname === "/api/diff" && req.method === "GET") {
-            return Response.json({
-              rawPatch: currentPatch,
-              gitRef: currentGitRef,
-              origin,
-              diffType: currentDiffType,
-              gitContext,
-              sharingEnabled,
-              shareBaseUrl,
-              repoInfo,
-              ...(currentError && { error: currentError }),
-            });
-          }
-
-          // API: Switch diff type
-          if (url.pathname === "/api/diff/switch" && req.method === "POST") {
-            try {
-              const body = (await req.json()) as { diffType: DiffType };
-              let newDiffType = body.diffType;
-
-              if (!newDiffType) {
-                return Response.json(
-                  { error: "Missing diffType" },
-                  { status: 400 }
-                );
-              }
-
-              const defaultBranch = gitContext?.defaultBranch || "main";
-
-              // Run the new diff
-              const result = await runGitDiff(newDiffType, defaultBranch);
-
-              // Update state
-              currentPatch = result.patch;
-              currentGitRef = result.label;
-              currentDiffType = newDiffType;
-              currentError = result.error;
-
-              return Response.json({
-                rawPatch: currentPatch,
-                gitRef: currentGitRef,
-                diffType: currentDiffType,
-                ...(currentError && { error: currentError }),
-              });
-            } catch (err) {
-              const message =
-                err instanceof Error ? err.message : "Failed to switch diff";
-              return Response.json({ error: message }, { status: 500 });
-            }
-          }
-
-          // API: Get file content for expandable diff context
-          if (url.pathname === "/api/file-content" && req.method === "GET") {
-            const filePath = url.searchParams.get("path");
-            if (!filePath) {
-              return Response.json({ error: "Missing path" }, { status: 400 });
-            }
-            try { validateFilePath(filePath); } catch {
-              return Response.json({ error: "Invalid path" }, { status: 400 });
-            }
-            const oldPath = url.searchParams.get("oldPath") || undefined;
-            if (oldPath) {
-              try { validateFilePath(oldPath); } catch {
-                return Response.json({ error: "Invalid path" }, { status: 400 });
-              }
-            }
-            const defaultBranch = gitContext?.defaultBranch || "main";
-            const result = await getFileContentsForDiff(
-              currentDiffType,
-              defaultBranch,
-              filePath,
-              oldPath,
+          if (!newDiffType) {
+            return Response.json(
+              { error: "Missing diffType" },
+              { status: 400 }
             );
-            return Response.json(result);
           }
 
-          // API: Git add / reset (stage / unstage) a file
-          if (url.pathname === "/api/git-add" && req.method === "POST") {
-            try {
-              const body = (await req.json()) as { filePath: string; undo?: boolean };
-              if (!body.filePath) {
-                return Response.json({ error: "Missing filePath" }, { status: 400 });
-              }
+          const defaultBranch = gitContext?.defaultBranch || "main";
 
-              // Determine cwd for worktree support
-              let cwd: string | undefined;
-              if (currentDiffType.startsWith("worktree:")) {
-                const parsed = parseWorktreeDiffType(currentDiffType);
-                if (parsed) cwd = parsed.path;
-              }
+          // Run the new diff
+          const result = await runGitDiff(newDiffType, defaultBranch);
 
-              if (body.undo) {
-                await gitResetFile(body.filePath, cwd);
-              } else {
-                await gitAddFile(body.filePath, cwd);
-              }
+          // Update state
+          currentPatch = result.patch;
+          currentGitRef = result.label;
+          currentDiffType = newDiffType;
+          currentError = result.error;
 
-              return Response.json({ ok: true });
-            } catch (err) {
-              const message = err instanceof Error ? err.message : "Failed to git add";
-              return Response.json({ error: message }, { status: 500 });
-            }
-          }
-
-          // API: Serve images (local paths or temp uploads)
-          if (url.pathname === "/api/image") {
-            return handleImage(req);
-          }
-
-          // API: Upload image -> save to temp -> return path
-          if (url.pathname === "/api/upload" && req.method === "POST") {
-            return handleUpload(req);
-          }
-
-          // API: Get available agents (OpenCode only)
-          if (url.pathname === "/api/agents") {
-            return handleAgents(options.opencodeClient);
-          }
-
-          // API: Annotation draft persistence
-          if (url.pathname === "/api/draft") {
-            if (req.method === "POST") return handleDraftSave(req, draftKey);
-            if (req.method === "DELETE") return handleDraftDelete(draftKey);
-            return handleDraftLoad(draftKey);
-          }
-
-          // API: Editor annotations (VS Code extension)
-          const editorResponse = await editorAnnotations.handle(req, url);
-          if (editorResponse) return editorResponse;
-
-          // API: Submit review feedback
-          if (url.pathname === "/api/feedback" && req.method === "POST") {
-            try {
-              const body = (await req.json()) as {
-                feedback: string;
-                annotations: unknown[];
-                agentSwitch?: string;
-              };
-
-              deleteDraft(draftKey);
-              resolveDecision({
-                feedback: body.feedback || "",
-                annotations: body.annotations || [],
-                agentSwitch: body.agentSwitch,
-              });
-
-              return Response.json({ ok: true });
-            } catch (err) {
-              const message =
-                err instanceof Error ? err.message : "Failed to process feedback";
-              return Response.json({ error: message }, { status: 500 });
-            }
-          }
-
-          // Serve embedded HTML for all other routes (SPA)
-          return new Response(htmlContent, {
-            headers: { "Content-Type": "text/html" },
+          return Response.json({
+            rawPatch: currentPatch,
+            gitRef: currentGitRef,
+            diffType: currentDiffType,
+            ...(currentError && { error: currentError }),
           });
-        },
+        } catch (err) {
+          const message =
+            err instanceof Error ? err.message : "Failed to switch diff";
+          return Response.json({ error: message }, { status: 500 });
+        }
+      }
+
+      // API: Get file content for expandable diff context
+      if (url.pathname === "/api/file-content" && req.method === "GET") {
+        const filePath = url.searchParams.get("path");
+        if (!filePath) {
+          return Response.json({ error: "Missing path" }, { status: 400 });
+        }
+        try { validateFilePath(filePath); } catch {
+          return Response.json({ error: "Invalid path" }, { status: 400 });
+        }
+        const oldPath = url.searchParams.get("oldPath") || undefined;
+        if (oldPath) {
+          try { validateFilePath(oldPath); } catch {
+            return Response.json({ error: "Invalid path" }, { status: 400 });
+          }
+        }
+        const defaultBranch = gitContext?.defaultBranch || "main";
+        const result = await getFileContentsForDiff(
+          currentDiffType,
+          defaultBranch,
+          filePath,
+          oldPath,
+        );
+        return Response.json(result);
+      }
+
+      // API: Git add / reset (stage / unstage) a file
+      if (url.pathname === "/api/git-add" && req.method === "POST") {
+        try {
+          const body = (await req.json()) as { filePath: string; undo?: boolean };
+          if (!body.filePath) {
+            return Response.json({ error: "Missing filePath" }, { status: 400 });
+          }
+
+          // Determine cwd for worktree support
+          let cwd: string | undefined;
+          if (currentDiffType.startsWith("worktree:")) {
+            const parsed = parseWorktreeDiffType(currentDiffType);
+            if (parsed) cwd = parsed.path;
+          }
+
+          if (body.undo) {
+            await gitResetFile(body.filePath, cwd);
+          } else {
+            await gitAddFile(body.filePath, cwd);
+          }
+
+          return Response.json({ ok: true });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Failed to git add";
+          return Response.json({ error: message }, { status: 500 });
+        }
+      }
+
+      // API: Serve images (local paths or temp uploads)
+      if (url.pathname === "/api/image") {
+        return handleImage(req);
+      }
+
+      // API: Upload image -> save to temp -> return path
+      if (url.pathname === "/api/upload" && req.method === "POST") {
+        return handleUpload(req);
+      }
+
+      // API: Get available agents (OpenCode only)
+      if (url.pathname === "/api/agents") {
+        return handleAgents(options.opencodeClient);
+      }
+
+      // API: Annotation draft persistence
+      if (url.pathname === "/api/draft") {
+        if (req.method === "POST") return handleDraftSave(req, draftKey);
+        if (req.method === "DELETE") return handleDraftDelete(draftKey);
+        return handleDraftLoad(draftKey);
+      }
+
+      // API: Editor annotations (VS Code extension)
+      const editorResponse = await editorAnnotations.handle(req, url);
+      if (editorResponse) return editorResponse;
+
+      // API: Submit review feedback
+      if (url.pathname === "/api/feedback" && req.method === "POST") {
+        try {
+          const body = (await req.json()) as {
+            feedback: string;
+            annotations: unknown[];
+            agentSwitch?: string;
+          };
+
+          deleteDraft(draftKey);
+          resolveDecision({
+            feedback: body.feedback || "",
+            annotations: body.annotations || [],
+            agentSwitch: body.agentSwitch,
+          });
+
+          return Response.json({ ok: true });
+        } catch (err) {
+          const message =
+            err instanceof Error ? err.message : "Failed to process feedback";
+          return Response.json({ error: message }, { status: 500 });
+        }
+      }
+
+      // Serve embedded HTML for all other routes (SPA)
+      return new Response(htmlContent, {
+        headers: { "Content-Type": "text/html" },
       });
-
-      break; // Success, exit retry loop
-    } catch (err: unknown) {
-      const isAddressInUse =
-        err instanceof Error && err.message.includes("EADDRINUSE");
-
-      if (isAddressInUse && attempt < MAX_RETRIES) {
-        await Bun.sleep(RETRY_DELAY_MS);
-        continue;
-      }
-
-      if (isAddressInUse) {
-        const hint = isRemote ? " (set PLANNOTATOR_PORT to use different port)" : "";
-        throw new Error(`Port ${configuredPort} in use after ${MAX_RETRIES} retries${hint}`);
-      }
-
-      throw err;
-    }
-  }
-
-  if (!server) {
-    throw new Error("Failed to start server");
-  }
-
-  const serverUrl = `http://localhost:${server.port}`;
+    },
+  });
 
   // Notify caller that server is ready
   if (onReady) {
-    onReady(serverUrl, isRemote, server.port);
+    onReady(serverUrl, isRemote, port);
   }
 
   return {
-    port: server.port,
+    port,
     url: serverUrl,
     isRemote,
     waitForDecision: () => decisionPromise,

@@ -11,7 +11,7 @@
  *   PLANNOTATOR_PORT   - Fixed port to use (default: random locally, 19432 for remote)
  */
 
-import { isRemoteSession, getServerPort } from "./remote";
+import { startServer } from "./serve";
 import { getRepoInfo } from "./repo";
 import { handleImage, handleUpload, handleServerReady, handleDraftSave, handleDraftLoad, handleDraftDelete } from "./shared-handlers";
 import { contentHash, deleteDraft } from "./draft";
@@ -58,9 +58,6 @@ export interface AnnotateServerResult {
 
 // --- Server Implementation ---
 
-const MAX_RETRIES = 5;
-const RETRY_DELAY_MS = 500;
-
 /**
  * Start the Annotate server
  *
@@ -82,8 +79,6 @@ export async function startAnnotateServer(
     onReady,
   } = options;
 
-  const isRemote = isRemoteSession();
-  const configuredPort = getServerPort();
   const draftKey = contentHash(markdown);
 
   // Detect repo info (cached for this session)
@@ -101,114 +96,78 @@ export async function startAnnotateServer(
     resolveDecision = resolve;
   });
 
-  // Start server with retry logic
-  let server: ReturnType<typeof Bun.serve> | null = null;
+  const { server, port, url: serverUrl, isRemote } = await startServer({
+    fetch: async (req) => {
+      const url = new URL(req.url);
 
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      server = Bun.serve({
-        port: configuredPort,
+      // API: Get plan content (reuse /api/plan so the plan editor UI works)
+      if (url.pathname === "/api/plan" && req.method === "GET") {
+        return Response.json({
+          plan: markdown,
+          origin,
+          mode: "annotate",
+          filePath,
+          sharingEnabled,
+          shareBaseUrl,
+          repoInfo,
+        });
+      }
 
-        async fetch(req) {
-          const url = new URL(req.url);
+      // API: Serve images (local paths or temp uploads)
+      if (url.pathname === "/api/image") {
+        return handleImage(req);
+      }
 
-          // API: Get plan content (reuse /api/plan so the plan editor UI works)
-          if (url.pathname === "/api/plan" && req.method === "GET") {
-            return Response.json({
-              plan: markdown,
-              origin,
-              mode: "annotate",
-              filePath,
-              sharingEnabled,
-              shareBaseUrl,
-              repoInfo,
-            });
-          }
+      // API: Upload image -> save to temp -> return path
+      if (url.pathname === "/api/upload" && req.method === "POST") {
+        return handleUpload(req);
+      }
 
-          // API: Serve images (local paths or temp uploads)
-          if (url.pathname === "/api/image") {
-            return handleImage(req);
-          }
+      // API: Annotation draft persistence
+      if (url.pathname === "/api/draft") {
+        if (req.method === "POST") return handleDraftSave(req, draftKey);
+        if (req.method === "DELETE") return handleDraftDelete(draftKey);
+        return handleDraftLoad(draftKey);
+      }
 
-          // API: Upload image -> save to temp -> return path
-          if (url.pathname === "/api/upload" && req.method === "POST") {
-            return handleUpload(req);
-          }
+      // API: Submit annotation feedback
+      if (url.pathname === "/api/feedback" && req.method === "POST") {
+        try {
+          const body = (await req.json()) as {
+            feedback: string;
+            annotations: unknown[];
+          };
 
-          // API: Annotation draft persistence
-          if (url.pathname === "/api/draft") {
-            if (req.method === "POST") return handleDraftSave(req, draftKey);
-            if (req.method === "DELETE") return handleDraftDelete(draftKey);
-            return handleDraftLoad(draftKey);
-          }
-
-          // API: Submit annotation feedback
-          if (url.pathname === "/api/feedback" && req.method === "POST") {
-            try {
-              const body = (await req.json()) as {
-                feedback: string;
-                annotations: unknown[];
-              };
-
-              deleteDraft(draftKey);
-              resolveDecision({
-                feedback: body.feedback || "",
-                annotations: body.annotations || [],
-              });
-
-              return Response.json({ ok: true });
-            } catch (err) {
-              const message =
-                err instanceof Error
-                  ? err.message
-                  : "Failed to process feedback";
-              return Response.json({ error: message }, { status: 500 });
-            }
-          }
-
-          // Serve embedded HTML for all other routes (SPA)
-          return new Response(htmlContent, {
-            headers: { "Content-Type": "text/html" },
+          deleteDraft(draftKey);
+          resolveDecision({
+            feedback: body.feedback || "",
+            annotations: body.annotations || [],
           });
-        },
+
+          return Response.json({ ok: true });
+        } catch (err) {
+          const message =
+            err instanceof Error
+              ? err.message
+              : "Failed to process feedback";
+          return Response.json({ error: message }, { status: 500 });
+        }
+      }
+
+      // Serve embedded HTML for all other routes (SPA)
+      return new Response(htmlContent, {
+        headers: { "Content-Type": "text/html" },
       });
-
-      break; // Success, exit retry loop
-    } catch (err: unknown) {
-      const isAddressInUse =
-        err instanceof Error && err.message.includes("EADDRINUSE");
-
-      if (isAddressInUse && attempt < MAX_RETRIES) {
-        await Bun.sleep(RETRY_DELAY_MS);
-        continue;
-      }
-
-      if (isAddressInUse) {
-        const hint = isRemote
-          ? " (set PLANNOTATOR_PORT to use different port)"
-          : "";
-        throw new Error(
-          `Port ${configuredPort} in use after ${MAX_RETRIES} retries${hint}`
-        );
-      }
-
-      throw err;
-    }
-  }
-
-  if (!server) {
-    throw new Error("Failed to start server");
-  }
-
-  const serverUrl = `http://localhost:${server.port}`;
+    },
+  });
 
   // Notify caller that server is ready
   if (onReady) {
-    onReady(serverUrl, isRemote, server.port);
+    onReady(serverUrl, isRemote, port);
   }
 
   return {
-    port: server.port,
+    port,
     url: serverUrl,
     isRemote,
     waitForDecision: () => decisionPromise,

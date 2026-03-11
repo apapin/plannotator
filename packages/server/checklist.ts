@@ -39,6 +39,10 @@ export interface ChecklistServerOptions {
   origin?: "opencode" | "claude-code" | "pi";
   /** Project name for storage scoping */
   project?: string;
+  /** Pre-existing results to restore (from saved checklist files) */
+  initialResults?: ChecklistItemResult[];
+  /** Pre-existing global notes to restore (from saved checklist files) */
+  initialGlobalNotes?: string[];
   /** Called when server starts with the URL, remote status, and port */
   onReady?: (url: string, isRemote: boolean, port: number) => void;
 }
@@ -167,12 +171,14 @@ export function formatChecklistFeedback(
   let passed = 0;
   let failed = 0;
   let skipped = 0;
+  let pending = 0;
 
   for (const item of checklist.items) {
     const result = resultMap.get(item.id);
     if (result?.status === "passed") passed++;
     else if (result?.status === "failed") failed++;
     else if (result?.status === "skipped") skipped++;
+    else pending++;
   }
 
   const lines: string[] = [];
@@ -182,7 +188,7 @@ export function formatChecklistFeedback(
   lines.push("## Summary");
   lines.push(`- **Title**: ${checklist.title}`);
   lines.push(`- **Total**: ${checklist.items.length} items`);
-  lines.push(`- **Passed**: ${passed} | **Failed**: ${failed} | **Skipped**: ${skipped}`);
+  lines.push(`- **Passed**: ${passed} | **Failed**: ${failed} | **Skipped**: ${skipped}${pending > 0 ? ` | **Pending**: ${pending}` : ""}`);
   lines.push("");
 
   // Failed items — full detail
@@ -293,7 +299,7 @@ export function formatChecklistFeedback(
         lines.push("");
       }
 
-      if (automations.approveIfAllPass && failed === 0 && skipped === 0) {
+      if (automations.approveIfAllPass && failed === 0 && skipped === 0 && pending === 0) {
         if (pr.provider === "github") {
           lines.push("**Approve PR**: All checklist items passed. The developer requested auto-approval.");
           lines.push(`Use the \`gh\` CLI to approve PR #${pr.number}:`);
@@ -314,7 +320,7 @@ export function formatChecklistFeedback(
           lines.push("```");
         }
         lines.push("");
-      } else if (automations.approveIfAllPass && (failed > 0 || skipped > 0)) {
+      } else if (automations.approveIfAllPass && (failed > 0 || skipped > 0 || pending > 0)) {
         lines.push("**Approve PR**: Skipped — not all items passed. Fix the failed/skipped items and re-run the checklist.");
         lines.push("");
       }
@@ -382,6 +388,8 @@ export async function startChecklistServer(
     htmlContent,
     origin,
     project = "_unknown",
+    initialResults,
+    initialGlobalNotes,
     onReady,
   } = options;
 
@@ -403,6 +411,8 @@ export async function startChecklistServer(
           checklist,
           origin,
           mode: "checklist",
+          ...(initialResults && { initialResults }),
+          ...(initialGlobalNotes && { initialGlobalNotes }),
         });
       }
 

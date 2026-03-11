@@ -44,6 +44,8 @@ plannotator/
 │   │   ├── draft.ts              # Annotation draft persistence (~/.plannotator/drafts/)
 │   │   ├── integrations.ts       # Obsidian, Bear integrations
 │   │   ├── ide.ts                # VS Code diff integration (openEditorDiff)
+│   │   ├── checklist.ts           # startChecklistServer(), formatChecklistFeedback()
+│   │   ├── serve.ts              # Shared Bun server startup (startServer)
 │   │   ├── editor-annotations.ts  # VS Code editor annotation endpoints
 │   │   └── project.ts            # Project name detection for tags
 │   ├── ui/                       # Shared React components
@@ -53,13 +55,19 @@ plannotator/
 │   │   ├── utils/                # parser.ts, sharing.ts, storage.ts, planSave.ts, agentSwitch.ts, planDiffEngine.ts
 │   │   ├── hooks/                # useSharing.ts, usePlanDiff.ts, useSidebar.ts, useLinkedDoc.ts, useAnnotationDraft.ts, useCodeAnnotationDraft.ts
 │   │   └── types.ts
-│   ├── shared/                   # Cross-package types (EditorAnnotation)
+│   ├── shared/                   # Cross-package types (EditorAnnotation, checklist-types)
 │   ├── editor/                   # Plan review App.tsx
-│   └── review-editor/            # Code review UI
-│       ├── App.tsx               # Main review app
-│       ├── components/           # DiffViewer, FileTree, ReviewPanel
-│       ├── demoData.ts           # Demo diff for standalone mode
-│       └── index.css             # Review-specific styles
+│   ├── review-editor/            # Code review UI
+│   │   ├── App.tsx               # Main review app
+│   │   ├── components/           # DiffViewer, FileTree, ReviewPanel
+│   │   ├── demoData.ts           # Demo diff for standalone mode
+│   │   └── index.css             # Review-specific styles
+│   └── checklist-editor/         # QA checklist UI
+│       ├── App.tsx               # Main checklist app
+│       ├── components/           # ChecklistItem, ChecklistGroup, ChecklistHeader, etc.
+│       ├── hooks/                # useChecklistState, useChecklistProgress, useChecklistDraft
+│       └── index.css             # Checklist-specific styles
+├── .agents/skills/checklist/      # QA checklist skill (SKILL.md)
 ├── .claude-plugin/marketplace.json  # For marketplace install
 └── legacy/                       # Old pre-monorepo code (reference only)
 ```
@@ -194,6 +202,16 @@ Send Annotations → feedback sent to agent session
 | `/api/image`          | GET    | Serve image by path query param            |
 | `/api/upload`         | POST   | Upload image, returns `{ path, originalName }` |
 | `/api/draft`          | GET/POST/DELETE | Auto-save annotation drafts to survive server crashes |
+
+### Checklist Server (`packages/server/checklist.ts`)
+
+| Endpoint              | Method | Purpose                                    |
+| --------------------- | ------ | ------------------------------------------ |
+| `/api/checklist`      | GET    | Returns `{ checklist, origin, mode, initialResults?, initialGlobalNotes? }` |
+| `/api/feedback`       | POST   | Submit results (body: results, globalNotes, automations, agentSwitch) |
+| `/api/image`          | GET    | Serve image by path query param            |
+| `/api/upload`         | POST   | Upload image, returns `{ path, originalName }` |
+| `/api/draft`          | GET/POST/DELETE | Auto-save checklist drafts to survive server crashes |
 
 All servers use random ports locally or fixed port (`19432`) in remote mode.
 
@@ -358,6 +376,7 @@ bun install
 # Run any app
 bun run dev:hook       # Hook server (plan review)
 bun run dev:review     # Review editor (code review)
+bun run dev:checklist  # Checklist editor (QA checklist)
 bun run dev:portal     # Portal editor
 bun run dev:marketing  # Marketing site
 bun run dev:vscode     # VS Code extension (watch mode)
@@ -368,7 +387,8 @@ bun run dev:vscode     # VS Code extension (watch mode)
 ```bash
 bun run build:hook       # Single-file HTML for hook server
 bun run build:review     # Code review editor
-bun run build:opencode   # OpenCode plugin (copies HTML from hook + review)
+bun run build:checklist  # QA checklist editor
+bun run build:opencode   # OpenCode plugin (copies HTML from hook + review + checklist)
 bun run build:portal     # Static build for share.plannotator.ai
 bun run build:marketing  # Static build for plannotator.ai
 bun run build:vscode     # VS Code extension bundle

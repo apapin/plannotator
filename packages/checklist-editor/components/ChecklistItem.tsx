@@ -155,6 +155,44 @@ export const ChecklistItem: React.FC<ChecklistItemProps> = ({
 // Simple markdown renderer for description text
 // ---------------------------------------------------------------------------
 
+function renderInlineMarkdown(text: string): React.ReactNode {
+  const parts: React.ReactNode[] = [];
+  let remaining = text;
+  let key = 0;
+
+  while (remaining.length > 0) {
+    // Bold: **text**
+    let match = remaining.match(/^\*\*(.+?)\*\*/);
+    if (match) {
+      parts.push(<strong key={key++} className="font-semibold">{renderInlineMarkdown(match[1])}</strong>);
+      remaining = remaining.slice(match[0].length);
+      continue;
+    }
+
+    // Inline code: `code`
+    match = remaining.match(/^`([^`]+)`/);
+    if (match) {
+      parts.push(<code key={key++} className="px-1.5 py-0.5 rounded bg-muted text-sm font-mono">{match[1]}</code>);
+      remaining = remaining.slice(match[0].length);
+      continue;
+    }
+
+    // Plain text — consume up to next special character
+    match = remaining.match(/^[^*`]+/);
+    if (match) {
+      parts.push(<span key={key++}>{match[0]}</span>);
+      remaining = remaining.slice(match[0].length);
+      continue;
+    }
+
+    // Single * or ` that didn't match a pattern — consume one char
+    parts.push(<span key={key++}>{remaining[0]}</span>);
+    remaining = remaining.slice(1);
+  }
+
+  return <>{parts}</>;
+}
+
 function renderSimpleMarkdown(text: string): React.ReactNode {
   const lines = text.split('\n');
   const elements: React.ReactNode[] = [];
@@ -185,13 +223,8 @@ function renderSimpleMarkdown(text: string): React.ReactNode {
       continue;
     }
 
-    // Inline code
-    const rendered = line.replace(/`([^`]+)`/g, '<code>$1</code>');
-    // Bold
-    const withBold = rendered.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-
     elements.push(
-      <p key={`p-${i}`} dangerouslySetInnerHTML={{ __html: withBold }} />,
+      <p key={`p-${i}`}>{renderInlineMarkdown(line)}</p>,
     );
   }
 

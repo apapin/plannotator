@@ -13,7 +13,7 @@ import { useChecklistState } from './hooks/useChecklistState';
 import { useChecklistProgress } from './hooks/useChecklistProgress';
 import { useChecklistDraft } from './hooks/useChecklistDraft';
 import { exportChecklistResults } from './utils/exportChecklist';
-import type { Checklist, ChecklistItem, ChecklistItemStatus } from './hooks/useChecklistState';
+import type { Checklist, ChecklistItem, ChecklistItemStatus, ChecklistItemResult } from './hooks/useChecklistState';
 import type { ChecklistPR } from '@plannotator/shared/checklist-types';
 import type { ChecklistAutomations } from './components/ChecklistAnnotationPanel';
 import type { ImageAttachment } from '@plannotator/ui/types';
@@ -153,6 +153,8 @@ const DEMO_CHECKLIST: Checklist = {
 const ChecklistApp: React.FC = () => {
   const [checklist, setChecklist] = useState<Checklist | null>(null);
   const [origin, setOrigin] = useState<string | null>(null);
+  const [initialResults, setInitialResults] = useState<ChecklistItemResult[] | undefined>();
+  const [initialGlobalNotes, setInitialGlobalNotes] = useState<string[] | undefined>();
   const [isLoading, setIsLoading] = useState(true);
 
   // Fetch checklist data
@@ -162,9 +164,11 @@ const ChecklistApp: React.FC = () => {
         if (!res.ok) throw new Error('Not in API mode');
         return res.json();
       })
-      .then((data: { checklist: Checklist; origin?: string }) => {
+      .then((data: { checklist: Checklist; origin?: string; initialResults?: ChecklistItemResult[]; initialGlobalNotes?: string[] }) => {
         setChecklist(data.checklist);
         if (data.origin) setOrigin(data.origin);
+        if (data.initialResults) setInitialResults(data.initialResults);
+        if (data.initialGlobalNotes) setInitialGlobalNotes(data.initialGlobalNotes);
       })
       .catch(() => {
         // Demo mode
@@ -185,7 +189,7 @@ const ChecklistApp: React.FC = () => {
 
   return (
     <ThemeProvider defaultTheme="dark">
-      <ChecklistAppInner checklist={checklist} origin={origin} />
+      <ChecklistAppInner checklist={checklist} origin={origin} initialResults={initialResults} initialGlobalNotes={initialGlobalNotes} />
     </ThemeProvider>
   );
 };
@@ -197,6 +201,8 @@ const ChecklistApp: React.FC = () => {
 interface ChecklistAppInnerProps {
   checklist: Checklist;
   origin: string | null;
+  initialResults?: ChecklistItemResult[];
+  initialGlobalNotes?: string[];
 }
 
 // Note popover state
@@ -205,7 +211,7 @@ interface NotePopoverState {
   itemId: string | null; // null = global comment
 }
 
-const ChecklistAppInner: React.FC<ChecklistAppInnerProps> = ({ checklist, origin }) => {
+const ChecklistAppInner: React.FC<ChecklistAppInnerProps> = ({ checklist, origin, initialResults, initialGlobalNotes }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState<'approved' | 'feedback' | false>(false);
   const [globalNotes, setGlobalNotes] = useState<string[]>([]);
@@ -242,6 +248,17 @@ const ChecklistAppInner: React.FC<ChecklistAppInnerProps> = ({ checklist, origin
       if (restored.globalNotes) setGlobalNotes(restored.globalNotes);
     }
   }, [restoreDraft, state.restoreResults]);
+
+  // Restore initial results from saved checklist file (--file flag)
+  useEffect(() => {
+    if (initialResults?.length) {
+      state.restoreResults(initialResults);
+    }
+    if (initialGlobalNotes?.length) {
+      setGlobalNotes(initialGlobalNotes);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // One-time on mount
 
   // Toggle item expansion
   const handleToggleExpand = useCallback((id: string) => {

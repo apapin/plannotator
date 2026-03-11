@@ -594,31 +594,35 @@ interface ChecklistType {
   title: string;
   summary: string;
   items: ChecklistItemType[];
+  pr?: { number: number; url: string; provider: string; title?: string; branch?: string };
 }
 
 interface ChecklistItemResultType {
   id: string;
   status: "passed" | "failed" | "skipped" | "pending";
-  notes?: string;
+  notes?: string[] | string;
   images?: { path: string; name: string }[];
 }
 
 function formatChecklistFeedback(
   checklist: ChecklistType,
   results: ChecklistItemResultType[],
-  globalNotes?: string,
+  globalNotes?: string[] | string,
+  automations?: { postToPR?: boolean; approveIfAllPass?: boolean },
 ): string {
   const resultMap = new Map(results.map((r) => [r.id, r]));
 
   let passed = 0;
   let failed = 0;
   let skipped = 0;
+  let pending = 0;
 
   for (const item of checklist.items) {
     const result = resultMap.get(item.id);
     if (result?.status === "passed") passed++;
     else if (result?.status === "failed") failed++;
     else if (result?.status === "skipped") skipped++;
+    else pending++;
   }
 
   const lines: string[] = [];
@@ -628,7 +632,7 @@ function formatChecklistFeedback(
   lines.push("## Summary");
   lines.push(`- **Title**: ${checklist.title}`);
   lines.push(`- **Total**: ${checklist.items.length} items`);
-  lines.push(`- **Passed**: ${passed} | **Failed**: ${failed} | **Skipped**: ${skipped}`);
+  lines.push(`- **Passed**: ${passed} | **Failed**: ${failed} | **Skipped**: ${skipped}${pending > 0 ? ` | **Pending**: ${pending}` : ""}`);
   lines.push("");
 
   const failedItems = checklist.items.filter(
@@ -644,7 +648,10 @@ function formatChecklistFeedback(
       lines.push(`**Category**: ${item.category}`);
       if (item.critical) lines.push(`**Critical**: yes`);
       if (item.files?.length) lines.push(`**Files**: ${item.files.join(", ")}`);
-      if (result.notes) lines.push(`**Developer notes**: ${result.notes}`);
+      const itemNotes = Array.isArray(result.notes) ? result.notes : result.notes ? [result.notes] : [];
+      for (const note of itemNotes) {
+        lines.push(`**Developer notes**: ${note}`);
+      }
       if (result.images?.length) {
         for (const img of result.images) {
           lines.push(`[${img.name}] ${img.path}`);
@@ -664,7 +671,10 @@ function formatChecklistFeedback(
       const result = resultMap.get(item.id)!;
       lines.push(`### ${item.id}: ${item.check}`);
       lines.push(`**Status**: SKIPPED`);
-      if (result.notes) lines.push(`**Reason**: ${result.notes}`);
+      const skipNotes = Array.isArray(result.notes) ? result.notes : result.notes ? [result.notes] : [];
+      for (const note of skipNotes) {
+        lines.push(`**Reason**: ${note}`);
+      }
       lines.push("");
     }
   }
@@ -677,17 +687,74 @@ function formatChecklistFeedback(
     lines.push("");
     for (const item of passedItems) {
       const result = resultMap.get(item.id);
-      const notes = result?.notes ? ` — ${result.notes}` : "";
-      lines.push(`- [PASS] ${item.id}: ${item.check}${notes}`);
+      const passNotes = result ? (Array.isArray(result.notes) ? result.notes : result.notes ? [result.notes] : []) : [];
+      const notesSuffix = passNotes.length > 0 ? ` — ${passNotes.join("; ")}` : "";
+      lines.push(`- [PASS] ${item.id}: ${item.check}${notesSuffix}`);
     }
     lines.push("");
   }
 
-  if (globalNotes?.trim()) {
+  const notes = Array.isArray(globalNotes) ? globalNotes : globalNotes ? [globalNotes] : [];
+  if (notes.length > 0) {
     lines.push("## Developer Comments");
     lines.push("");
-    lines.push(`> ${globalNotes.trim().replace(/\n/g, "\n> ")}`);
-    lines.push("");
+    for (const note of notes) {
+      lines.push(`> ${note.trim().replace(/\n/g, "\n> ")}`);
+      lines.push("");
+    }
+  }
+
+  // Automations (PR integration)
+  if (automations && checklist.pr) {
+    const pr = checklist.pr;
+
+    if (automations.postToPR) {
+      lines.push("## Post Results to PR");
+      lines.push("");
+      if (pr.provider === "github") {
+        lines.push(`Post a summary comment to PR #${pr.number}:`);
+        lines.push("```bash");
+        lines.push(`gh pr comment ${pr.number} --body 'QA Checklist: ${passed} passed, ${failed} failed, ${skipped} skipped out of ${checklist.items.length} items'`);
+        lines.push("```");
+      } else if (pr.provider === "gitlab") {
+        lines.push(`Post a summary note to MR !${pr.number}:`);
+        lines.push("```bash");
+        lines.push(`glab mr note ${pr.number} --message 'QA Checklist: ${passed} passed, ${failed} failed, ${skipped} skipped out of ${checklist.items.length} items'`);
+        lines.push("```");
+      } else if (pr.provider === "azure-devops") {
+        lines.push(`Post a summary comment to PR #${pr.number}:`);
+        lines.push("```bash");
+        lines.push(`az repos pr update --id ${pr.number} --description 'QA Checklist: ${passed} passed, ${failed} failed, ${skipped} skipped out of ${checklist.items.length} items'`);
+        lines.push("```");
+      }
+      lines.push("");
+    }
+
+    if (automations.approveIfAllPass && failed === 0 && skipped === 0 && pending === 0) {
+      if (pr.provider === "github") {
+        lines.push("**Approve PR**: All checklist items passed. The developer requested auto-approval.");
+        lines.push(`Use the \`gh\` CLI to approve PR #${pr.number}:`);
+        lines.push("```bash");
+        lines.push(`gh pr review ${pr.number} --approve --body 'QA checklist passed (${passed}/${passed} items)'`);
+        lines.push("```");
+      } else if (pr.provider === "gitlab") {
+        lines.push("**Approve MR**: All checklist items passed. The developer requested auto-approval.");
+        lines.push(`Use the \`glab\` CLI to approve MR !${pr.number}:`);
+        lines.push("```bash");
+        lines.push(`glab mr approve ${pr.number}`);
+        lines.push("```");
+      } else if (pr.provider === "azure-devops") {
+        lines.push("**Approve PR**: All checklist items passed. The developer requested auto-approval.");
+        lines.push(`Use the \`az\` CLI to approve PR #${pr.number}:`);
+        lines.push("```bash");
+        lines.push(`az repos pr set-vote --id ${pr.number} --vote approve`);
+        lines.push("```");
+      }
+      lines.push("");
+    } else if (automations.approveIfAllPass && (failed > 0 || skipped > 0 || pending > 0)) {
+      lines.push("**Approve PR**: Skipped — not all items passed. Fix the failed/skipped items and re-run the checklist.");
+      lines.push("");
+    }
   }
 
   return lines.join("\n");
@@ -765,7 +832,8 @@ export function startChecklistServer(options: {
     } else if (url.pathname === "/api/feedback" && req.method === "POST") {
       const body = await parseBody(req) as {
         results?: ChecklistItemResultType[];
-        globalNotes?: string;
+        globalNotes?: string[] | string;
+        automations?: { postToPR?: boolean; approveIfAllPass?: boolean };
         agentSwitch?: string;
       };
 
@@ -788,6 +856,7 @@ export function startChecklistServer(options: {
         options.checklist,
         results,
         body.globalNotes,
+        body.automations,
       );
 
       resolveDecision({

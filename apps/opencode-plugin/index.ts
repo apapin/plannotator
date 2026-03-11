@@ -35,6 +35,7 @@ import {
 import { getGitContext, runGitDiff } from "@plannotator/server/git";
 import { writeRemoteShareLink } from "@plannotator/server/share-url";
 import { resolveMarkdownFile } from "@plannotator/server/resolve-file";
+import { detectProjectName } from "@plannotator/server/project";
 
 // @ts-ignore - Bun import attribute for text
 import indexHtml from "./plannotator.html" with { type: "text" };
@@ -380,9 +381,11 @@ Do NOT proceed with implementation until your plan is approved.
           message: "Opening checklist UI...",
         });
 
+        const checklistProject = (await detectProjectName()) ?? "_unknown";
         const server = await startChecklistServer({
           checklist: checklistData as import("@plannotator/shared/checklist-types").Checklist,
           origin: "opencode",
+          project: checklistProject,
           htmlContent: checklistHtmlContent,
           onReady: handleChecklistServerReady,
         });

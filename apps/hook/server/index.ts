@@ -319,8 +319,13 @@ if (args[0] === "sessions") {
   }
 
   // Unwrap saved checklist files (which have { checklist, results, ... })
+  let initialResults: import("@plannotator/shared/checklist-types").ChecklistItemResult[] | undefined;
+  let initialGlobalNotes: string[] | undefined;
   if (checklistData && typeof checklistData === "object" && "checklist" in checklistData) {
-    checklistData = (checklistData as Record<string, unknown>).checklist;
+    const saved = checklistData as Record<string, unknown>;
+    initialResults = saved.results as typeof initialResults;
+    initialGlobalNotes = saved.globalNotes as typeof initialGlobalNotes;
+    checklistData = saved.checklist;
   }
 
   const errors = validateChecklist(checklistData);
@@ -341,8 +346,14 @@ if (args[0] === "sessions") {
     origin: "claude-code",
     project: checklistProject,
     htmlContent: checklistHtmlContent,
-    onReady: (url, isRemote, port) => {
+    initialResults,
+    initialGlobalNotes,
+    onReady: async (url, isRemote, port) => {
       handleChecklistServerReady(url, isRemote, port);
+
+      if (isRemote && sharingEnabled) {
+        await writeRemoteShareLink(JSON.stringify(checklist), shareBaseUrl, "review the checklist", "checklist only").catch(() => {});
+      }
     },
   });
 

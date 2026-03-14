@@ -1,0 +1,101 @@
+.theme-gruvbox {
+  --background: rgb(40, 40, 40);
+  --foreground: rgb(235, 219, 178);
+  --card: rgb(60, 56, 54);
+  --card-foreground: rgb(235, 219, 178);
+  --popover: rgb(60, 56, 54);
+  --popover-foreground: rgb(235, 219, 178);
+  --primary: rgb(69, 133, 136);
+  --primary-foreground: rgb(235, 219, 178);
+  --secondary: rgb(102, 92, 84);
+  --secondary-foreground: rgb(235, 219, 178);
+  --muted: rgb(102, 92, 84);
+  --muted-foreground: rgb(168, 153, 132);
+  --accent: rgb(104, 157, 106);
+  --accent-foreground: rgb(40, 40, 40);
+  --destructive: rgb(204, 36, 29);
+  --destructive-foreground: rgb(235, 219, 178);
+  --border: rgb(60, 56, 54);
+  --input: rgb(60, 56, 54);
+  --ring: rgb(69, 133, 136);
+  --chart-1: rgb(204, 36, 29);
+  --chart-2: rgb(152, 151, 26);
+  --chart-3: rgb(215, 153, 33);
+  --chart-4: rgb(177, 98, 134);
+  --chart-5: rgb(104, 157, 106);
+  --sidebar: rgb(27, 27, 27);
+  --sidebar-foreground: rgb(235, 219, 178);
+  --sidebar-primary: rgb(69, 133, 136);
+  --sidebar-primary-foreground: rgb(235, 219, 178);
+  --sidebar-accent: rgb(104, 157, 106);
+  --sidebar-accent-foreground: rgb(40, 40, 40);
+  --sidebar-border: rgb(60, 56, 54);
+  --sidebar-ring: rgb(69, 133, 136);
+  --font-sans: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji",
+    "Segoe UI Symbol", "Noto Color Emoji";
+  --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo,
+    monospace;
+  --radius: 0.5rem;
+  --shadow-2xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-xs: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --shadow-sm: 0 2px 4px -1px rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-md: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  --shadow-xl: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+  --shadow-2xl: 0 35px 60px -15px rgb(0 0 0 / 0.3);
+
+  /* Plannotator extended tokens */--success: oklch(0.72 0.17 150);  --success-foreground: oklch(0.15 0.02 260);  --warning: oklch(0.75 0.15 85);  --warning-foreground: oklch(0.20 0.02 260);  --code-bg: oklch(0.13 0.015 260);  --focus-highlight: oklch(0.70 0.20 200);
+}
+
+.theme-gruvbox.light {
+  --background: rgb(251, 241, 199);
+  --foreground: rgb(40, 40, 40);
+  --card: rgb(242, 229, 188);
+  --card-foreground: rgb(40, 40, 40);
+  --popover: rgb(242, 229, 188);
+  --popover-foreground: rgb(40, 40, 40);
+  --primary: rgb(7, 102, 120);
+  --primary-foreground: rgb(251, 241, 199);
+  --secondary: rgb(213, 196, 161);
+  --secondary-foreground: rgb(40, 40, 40);
+  --muted: rgb(213, 196, 161);
+  --muted-foreground: rgb(60, 56, 54);
+  --accent: rgb(66, 123, 88);
+  --accent-foreground: rgb(251, 241, 199);
+  --destructive: rgb(157, 0, 6);
+  --destructive-foreground: rgb(251, 241, 199);
+  --border: rgb(213, 196, 161);
+  --input: rgb(213, 196, 161);
+  --ring: rgb(7, 102, 120);
+  --chart-1: rgb(157, 0, 6);
+  --chart-2: rgb(121, 116, 14);
+  --chart-3: rgb(181, 118, 20);
+  --chart-4: rgb(143, 63, 113);
+  --chart-5: rgb(66, 123, 88);
+  --sidebar: rgb(245, 235, 191);
+  --sidebar-foreground: rgb(40, 40, 40);
+  --sidebar-primary: rgb(7, 102, 120);
+  --sidebar-primary-foreground: rgb(251, 241, 199);
+  --sidebar-accent: rgb(66, 123, 88);
+  --sidebar-accent-foreground: rgb(251, 241, 199);
+  --sidebar-border: rgb(213, 196, 161);
+  --sidebar-ring: rgb(7, 102, 120);
+  --font-sans: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji",
+    "Segoe UI Symbol", "Noto Color Emoji";
+  --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo,
+    monospace;
+  --radius: 0.5rem;
+  --shadow-2xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-xs: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --shadow-sm: 0 2px 4px -1px rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-md: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  --shadow-xl: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+  --shadow-2xl: 0 35px 60px -15px rgb(0 0 0 / 0.3);
+
+  /* Plannotator extended tokens */--success: oklch(0.45 0.20 150);  --success-foreground: oklch(1 0 0);  --warning: oklch(0.55 0.18 85);  --warning-foreground: oklch(0.18 0.02 260);  --code-bg: oklch(0.96 0.005 260);  --focus-highlight: oklch(0.70 0.20 200);
+}

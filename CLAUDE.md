@@ -46,7 +46,8 @@ plannotator/
 │   │   ├── ide.ts                # VS Code diff integration (openEditorDiff)
 │   │   ├── editor-annotations.ts  # VS Code editor annotation endpoints
 │   │   └── project.ts            # Project name detection for tags
-│   ├── ui/                       # Shared React components
+│   ├── ui/                       # Shared React components + theme
+│   │   ├── theme.css             # Single source of truth for color tokens + Tailwind bridge
 │   │   ├── components/           # Viewer, Toolbar, Settings, etc.
 │   │   │   ├── plan-diff/        # PlanDiffBadge, PlanDiffViewer, clean/raw diff views
 │   │   │   └── sidebar/          # SidebarContainer, SidebarTabs, VersionBrowser

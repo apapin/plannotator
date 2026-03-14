@@ -49,8 +49,9 @@ import { useAgents } from '../hooks/useAgents';
 import { KeyboardShortcuts } from './KeyboardShortcuts';
 import { type QuickLabel, getQuickLabels, saveQuickLabels, resetQuickLabels, DEFAULT_QUICK_LABELS, getLabelColors, LABEL_COLOR_MAP } from '../utils/quickLabels';
 import { hasNewSettings, markNewSettingsSeen } from '../utils/newSettingsHint';
+import { ThemeTab } from './ThemeTab';
 
-type SettingsTab = 'general' | 'display' | 'saving' | 'labels' | 'shortcuts' | 'obsidian' | 'bear';
+type SettingsTab = 'general' | 'theme' | 'display' | 'saving' | 'labels' | 'shortcuts' | 'obsidian' | 'bear';
 
 interface SettingsProps {
   taterMode: boolean;
@@ -94,6 +95,7 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
 
   const mainTabs = useMemo(() => {
     const t: { id: SettingsTab; label: string }[] = [{ id: 'general', label: 'General' }];
+    t.push({ id: 'theme', label: 'Theme' });
     if (mode === 'plan') {
       t.push({ id: 'display', label: 'Display' });
       t.push({ id: 'saving', label: 'Saving' });
@@ -478,6 +480,9 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
                     </div>
                   </>
                 )}
+
+                {/* === THEME TAB === */}
+                {activeTab === 'theme' && <ThemeTab />}
 
                 {/* === DISPLAY TAB === */}
                 {activeTab === 'display' && (

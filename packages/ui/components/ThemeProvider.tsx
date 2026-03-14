@@ -1,75 +1,117 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { storage } from '../utils/storage';
+import { BUILT_IN_THEMES, type ThemeInfo } from '../utils/themeRegistry';
 
-type Theme = 'dark' | 'light' | 'system';
+type Mode = 'dark' | 'light' | 'system';
 
 type ThemeProviderState = {
-  theme: Theme;
-  setTheme: (theme: Theme) => void;
+  // Mode (dark/light/system) — backward-compatible with old "theme" API
+  theme: Mode;
+  setTheme: (mode: Mode) => void;
+  mode: Mode;
+  setMode: (mode: Mode) => void;
+  // Color theme (palette)
+  colorTheme: string;
+  setColorTheme: (theme: string) => void;
+  availableThemes: ThemeInfo[];
 };
 
 const ThemeProviderContext = createContext<ThemeProviderState>({
   theme: 'dark',
   setTheme: () => null,
+  mode: 'dark',
+  setMode: () => null,
+  colorTheme: 'plannotator',
+  setColorTheme: () => null,
+  availableThemes: BUILT_IN_THEMES,
 });
 
 interface ThemeProviderProps {
   children: React.ReactNode;
-  defaultTheme?: Theme;
+  defaultTheme?: Mode;
+  defaultColorTheme?: string;
   storageKey?: string;
+  colorThemeStorageKey?: string;
 }
 
 export function ThemeProvider({
   children,
   defaultTheme = 'dark',
+  defaultColorTheme = 'plannotator',
   storageKey = 'plannotator-theme',
+  colorThemeStorageKey = 'plannotator-color-theme',
 }: ThemeProviderProps) {
-  const [theme, setTheme] = useState<Theme>(
-    () => (storage.getItem(storageKey) as Theme) || defaultTheme
+  const [mode, setModeState] = useState<Mode>(
+    () => (storage.getItem(storageKey) as Mode) || defaultTheme
   );
 
+  const [colorTheme, setColorThemeState] = useState<string>(
+    () => storage.getItem(colorThemeStorageKey) || defaultColorTheme
+  );
+
+  // Resolve whether the .light class should be applied, respecting theme's modeSupport
+  const resolveClasses = (effectiveMode: 'dark' | 'light') => {
+    const themeInfo = BUILT_IN_THEMES.find(t => t.id === colorTheme);
+    const modeSupport = themeInfo?.modeSupport ?? 'both';
+
+    let applyLight = effectiveMode === 'light';
+    // Dark-only themes: never apply .light (would trigger light-mode CSS overrides on dark bg)
+    if (modeSupport === 'dark-only') applyLight = false;
+    // Light-only themes: always apply .light
+    if (modeSupport === 'light-only') applyLight = true;
+
+    return `theme-${colorTheme}${applyLight ? ' light' : ''}`;
+  };
+
+  // Apply theme class + mode class to document element
   useEffect(() => {
     const root = window.document.documentElement;
 
-    // Remove light class (dark is default, no class needed)
-    root.classList.remove('light');
-
-    let effectiveTheme = theme;
-    if (theme === 'system') {
-      effectiveTheme = window.matchMedia('(prefers-color-scheme: light)').matches
+    let effectiveMode: 'dark' | 'light' = 'dark';
+    if (mode === 'system') {
+      effectiveMode = window.matchMedia('(prefers-color-scheme: light)').matches
         ? 'light'
         : 'dark';
+    } else {
+      effectiveMode = mode;
     }
 
-    // Only add 'light' class when in light mode
-    if (effectiveTheme === 'light') {
-      root.classList.add('light');
-    }
-  }, [theme]);
+    root.className = resolveClasses(effectiveMode);
+  }, [mode, colorTheme]);
 
   // Listen for system theme changes
   useEffect(() => {
-    if (theme !== 'system') return;
+    if (mode !== 'system') return;
 
     const mediaQuery = window.matchMedia('(prefers-color-scheme: light)');
     const handleChange = () => {
       const root = window.document.documentElement;
-      root.classList.remove('light');
-      if (mediaQuery.matches) {
-        root.classList.add('light');
-      }
+      root.className = resolveClasses(mediaQuery.matches ? 'light' : 'dark');
     };
 
     mediaQuery.addEventListener('change', handleChange);
     return () => mediaQuery.removeEventListener('change', handleChange);
-  }, [theme]);
+  }, [mode, colorTheme]);
 
-  const value = {
-    theme,
-    setTheme: (newTheme: Theme) => {
-      storage.setItem(storageKey, newTheme);
-      setTheme(newTheme);
-    },
+  const setMode = (newMode: Mode) => {
+    storage.setItem(storageKey, newMode);
+    setModeState(newMode);
+  };
+
+  const setColorTheme = (newTheme: string) => {
+    storage.setItem(colorThemeStorageKey, newTheme);
+    setColorThemeState(newTheme);
+  };
+
+  const value: ThemeProviderState = {
+    // Backward compat: theme/setTheme map to mode/setMode
+    theme: mode,
+    setTheme: setMode,
+    mode,
+    setMode,
+    colorTheme,
+    setColorTheme,
+    availableThemes: BUILT_IN_THEMES,
   };
 
   return (

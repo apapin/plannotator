@@ -330,6 +330,16 @@ export async function saveToBear(config: BearConfig): Promise<IntegrationResult>
 // --- Octarine Integration ---
 
 /**
+ * Generate YAML frontmatter for an Octarine note.
+ * Uses Octarine's property format (list-style tags, Status, Author, Last Edited).
+ */
+export function generateOctarineFrontmatter(tags: string[]): string {
+  const now = new Date().toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM
+  const tagLines = tags.map(t => `  - ${t.toLowerCase()}`).join('\n');
+  return `---\ntags:\n${tagLines}\nStatus: Draft\nAuthor: plannotator\nLast Edited: ${now}\n---`;
+}
+
+/**
  * Save plan to Octarine using octarine:// URI scheme
  */
 export async function saveToOctarine(config: OctarineConfig): Promise<IntegrationResult> {
@@ -341,7 +351,11 @@ export async function saveToOctarine(config: OctarineConfig): Promise<Integratio
     const basename = filename.replace(/\.md$/, '');
     const path = folder ? `${folder}/${basename}` : basename;
 
-    const url = `octarine://create?path=${encodeURIComponent(path)}&content=${encodeURIComponent(plan)}&workspace=${encodeURIComponent(workspace)}&openAfter=false`;
+    const tags = await extractTags(plan);
+    const frontmatter = generateOctarineFrontmatter(tags);
+    const content = `${frontmatter}\n\n${plan}`;
+
+    const url = `octarine://create?path=${encodeURIComponent(path)}&content=${encodeURIComponent(content)}&workspace=${encodeURIComponent(workspace)}&openAfter=false`;
 
     await $`open ${url}`.quiet();
 

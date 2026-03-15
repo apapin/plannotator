@@ -97,7 +97,6 @@ const App: React.FC = () => {
   const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
 
   const viewerRef = useRef<ViewerHandle>(null);
-  const diffViewerRef = useRef<{ removeHighlight: (id: string) => void }>(null);
   const containerRef = useRef<HTMLElement>(null);
 
   // Resizable panels
@@ -647,7 +646,6 @@ const App: React.FC = () => {
 
   const handleDeleteAnnotation = (id: string) => {
     viewerRef.current?.removeHighlight(id);
-    diffViewerRef.current?.removeHighlight(id);
     setAnnotations(prev => prev.filter(a => a.id !== id));
     if (selectedAnnotationId === id) setSelectedAnnotationId(null);
   };
@@ -1168,7 +1166,6 @@ const App: React.FC = () => {
               {/* Plan Diff View or Normal Plan View */}
               {isPlanDiffActive && planDiff.diffBlocks && planDiff.diffStats ? (
                 <PlanDiffViewer
-                  ref={diffViewerRef}
                   diffBlocks={planDiff.diffBlocks}
                   diffStats={planDiff.diffStats}
                   diffMode={planDiffMode}

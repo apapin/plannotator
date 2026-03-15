@@ -244,7 +244,6 @@ export function useAnnotationHighlighter({
 
     anns.forEach(ann => {
       if (ann.type === AnnotationType.GLOBAL_COMMENT) return;
-      if (ann.diffContext) return; // Diff annotations don't restore via text search
 
       // Skip if already highlighted
       try {
@@ -488,10 +487,6 @@ export function useAnnotationHighlighter({
 
     const needsRestore = annotations.filter(ann => {
       if (ann.type === AnnotationType.GLOBAL_COMMENT) return false;
-      // Diff annotations should never be restored via text search — the same text
-      // can appear in multiple diff chunks/sides, causing wrong-match binding.
-      // They stay visible in the annotation panel with their diff context badge.
-      if (ann.diffContext) return false;
       try {
         const doms = highlighter.getDoms(ann.id);
         if (doms && doms.length > 0) return false;

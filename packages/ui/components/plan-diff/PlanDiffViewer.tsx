@@ -6,14 +6,14 @@
  * diff content instead of the annotatable plan.
  */
 
-import React, { useState } from "react";
+import React, { useState, forwardRef } from "react";
 import type { PlanDiffBlock, PlanDiffStats } from "../../utils/planDiffEngine";
 import type { Annotation, EditorMode } from "../../types";
 import {
   PlanDiffModeSwitcher,
   type PlanDiffMode,
 } from "./PlanDiffModeSwitcher";
-import { PlanCleanDiffView } from "./PlanCleanDiffView";
+import { PlanCleanDiffView, type DiffViewHandle } from "./PlanCleanDiffView";
 import { PlanRawDiffView } from "./PlanRawDiffView";
 import { PlanDiffBadge } from "./PlanDiffBadge";
 import { VSCodeIcon } from "./VSCodeIcon";
@@ -36,7 +36,7 @@ interface PlanDiffViewerProps {
   mode?: EditorMode;
 }
 
-export const PlanDiffViewer: React.FC<PlanDiffViewerProps> = ({
+export const PlanDiffViewer = forwardRef<DiffViewHandle, PlanDiffViewerProps>(({
   diffBlocks,
   diffStats,
   diffMode,
@@ -51,7 +51,7 @@ export const PlanDiffViewer: React.FC<PlanDiffViewerProps> = ({
   onSelectAnnotation,
   selectedAnnotationId,
   mode,
-}) => {
+}, ref) => {
   const [vscodeDiffLoading, setVscodeDiffLoading] = useState(false);
   const [vscodeDiffError, setVscodeDiffError] = useState<string | null>(null);
 
@@ -179,6 +179,7 @@ export const PlanDiffViewer: React.FC<PlanDiffViewerProps> = ({
         {/* Diff content */}
         {diffMode === "clean" ? (
           <PlanCleanDiffView
+            ref={ref}
             blocks={diffBlocks}
             annotations={annotations}
             onAddAnnotation={onAddAnnotation}
@@ -192,4 +193,4 @@ export const PlanDiffViewer: React.FC<PlanDiffViewerProps> = ({
       </article>
     </div>
   );
-};
+});

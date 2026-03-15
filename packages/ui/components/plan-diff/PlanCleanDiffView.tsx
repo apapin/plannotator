@@ -12,7 +12,7 @@
  * Reuses parseMarkdownToBlocks() for rendering consistency with the plan view.
  */
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, forwardRef, useImperativeHandle } from "react";
 import hljs from "highlight.js";
 import { parseMarkdownToBlocks } from "../../utils/parser";
 import type { Block, Annotation, EditorMode } from "../../types";
@@ -32,14 +32,18 @@ interface PlanCleanDiffViewProps {
   mode?: EditorMode;
 }
 
-export const PlanCleanDiffView: React.FC<PlanCleanDiffViewProps> = ({
+export interface DiffViewHandle {
+  removeHighlight: (id: string) => void;
+}
+
+export const PlanCleanDiffView = forwardRef<DiffViewHandle, PlanCleanDiffViewProps>(({
   blocks,
   annotations = [],
   onAddAnnotation,
   onSelectAnnotation,
   selectedAnnotationId = null,
   mode = "selection",
-}) => {
+}, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Resolve diff context from DOM — walks up to find data-diff-type
@@ -47,7 +51,7 @@ export const PlanCleanDiffView: React.FC<PlanCleanDiffViewProps> = ({
     let node: HTMLElement | null = el;
     while (node && node !== containerRef.current) {
       const dt = node.dataset.diffType;
-      if (dt === "added" || dt === "removed" || dt === "modified") return dt;
+      if (dt === "added" || dt === "removed" || dt === "modified" || dt === "unchanged") return dt;
       node = node.parentElement;
     }
     return undefined;
@@ -65,6 +69,7 @@ export const PlanCleanDiffView: React.FC<PlanCleanDiffViewProps> = ({
     handleCommentClose,
     handleFloatingQuickLabel,
     handleQuickLabelPickerDismiss,
+    removeHighlight,
   } = useAnnotationHighlighter({
     containerRef,
     annotations,
@@ -75,6 +80,8 @@ export const PlanCleanDiffView: React.FC<PlanCleanDiffViewProps> = ({
     enabled: !!onAddAnnotation,
     resolveContext: resolveDiffContext,
   });
+
+  useImperativeHandle(ref, () => ({ removeHighlight }), [removeHighlight]);
 
   return (
     <div ref={containerRef} className="space-y-1">
@@ -119,7 +126,7 @@ export const PlanCleanDiffView: React.FC<PlanCleanDiffViewProps> = ({
       )}
     </div>
   );
-};
+});
 
 const DiffBlockRenderer: React.FC<{ block: PlanDiffBlock }> = ({ block }) => {
   switch (block.type) {

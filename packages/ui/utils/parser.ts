@@ -284,12 +284,7 @@ export const exportAnnotations = (blocks: Block[], annotations: any[], globalAtt
 
     // Add diff context label if annotation was created in diff view
     if (ann.diffContext) {
-      const diffLabels: Record<string, string> = {
-        added: '[In newly added content]',
-        removed: '[In removed content]',
-        modified: '[In modified content]',
-      };
-      output += `${diffLabels[ann.diffContext]} `;
+      output += `[In diff content] `;
     }
 
     switch (ann.type) {

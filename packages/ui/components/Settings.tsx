@@ -5,6 +5,7 @@ import { getIdentity, regenerateIdentity } from '../utils/identity';
 import {
   getObsidianSettings,
   saveObsidianSettings,
+  getEffectiveVaultPath,
   CUSTOM_PATH_SENTINEL,
   DEFAULT_FILENAME_FORMAT,
   type ObsidianSettings,
@@ -114,6 +115,9 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
   const integrationTabs: { id: SettingsTab; label: string }[] = mode === 'plan'
     ? [{ id: 'obsidian', label: 'Obsidian' }, { id: 'bear', label: 'Bear' }, { id: 'octarine', label: 'Octarine' }]
     : [];
+  const obsidianDefaultSaveAvailable = obsidian.enabled && getEffectiveVaultPath(obsidian).trim().length > 0;
+  const bearDefaultSaveAvailable = bear.enabled;
+  const octarineDefaultSaveAvailable = octarine.enabled && octarine.workspace.trim().length > 0;
 
   // Sync external open state
   useEffect(() => {
@@ -144,6 +148,28 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
       }
     }
   }, [showDialog, availableAgents, origin, getAgentWarning]);
+
+  useEffect(() => {
+    if (!showDialog) return;
+
+    const defaultSaveAvailable =
+      defaultNotesApp === 'ask' ||
+      defaultNotesApp === 'download' ||
+      (defaultNotesApp === 'obsidian' && obsidianDefaultSaveAvailable) ||
+      (defaultNotesApp === 'bear' && bearDefaultSaveAvailable) ||
+      (defaultNotesApp === 'octarine' && octarineDefaultSaveAvailable);
+
+    if (!defaultSaveAvailable) {
+      setDefaultNotesApp('ask');
+      saveDefaultNotesApp('ask');
+    }
+  }, [
+    showDialog,
+    defaultNotesApp,
+    obsidianDefaultSaveAvailable,
+    bearDefaultSaveAvailable,
+    octarineDefaultSaveAvailable,
+  ]);
 
   // Fetch detected vaults when Obsidian is enabled
   useEffect(() => {
@@ -740,9 +766,9 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
                       >
                         <option value="ask">Ask each time</option>
                         <option value="download">Download Annotations</option>
-                        {obsidian.enabled && <option value="obsidian">Obsidian</option>}
-                        {bear.enabled && <option value="bear">Bear</option>}
-                        {octarine.enabled && <option value="octarine">Octarine</option>}
+                        {obsidianDefaultSaveAvailable && <option value="obsidian">Obsidian</option>}
+                        {bearDefaultSaveAvailable && <option value="bear">Bear</option>}
+                        {octarineDefaultSaveAvailable && <option value="octarine">Octarine</option>}
                       </select>
                       <div className="text-[10px] text-muted-foreground/70">
                         {defaultNotesApp === 'ask'

@@ -52,6 +52,12 @@ import { PlanDiffViewer } from '@plannotator/ui/components/plan-diff/PlanDiffVie
 import type { PlanDiffMode } from '@plannotator/ui/components/plan-diff/PlanDiffModeSwitcher';
 import { DEMO_PLAN_CONTENT } from './demoPlan';
 
+type NoteAutoSaveResults = {
+  obsidian?: boolean;
+  bear?: boolean;
+  octarine?: boolean;
+};
+
 const App: React.FC = () => {
   const [markdown, setMarkdown] = useState(DEMO_PLAN_CONTENT);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
@@ -369,6 +375,15 @@ const App: React.FC = () => {
 
   // Auto-save to notes apps on plan arrival (each gated by its autoSave toggle)
   const autoSaveAttempted = useRef(false);
+  const autoSaveResultsRef = useRef<NoteAutoSaveResults>({});
+  const autoSavePromiseRef = useRef<Promise<NoteAutoSaveResults> | null>(null);
+
+  useEffect(() => {
+    autoSaveAttempted.current = false;
+    autoSaveResultsRef.current = {};
+    autoSavePromiseRef.current = null;
+  }, [markdown]);
+
   useEffect(() => {
     if (!isApiMode || !markdown || isSharedSession || annotateMode) return;
     if (autoSaveAttempted.current) return;
@@ -414,24 +429,36 @@ const App: React.FC = () => {
     if (targets.length === 0) return;
     autoSaveAttempted.current = true;
 
-    fetch('/api/save-notes', {
+    const autoSavePromise = fetch('/api/save-notes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
       .then(res => res.json())
       .then(data => {
+        const results: NoteAutoSaveResults = {
+          ...(body.obsidian ? { obsidian: Boolean(data.results?.obsidian?.success) } : {}),
+          ...(body.bear ? { bear: Boolean(data.results?.bear?.success) } : {}),
+          ...(body.octarine ? { octarine: Boolean(data.results?.octarine?.success) } : {}),
+        };
+        autoSaveResultsRef.current = results;
+
         const failed = targets.filter(t => !data.results?.[t.toLowerCase()]?.success);
         if (failed.length === 0) {
           setNoteSaveToast({ type: 'success', message: `Auto-saved to ${targets.join(' & ')}` });
         } else {
           setNoteSaveToast({ type: 'error', message: `Auto-save failed for ${failed.join(' & ')}` });
         }
+
+        return results;
       })
       .catch(() => {
+        autoSaveResultsRef.current = {};
         setNoteSaveToast({ type: 'error', message: 'Auto-save failed' });
+        return {};
       })
       .finally(() => setTimeout(() => setNoteSaveToast(null), 3000));
+    autoSavePromiseRef.current = autoSavePromise;
   }, [isApiMode, markdown, isSharedSession, annotateMode]);
 
   // Global paste listener for image attachments
@@ -499,6 +526,9 @@ const App: React.FC = () => {
       const octarineSettings = getOctarineSettings();
       const agentSwitchSettings = getAgentSwitchSettings();
       const planSaveSettings = getPlanSaveSettings();
+      const autoSaveResults = bearSettings.autoSave && autoSavePromiseRef.current
+        ? await autoSavePromiseRef.current
+        : autoSaveResultsRef.current;
 
       // Build request body - include integrations if enabled
       const body: { obsidian?: object; bear?: object; octarine?: object; feedback?: string; agentSwitch?: string; planSave?: { enabled: boolean; customPath?: string }; permissionMode?: string } = {};
@@ -531,7 +561,9 @@ const App: React.FC = () => {
         };
       }
 
-      if (bearSettings.enabled) {
+      // Bear creates a new note each time, so don't send it again on approve
+      // if the arrival auto-save already succeeded.
+      if (bearSettings.enabled && !(bearSettings.autoSave && autoSaveResults.bear)) {
         body.bear = {
           plan: markdown,
           customTags: bearSettings.customTags,

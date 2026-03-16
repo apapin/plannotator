@@ -20,6 +20,7 @@ import { CompletionOverlay } from '@plannotator/ui/components/CompletionOverlay'
 import { UpdateBanner } from '@plannotator/ui/components/UpdateBanner';
 import { getObsidianSettings, getEffectiveVaultPath, isObsidianConfigured, CUSTOM_PATH_SENTINEL } from '@plannotator/ui/utils/obsidian';
 import { getBearSettings } from '@plannotator/ui/utils/bear';
+import { getOctarineSettings, isOctarineConfigured } from '@plannotator/ui/utils/octarine';
 import { getDefaultNotesApp } from '@plannotator/ui/utils/defaultNotesApp';
 import { getAgentSwitchSettings, getEffectiveAgentName } from '@plannotator/ui/utils/agentSwitch';
 import { getPlanSaveSettings } from '@plannotator/ui/utils/planSave';
@@ -50,6 +51,12 @@ import { SidebarContainer } from '@plannotator/ui/components/sidebar/SidebarCont
 import { PlanDiffViewer } from '@plannotator/ui/components/plan-diff/PlanDiffViewer';
 import type { PlanDiffMode } from '@plannotator/ui/components/plan-diff/PlanDiffModeSwitcher';
 import { DEMO_PLAN_CONTENT } from './demoPlan';
+
+type NoteAutoSaveResults = {
+  obsidian?: boolean;
+  bear?: boolean;
+  octarine?: boolean;
+};
 
 const App: React.FC = () => {
   const [markdown, setMarkdown] = useState(DEMO_PLAN_CONTENT);
@@ -366,47 +373,92 @@ const App: React.FC = () => {
     setBlocks(parseMarkdownToBlocks(markdown));
   }, [markdown]);
 
-  // Auto-save to Obsidian on plan arrival (if enabled)
+  // Auto-save to notes apps on plan arrival (each gated by its autoSave toggle)
   const autoSaveAttempted = useRef(false);
+  const autoSaveResultsRef = useRef<NoteAutoSaveResults>({});
+  const autoSavePromiseRef = useRef<Promise<NoteAutoSaveResults> | null>(null);
+
+  useEffect(() => {
+    autoSaveAttempted.current = false;
+    autoSaveResultsRef.current = {};
+    autoSavePromiseRef.current = null;
+  }, [markdown]);
+
   useEffect(() => {
     if (!isApiMode || !markdown || isSharedSession || annotateMode) return;
     if (autoSaveAttempted.current) return;
 
+    const body: { obsidian?: object; bear?: object; octarine?: object } = {};
+    const targets: string[] = [];
+
     const obsSettings = getObsidianSettings();
-    if (!obsSettings.autoSave || !obsSettings.enabled) return;
+    if (obsSettings.autoSave && obsSettings.enabled) {
+      const vaultPath = getEffectiveVaultPath(obsSettings);
+      if (vaultPath) {
+        body.obsidian = {
+          vaultPath,
+          folder: obsSettings.folder || 'plannotator',
+          plan: markdown,
+          ...(obsSettings.filenameFormat && { filenameFormat: obsSettings.filenameFormat }),
+          ...(obsSettings.filenameSeparator && obsSettings.filenameSeparator !== 'space' && { filenameSeparator: obsSettings.filenameSeparator }),
+        };
+        targets.push('Obsidian');
+      }
+    }
 
-    const vaultPath = getEffectiveVaultPath(obsSettings);
-    if (!vaultPath) return;
+    const bearSettings = getBearSettings();
+    if (bearSettings.autoSave && bearSettings.enabled) {
+      body.bear = {
+        plan: markdown,
+        customTags: bearSettings.customTags,
+        tagPosition: bearSettings.tagPosition,
+      };
+      targets.push('Bear');
+    }
 
+    const octSettings = getOctarineSettings();
+    if (octSettings.autoSave && isOctarineConfigured()) {
+      body.octarine = {
+        plan: markdown,
+        workspace: octSettings.workspace,
+        folder: octSettings.folder || 'plannotator',
+      };
+      targets.push('Octarine');
+    }
+
+    if (targets.length === 0) return;
     autoSaveAttempted.current = true;
 
-    const body = {
-      obsidian: {
-        vaultPath,
-        folder: obsSettings.folder || 'plannotator',
-        plan: markdown,
-        ...(obsSettings.filenameFormat && { filenameFormat: obsSettings.filenameFormat }),
-        ...(obsSettings.filenameSeparator && obsSettings.filenameSeparator !== 'space' && { filenameSeparator: obsSettings.filenameSeparator }),
-      },
-    };
-
-    fetch('/api/save-notes', {
+    const autoSavePromise = fetch('/api/save-notes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
       .then(res => res.json())
       .then(data => {
-        if (data.results?.obsidian?.success) {
-          setNoteSaveToast({ type: 'success', message: 'Auto-saved to Obsidian' });
+        const results: NoteAutoSaveResults = {
+          ...(body.obsidian ? { obsidian: Boolean(data.results?.obsidian?.success) } : {}),
+          ...(body.bear ? { bear: Boolean(data.results?.bear?.success) } : {}),
+          ...(body.octarine ? { octarine: Boolean(data.results?.octarine?.success) } : {}),
+        };
+        autoSaveResultsRef.current = results;
+
+        const failed = targets.filter(t => !data.results?.[t.toLowerCase()]?.success);
+        if (failed.length === 0) {
+          setNoteSaveToast({ type: 'success', message: `Auto-saved to ${targets.join(' & ')}` });
         } else {
-          setNoteSaveToast({ type: 'error', message: 'Auto-save to Obsidian failed' });
+          setNoteSaveToast({ type: 'error', message: `Auto-save failed for ${failed.join(' & ')}` });
         }
+
+        return results;
       })
       .catch(() => {
-        setNoteSaveToast({ type: 'error', message: 'Auto-save to Obsidian failed' });
+        autoSaveResultsRef.current = {};
+        setNoteSaveToast({ type: 'error', message: 'Auto-save failed' });
+        return {};
       })
       .finally(() => setTimeout(() => setNoteSaveToast(null), 3000));
+    autoSavePromiseRef.current = autoSavePromise;
   }, [isApiMode, markdown, isSharedSession, annotateMode]);
 
   // Global paste listener for image attachments
@@ -471,11 +523,15 @@ const App: React.FC = () => {
     try {
       const obsidianSettings = getObsidianSettings();
       const bearSettings = getBearSettings();
+      const octarineSettings = getOctarineSettings();
       const agentSwitchSettings = getAgentSwitchSettings();
       const planSaveSettings = getPlanSaveSettings();
+      const autoSaveResults = bearSettings.autoSave && autoSavePromiseRef.current
+        ? await autoSavePromiseRef.current
+        : autoSaveResultsRef.current;
 
       // Build request body - include integrations if enabled
-      const body: { obsidian?: object; bear?: object; feedback?: string; agentSwitch?: string; planSave?: { enabled: boolean; customPath?: string }; permissionMode?: string } = {};
+      const body: { obsidian?: object; bear?: object; octarine?: object; feedback?: string; agentSwitch?: string; planSave?: { enabled: boolean; customPath?: string }; permissionMode?: string } = {};
 
       // Include permission mode for Claude Code
       if (origin === 'claude-code') {
@@ -505,11 +561,21 @@ const App: React.FC = () => {
         };
       }
 
-      if (bearSettings.enabled) {
+      // Bear creates a new note each time, so don't send it again on approve
+      // if the arrival auto-save already succeeded.
+      if (bearSettings.enabled && !(bearSettings.autoSave && autoSaveResults.bear)) {
         body.bear = {
           plan: markdown,
           customTags: bearSettings.customTags,
           tagPosition: bearSettings.tagPosition,
+        };
+      }
+
+      if (isOctarineConfigured()) {
+        body.octarine = {
+          plan: markdown,
+          workspace: octarineSettings.workspace,
+          folder: octarineSettings.folder || 'plannotator',
         };
       }
 
@@ -717,9 +783,9 @@ const App: React.FC = () => {
     setTimeout(() => setNoteSaveToast(null), 3000);
   };
 
-  const handleQuickSaveToNotes = async (target: 'obsidian' | 'bear') => {
+  const handleQuickSaveToNotes = async (target: 'obsidian' | 'bear' | 'octarine') => {
     setShowExportDropdown(false);
-    const body: { obsidian?: object; bear?: object } = {};
+    const body: { obsidian?: object; bear?: object; octarine?: object } = {};
 
     if (target === 'obsidian') {
       const s = getObsidianSettings();
@@ -742,7 +808,16 @@ const App: React.FC = () => {
         tagPosition: bs.tagPosition,
       };
     }
+    if (target === 'octarine') {
+      const os = getOctarineSettings();
+      body.octarine = {
+        plan: markdown,
+        workspace: os.workspace,
+        folder: os.folder || 'plannotator',
+      };
+    }
 
+    const targetName = target === 'obsidian' ? 'Obsidian' : target === 'bear' ? 'Bear' : 'Octarine';
     try {
       const res = await fetch('/api/save-notes', {
         method: 'POST',
@@ -752,7 +827,7 @@ const App: React.FC = () => {
       const data = await res.json();
       const result = data.results?.[target];
       if (result?.success) {
-        setNoteSaveToast({ type: 'success', message: `Saved to ${target === 'obsidian' ? 'Obsidian' : 'Bear'}` });
+        setNoteSaveToast({ type: 'success', message: `Saved to ${targetName}` });
       } else {
         setNoteSaveToast({ type: 'error', message: result?.error || 'Save failed' });
       }
@@ -780,6 +855,7 @@ const App: React.FC = () => {
       const defaultApp = getDefaultNotesApp();
       const obsOk = isObsidianConfigured();
       const bearOk = getBearSettings().enabled;
+      const octOk = isOctarineConfigured();
 
       if (defaultApp === 'download') {
         handleDownloadAnnotations();
@@ -787,6 +863,8 @@ const App: React.FC = () => {
         handleQuickSaveToNotes('obsidian');
       } else if (defaultApp === 'bear' && bearOk) {
         handleQuickSaveToNotes('bear');
+      } else if (defaultApp === 'octarine' && octOk) {
+        handleQuickSaveToNotes('octarine');
       } else {
         setInitialExportTab('notes');
         setShowExport(true);
@@ -1025,7 +1103,18 @@ const App: React.FC = () => {
                         Save to Bear
                       </button>
                     )}
-                    {isApiMode && !isObsidianConfigured() && !getBearSettings().enabled && (
+                    {isApiMode && isOctarineConfigured() && (
+                      <button
+                        onClick={() => handleQuickSaveToNotes('octarine')}
+                        className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors flex items-center gap-2"
+                      >
+                        <svg className="w-3.5 h-3.5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                        </svg>
+                        Save to Octarine
+                      </button>
+                    )}
+                    {isApiMode && !isObsidianConfigured() && !getBearSettings().enabled && !isOctarineConfigured() && (
                       <div className="px-3 py-2 text-[10px] text-muted-foreground">
                         No notes apps configured.
                       </div>

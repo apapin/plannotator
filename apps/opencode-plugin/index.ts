@@ -60,43 +60,32 @@ Your plan files must live in this directory:
 
 ${planDir}
 
-You must not edit the codebase during planning. The only files you may create or edit are plan markdown files inside that directory.
+You must not edit the codebase during planning. The only files you may create or edit are plan markdown files inside that directory. Do not run destructive shell commands (rm, git push, npm install, etc.).
 
-Do not run destructive shell commands (rm, git push, npm install, etc.) — focus on reading and exploring the codebase.
+### Step 1 — Explore
 
-When planning starts:
-1. Create exactly one new markdown plan file in that directory with a unique, descriptive filename (e.g. \`auth-refactor.md\`, \`fix-upload-timeout.md\`).
-2. Do not overwrite or reuse filenames from existing plans in the directory.
-3. Keep using that same file for the rest of this planning cycle.
+Before writing anything, understand the task and the code it touches.
 
-During planning:
-- Use exploration tools to inspect the codebase.
-- After each discovery, update the same plan file.
-- Do not create a new plan file unless you are starting a new, separate plan.
+- Read the relevant source files. Trace call paths, data flow, and dependencies.
+- Look at existing patterns, utilities, and conventions in the codebase — your plan should reuse them.
+- Check related tests to understand expected behavior and edge cases.
+- Scale depth to the task: a vague feature request needs deep exploration; a focused bug fix may only need a few files.
 
-When the plan is ready:
-- Call \`submit_plan(path: "/absolute/path/to/your-plan.md")\`
+Do not jump to writing a plan or asking questions until you have the context you need. If the conversation already provided sufficient context, or the task is greenfield with no code to explore, move on to the next step.
 
-If the user requests changes:
-1. Read the same plan file you previously submitted.
-2. Edit that same file to address the feedback.
-3. Call \`submit_plan\` again with the same \`path\`.
-4. Never create a new file in response to feedback — always revise the existing one.
+### Step 2 — Ask (if needed)
 
-Do not submit plan text directly. Submit the file path.
-
-### Asking Questions
-
-Use the \`question\` tool to ask the user when you need input. Do not ask questions via plain text output — always use the tool.
+If there are things only the user can answer — requirements, preferences, tradeoffs, edge-case priorities — use the \`question\` tool. Do not ask via plain text output.
 
 - Never ask what you could find out by reading the code.
-- Batch related questions together into a single \`question\` call.
-- Focus on things only the user can answer: requirements, preferences, tradeoffs, edge-case priorities.
-- Scale depth to the task — a vague feature request needs many rounds; a focused bug fix may need one or none.
+- Batch related questions into a single \`question\` call.
+- For greenfield tasks, this may be your first step.
 
-### Plan File Structure
+### Step 3 — Write the plan
 
-Your plan file should use markdown with clear sections:
+Once you understand the task, create exactly one markdown plan file in the directory above with a unique, descriptive filename (e.g. \`auth-refactor.md\`, \`fix-upload-timeout.md\`). Do not overwrite or reuse filenames from existing plans.
+
+Structure the plan with:
 - **Context** — Why this change is being made.
 - **Approach** — Your recommended approach only, not all alternatives considered.
 - **Files to modify** — List the critical file paths that will be changed.
@@ -104,9 +93,20 @@ Your plan file should use markdown with clear sections:
 - **Steps** — Implementation checklist with \`- [ ]\` items.
 - **Verification** — How to test the changes end-to-end.
 
-Keep the plan concise enough to scan quickly, but detailed enough to execute effectively.
+Keep it concise enough to scan quickly, but detailed enough to execute effectively.
 
-### Ending Your Turn
+### Step 4 — Submit
+
+Call \`submit_plan(path: "/absolute/path/to/your-plan.md")\` to open the plan in a visual review UI. Do not submit plan text directly — submit the file path.
+
+### If the user requests changes
+
+1. Read the same plan file you previously submitted.
+2. Edit that same file to address the feedback.
+3. Call \`submit_plan\` again with the same \`path\`.
+4. Never create a new file in response to feedback — always revise the existing one.
+
+### Ending your turn
 
 Your turn should only end by either:
 - Using the question tool to ask the user for information.

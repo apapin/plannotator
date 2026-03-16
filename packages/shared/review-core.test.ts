@@ -52,10 +52,10 @@ function makeRuntime(baseCwd: string): ReviewGitRuntime {
   };
 }
 
-function initRepo(): string {
+function initRepo(initialBranch = "main"): string {
   const repoDir = makeTempDir("plannotator-review-core-");
   git(repoDir, ["init"]);
-  git(repoDir, ["branch", "-M", "main"]);
+  git(repoDir, ["branch", "-M", initialBranch]);
   git(repoDir, ["config", "user.email", "review-core@example.com"]);
   git(repoDir, ["config", "user.name", "Review Core"]);
 
@@ -119,6 +119,22 @@ describe("review-core", () => {
     git(repoDir, ["add", "draft.txt"]);
     const stagedWithNewFile = await runGitDiff(runtime, "staged", "main");
     expect(stagedWithNewFile.patch).toContain("diff --git a/draft.txt b/draft.txt");
+  });
+
+  test("branch diff returns an error when the default branch ref is invalid", async () => {
+    const repoDir = initRepo("trunk");
+    const runtime = makeRuntime(repoDir);
+
+    writeFileSync(join(repoDir, "tracked.txt"), "after\n", "utf-8");
+
+    const context = await getGitContext(runtime);
+    expect(context.defaultBranch).toBe("master");
+
+    const result = await runGitDiff(runtime, "branch", context.defaultBranch);
+
+    expect(result.patch).toBe("");
+    expect(result.label).toBe("Error: branch");
+    expect(result.error).toContain("git diff master..HEAD");
   });
 
   test("git context lists worktrees and file content lookup returns old/new content", async () => {

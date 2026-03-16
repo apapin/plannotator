@@ -203,6 +203,21 @@ async function getUntrackedFileDiffs(
   return diffs.join("");
 }
 
+function assertGitSuccess(
+  result: GitCommandResult,
+  args: string[],
+): GitCommandResult {
+  if (result.exitCode === 0) return result;
+
+  const command = `git ${args.join(" ")}`;
+  const stderr = result.stderr.trim();
+  throw new Error(
+    stderr
+      ? `${command} failed: ${stderr}`
+      : `${command} failed with exit code ${result.exitCode}`,
+  );
+}
+
 const WORKTREE_SUB_TYPES = new Set([
   "uncommitted",
   "staged",
@@ -254,9 +269,15 @@ export async function runGitDiff(
   try {
     switch (effectiveDiffType) {
       case "uncommitted": {
-        const trackedDiff = await runtime.runGit(
-          ["diff", "HEAD", "--src-prefix=a/", "--dst-prefix=b/"],
-          { cwd },
+        const trackedDiffArgs = [
+          "diff",
+          "HEAD",
+          "--src-prefix=a/",
+          "--dst-prefix=b/",
+        ];
+        const trackedDiff = assertGitSuccess(
+          await runtime.runGit(trackedDiffArgs, { cwd }),
+          trackedDiffArgs,
         );
         const untrackedDiff = await getUntrackedFileDiffs(
           runtime,
@@ -270,9 +291,15 @@ export async function runGitDiff(
       }
 
       case "staged": {
-        const stagedDiff = await runtime.runGit(
-          ["diff", "--staged", "--src-prefix=a/", "--dst-prefix=b/"],
-          { cwd },
+        const stagedDiffArgs = [
+          "diff",
+          "--staged",
+          "--src-prefix=a/",
+          "--dst-prefix=b/",
+        ];
+        const stagedDiff = assertGitSuccess(
+          await runtime.runGit(stagedDiffArgs, { cwd }),
+          stagedDiffArgs,
         );
         patch = stagedDiff.stdout;
         label = "Staged changes";
@@ -280,9 +307,10 @@ export async function runGitDiff(
       }
 
       case "unstaged": {
-        const trackedDiff = await runtime.runGit(
-          ["diff", "--src-prefix=a/", "--dst-prefix=b/"],
-          { cwd },
+        const trackedDiffArgs = ["diff", "--src-prefix=a/", "--dst-prefix=b/"];
+        const trackedDiff = assertGitSuccess(
+          await runtime.runGit(trackedDiffArgs, { cwd }),
+          trackedDiffArgs,
         );
         const untrackedDiff = await getUntrackedFileDiffs(
           runtime,
@@ -304,16 +332,25 @@ export async function runGitDiff(
           hasParent.exitCode === 0
             ? ["diff", "HEAD~1..HEAD", "--src-prefix=a/", "--dst-prefix=b/"]
             : ["diff", "--root", "HEAD", "--src-prefix=a/", "--dst-prefix=b/"];
-        const lastCommitDiff = await runtime.runGit(args, { cwd });
+        const lastCommitDiff = assertGitSuccess(
+          await runtime.runGit(args, { cwd }),
+          args,
+        );
         patch = lastCommitDiff.stdout;
         label = "Last commit";
         break;
       }
 
       case "branch": {
-        const branchDiff = await runtime.runGit(
-          ["diff", `${defaultBranch}..HEAD`, "--src-prefix=a/", "--dst-prefix=b/"],
-          { cwd },
+        const branchDiffArgs = [
+          "diff",
+          `${defaultBranch}..HEAD`,
+          "--src-prefix=a/",
+          "--dst-prefix=b/",
+        ];
+        const branchDiff = assertGitSuccess(
+          await runtime.runGit(branchDiffArgs, { cwd }),
+          branchDiffArgs,
         );
         patch = branchDiff.stdout;
         label = `Changes vs ${defaultBranch}`;

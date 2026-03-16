@@ -275,7 +275,7 @@ async function listenOnPort(server: Server): Promise<{ port: number; portSource:
     try {
       await new Promise<void>((resolve, reject) => {
         server.once("error", reject);
-        server.listen(result.port, "127.0.0.1", () => {
+        server.listen(result.port, isRemoteSession() ? "0.0.0.0" : "127.0.0.1", () => {
           server.removeListener("error", reject);
           resolve();
         });

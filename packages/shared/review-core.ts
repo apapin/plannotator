@@ -275,17 +275,22 @@ export async function runGitDiff(
           "--src-prefix=a/",
           "--dst-prefix=b/",
         ];
-        const trackedDiff = assertGitSuccess(
-          await runtime.runGit(trackedDiffArgs, { cwd }),
-          trackedDiffArgs,
-        );
+        const hasHead =
+          (await runtime.runGit(["rev-parse", "--verify", "HEAD"], { cwd }))
+            .exitCode === 0;
+        const trackedPatch = hasHead
+          ? assertGitSuccess(
+              await runtime.runGit(trackedDiffArgs, { cwd }),
+              trackedDiffArgs,
+            ).stdout
+          : "";
         const untrackedDiff = await getUntrackedFileDiffs(
           runtime,
           "a/",
           "b/",
           cwd,
         );
-        patch = trackedDiff.stdout + untrackedDiff;
+        patch = trackedPatch + untrackedDiff;
         label = "Uncommitted changes";
         break;
       }

@@ -15,6 +15,7 @@ import { useGitAdd } from './hooks/useGitAdd';
 import { useEditorAnnotations } from '@plannotator/ui/hooks/useEditorAnnotations';
 import { exportEditorAnnotations } from '@plannotator/ui/utils/parser';
 import { ResizeHandle } from '@plannotator/ui/components/ResizeHandle';
+import { AutomationsDropdown } from '@plannotator/ui/components/AutomationsDropdown';
 import { DiffViewer } from './components/DiffViewer';
 import { ReviewPanel } from './components/ReviewPanel';
 import { FileTree } from './components/FileTree';
@@ -569,6 +570,31 @@ const ReviewApp: React.FC = () => {
     }
   }, [totalAnnotationCount, feedbackMarkdown, annotations]);
 
+  const handleAutomationSend = useCallback(async (feedback: string) => {
+    setIsSendingFeedback(true);
+    try {
+      const agentSwitchSettings = getAgentSwitchSettings();
+      const effectiveAgent = getEffectiveAgentName(agentSwitchSettings);
+      const res = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          approved: false,
+          feedback,
+          annotations: [],
+          ...(effectiveAgent && { agentSwitch: effectiveAgent }),
+        }),
+      });
+      if (res.ok) {
+        setSubmitted('feedback');
+      } else {
+        throw new Error('Failed to send');
+      }
+    } catch {
+      setIsSendingFeedback(false);
+    }
+  }, []);
+
   // Approve without feedback (LGTM)
   const handleApprove = useCallback(async () => {
     setIsApproving(true);
@@ -728,6 +754,14 @@ const ReviewApp: React.FC = () => {
                 </>
               )}
             </button>
+
+            {origin && (
+              <AutomationsDropdown
+                context="review"
+                onSend={handleAutomationSend}
+                disabled={isSendingFeedback || isApproving || !!submitted}
+              />
+            )}
 
             {origin ? (
               <>

@@ -54,10 +54,12 @@ import {
 import { useAgents } from '../hooks/useAgents';
 import { KeyboardShortcuts } from './KeyboardShortcuts';
 import { type QuickLabel, getQuickLabels, saveQuickLabels, resetQuickLabels, DEFAULT_QUICK_LABELS, getLabelColors, LABEL_COLOR_MAP } from '../utils/quickLabels';
+import { type Automation, type AutomationContext, getAutomations, saveAutomations } from '../utils/automations';
 import { hasNewSettings, markNewSettingsSeen } from '../utils/newSettingsHint';
 import { ThemeTab } from './ThemeTab';
+import { AutomationsSettings } from './AutomationsSettings';
 
-type SettingsTab = 'general' | 'theme' | 'display' | 'saving' | 'labels' | 'shortcuts' | 'obsidian' | 'bear' | 'octarine';
+type SettingsTab = 'general' | 'theme' | 'display' | 'saving' | 'labels' | 'automations' | 'shortcuts' | 'obsidian' | 'bear' | 'octarine';
 
 interface SettingsProps {
   taterMode: boolean;
@@ -96,6 +98,7 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
   const [editingTipIndex, setEditingTipIndex] = useState<number | null>(null);
   const [editingTipValue, setEditingTipValue] = useState('');
   const [showNewHints, setShowNewHints] = useState(() => hasNewSettings());
+  const [automationsState, setAutomationsState] = useState<Automation[]>([]);
 
   // Fetch available agents for OpenCode
   const { agents: availableAgents, validateAgent, getAgentWarning } = useAgents(origin ?? null);
@@ -108,6 +111,7 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
       t.push({ id: 'saving', label: 'Saving' });
       t.push({ id: 'labels', label: 'Labels' });
     }
+    t.push({ id: 'automations', label: 'Automations' });
     t.push({ id: 'shortcuts', label: 'Shortcuts' });
     return t;
   }, [mode]);
@@ -141,6 +145,7 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
       setAutoCloseDelayState(getAutoCloseDelay());
       setDefaultNotesApp(getDefaultNotesApp());
       setQuickLabelsState(getQuickLabels());
+      setAutomationsState(getAutomations(mode));
 
       // Validate agent setting when dialog opens
       if (origin === 'opencode') {
@@ -170,6 +175,19 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
     bearDefaultSaveAvailable,
     octarineDefaultSaveAvailable,
   ]);
+
+  // Listen for "Configure..." from AutomationsDropdown
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.tab) {
+        setActiveTab(detail.tab);
+        setShowDialog(true);
+      }
+    };
+    window.addEventListener('plannotator:open-settings', handler);
+    return () => window.removeEventListener('plannotator:open-settings', handler);
+  }, []);
 
   // Fetch detected vaults when Obsidian is enabled
   useEffect(() => {
@@ -300,6 +318,9 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
                     {tab.label}
                     {showNewHints && (tab.id === 'display' || tab.id === 'labels') && (
                       <span className="text-[8px] font-semibold uppercase tracking-wide px-1 py-px rounded-full bg-primary/15 text-primary leading-none">new</span>
+                    )}
+                    {tab.id === 'automations' && (
+                      <span className="text-[8px] font-semibold uppercase tracking-wide px-1 py-px rounded-full bg-primary/15 text-primary leading-none">beta</span>
                     )}
                   </button>
                 ))}
@@ -1013,6 +1034,18 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
                       Use {navigator.platform?.includes('Mac') ? '⌥' : 'Alt+'}1 through {navigator.platform?.includes('Mac') ? '⌥' : 'Alt+'}0 when the annotation toolbar is visible to apply a label instantly.
                     </div>
                   </>
+                )}
+
+                {/* === AUTOMATIONS TAB === */}
+                {activeTab === 'automations' && (
+                  <AutomationsSettings
+                    context={mode}
+                    automations={automationsState}
+                    onChange={(updated) => {
+                      setAutomationsState(updated);
+                      saveAutomations(mode, updated);
+                    }}
+                  />
                 )}
 
                 {/* === SHORTCUTS TAB === */}

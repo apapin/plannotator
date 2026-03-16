@@ -73,6 +73,27 @@ export const PlanCleanDiffView: React.FC<PlanCleanDiffViewProps> = ({
     };
   }, []);
 
+  // Scroll to selected annotation's diff block
+  useEffect(() => {
+    if (!selectedAnnotationId) return;
+
+    // Find the annotation to get its blockId
+    const ann = annotations.find(a => a.id === selectedAnnotationId);
+    if (!ann?.blockId?.startsWith('diff-block-')) return;
+
+    const idx = ann.blockId.replace('diff-block-', '');
+    const el = document.querySelector(`[data-diff-block-index="${idx}"]`);
+    if (!el) return;
+
+    el.classList.add('annotation-highlight', 'focused');
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    const timer = setTimeout(() => {
+      el.classList.remove('annotation-highlight', 'focused');
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [selectedAnnotationId, annotations]);
+
   // Build set of annotated block contents for highlight rings
   const annotatedContents = React.useMemo(() => {
     const set = new Set<string>();
@@ -313,7 +334,7 @@ const DiffBlockRenderer: React.FC<DiffBlockRendererProps> = ({
 
   const ringClass = (diffContext: Annotation['diffContext'], content: string) => {
     if (isHovered(diffContext)) return 'ring-1 ring-primary/30 rounded';
-    if (isBlockAnnotated(content)) return 'ring-1 ring-primary/20 rounded';
+    if (isBlockAnnotated(content)) return 'ring-2 ring-accent rounded outline-offset-2';
     return '';
   };
 

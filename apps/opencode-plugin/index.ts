@@ -351,7 +351,9 @@ Do NOT proceed with implementation until your plan is approved.
 
             const message = result.approved
               ? `# Code Review\n\nCode review completed — no changes requested.`
-              : `# Code Review Feedback\n\n${result.feedback}\n\nPlease address this feedback.`;
+              : isPRMode
+                ? result.feedback
+                : `# Code Review Feedback\n\n${result.feedback}\n\nPlease address this feedback.`;
 
             try {
               await ctx.client.session.prompt({

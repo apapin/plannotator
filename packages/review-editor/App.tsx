@@ -81,7 +81,7 @@ function generateId(): string {
 }
 
 // Export annotations as markdown feedback
-function exportReviewFeedback(annotations: CodeAnnotation[], files: DiffFile[]): string {
+function exportReviewFeedback(annotations: CodeAnnotation[], files: DiffFile[], prMeta?: PRMetadata | null): string {
   if (annotations.length === 0) {
     return '# Code Review\n\nNo feedback provided.';
   }
@@ -93,7 +93,12 @@ function exportReviewFeedback(annotations: CodeAnnotation[], files: DiffFile[]):
     grouped.set(ann.filePath, existing);
   }
 
-  let output = '# Code Review Feedback\n\n';
+  let output = prMeta
+    ? `# PR Review: ${prMeta.owner}/${prMeta.repo}#${prMeta.number}\n\n` +
+      `**${prMeta.title}**\n` +
+      `Branch: \`${prMeta.headBranch}\` → \`${prMeta.baseBranch}\`\n` +
+      `${prMeta.url}\n\n`
+    : '# Code Review Feedback\n\n';
 
   for (const [filePath, fileAnnotations] of grouped) {
     output += `## ${filePath}\n\n`;
@@ -517,7 +522,7 @@ const ReviewApp: React.FC = () => {
       return;
     }
     try {
-      const feedback = exportReviewFeedback(annotations, files);
+      const feedback = exportReviewFeedback(annotations, files, prMetadata);
       await navigator.clipboard.writeText(feedback);
       setCopyFeedback('Feedback copied!');
       setTimeout(() => setCopyFeedback(null), 2000);
@@ -530,12 +535,12 @@ const ReviewApp: React.FC = () => {
 
   const activeFile = files[activeFileIndex];
   const feedbackMarkdown = useMemo(() => {
-    let output = exportReviewFeedback(annotations, files);
+    let output = exportReviewFeedback(annotations, files, prMetadata);
     if (editorAnnotations.length > 0) {
       output += exportEditorAnnotations(editorAnnotations);
     }
     return output;
-  }, [annotations, files, editorAnnotations]);
+  }, [annotations, files, prMetadata, editorAnnotations]);
 
   const totalAnnotationCount = annotations.length + editorAnnotations.length;
 

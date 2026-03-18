@@ -107,11 +107,14 @@ You have a plan submission tool called \`submit_plan\`. It opens an interactive 
 
 The tool auto-detects whether you passed text or a file path. Both open the same review UI.
 
-### Planning well
+### Before you write a plan
 
-Before writing a plan, understand what you're planning for. Read the relevant code, trace dependencies, and look at existing patterns. The depth of exploration should match the task — a vague feature request needs more research than a focused bug fix.
+Do not jump straight to writing a plan. First:
 
-If you need information only the user can provide (requirements, preferences, tradeoffs), ask using the \`question\` tool.
+1. **Explore** — Read the relevant code, trace dependencies, and look at existing patterns. The depth should match the task.
+2. **Ask questions** — If you need information only the user can provide (requirements, preferences, tradeoffs), ask using the \`question\` tool. Don't guess at ambiguous requirements.
+
+Only write and submit a plan once you have sufficient context.
 
 ### What NOT to do
 
@@ -203,10 +206,15 @@ export const PlannotatorPlugin: Plugin = async (ctx) => {
     },
 
     // Suppress plan_exit — redirect to submit_plan
+    // Override todowrite — defer to submit_plan during planning
     "tool.definition": async (input, output) => {
       if (input.toolID === "plan_exit") {
         output.description =
           "Do not call this tool. Use submit_plan instead — it opens a visual review UI for plan approval.";
+      }
+      if (input.toolID === "todowrite") {
+        output.description =
+          "While actively planning with the user, use submit_plan instead. Only use todos once implementation begins or unless the user explicitly asks.";
       }
     },
 
@@ -341,7 +349,7 @@ Do NOT proceed with implementation until your plan is approved.`);
     tool: {
       submit_plan: tool({
         description:
-          "Submit a plan for interactive user review. Pass either the complete plan as markdown text, or an absolute file path to a plan markdown file. The user can annotate, approve, or request changes in a visual review UI.",
+          "Planning tool used to submit a plan to the user for review. Before calling this tool you must conduct interactive and exploratory analysis in order to submit a quality plan. Ask questions. Explore the codebase for context if needed. Only call submit_plan once you have enough details to create a quality plan. Work with the user to get those details. Pass either markdown text or an absolute path to a .md file.",
         args: {
           plan: tool.schema
             .string()
@@ -447,7 +455,7 @@ Proceed with implementation, incorporating these notes where applicable.`;
           } else {
             return planDenyFeedback(result.feedback || "", "submit_plan", {
               planFilePath: sourceFilePath,
-            });
+            }) + "\n\nAfter making your revisions, call `submit_plan` again to resubmit for review.";
           }
         },
       }),

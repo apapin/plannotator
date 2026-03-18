@@ -299,9 +299,7 @@ export async function startPlannotatorServer(
               await Promise.allSettled(promises);
 
               for (const [name, result] of Object.entries(results)) {
-                if (result?.success) {
-                  console.error(`[${name}] Saved plan${result.path ? ` to: ${result.path}` : ''}`);
-                } else if (result) {
+                if (!result?.success && result) {
                   console.error(`[${name}] Save failed: ${result.error}`);
                 }
               }
@@ -368,9 +366,7 @@ export async function startPlannotatorServer(
               await Promise.allSettled(integrationPromises);
 
               for (const [name, result] of Object.entries(integrationResults)) {
-                if (result?.success) {
-                  console.error(`[${name}] Saved plan${result.path ? ` to: ${result.path}` : ''}`);
-                } else if (result) {
+                if (!result?.success && result) {
                   console.error(`[${name}] Save failed: ${result.error}`);
                 }
               }

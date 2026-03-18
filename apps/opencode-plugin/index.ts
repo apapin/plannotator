@@ -34,6 +34,12 @@ import {
 import { getGitContext, runGitDiff } from "@plannotator/server/git";
 import { writeRemoteShareLink } from "@plannotator/server/share-url";
 import { resolveMarkdownFile } from "@plannotator/server/resolve-file";
+import {
+  handleReviewCommand,
+  handleAnnotateCommand,
+  handleAnnotateLastCommand,
+  type CommandDeps,
+} from "./commands";
 import { planDenyFeedback } from "@plannotator/shared/feedback-templates";
 import {
   getPlanDirectory,
@@ -269,149 +275,25 @@ Do NOT proceed with implementation until your plan is approved.
         event.type === "command.executed" ||
         event.type === "tui.command.execute";
 
+      if (!isCommandEvent) return;
+
       // @ts-ignore - Event structure varies
       const commandName = event.properties?.name || event.command || event.payload?.name;
-      const isReviewCommand = commandName === "plannotator-review";
 
-      if (isCommandEvent && isReviewCommand) {
-        ctx.client.app.log({
-          level: "info",
-          message: "Opening code review UI...",
-        });
+      const deps: CommandDeps = {
+        client: ctx.client,
+        htmlContent,
+        reviewHtmlContent,
+        getSharingEnabled,
+        getShareBaseUrl,
+      };
 
-        const gitContext = await getGitContext();
-        const { patch: rawPatch, label: gitRef, error: diffError } = await runGitDiff(
-          "uncommitted",
-          gitContext.defaultBranch
-        );
-
-        const server = await startReviewServer({
-          rawPatch,
-          gitRef,
-          error: diffError,
-          origin: "opencode",
-          diffType: "uncommitted",
-          gitContext,
-          sharingEnabled: await getSharingEnabled(),
-          shareBaseUrl: getShareBaseUrl(),
-          htmlContent: reviewHtmlContent,
-          opencodeClient: ctx.client,
-          onReady: handleReviewServerReady,
-        });
-
-        const result = await server.waitForDecision();
-        await Bun.sleep(1500);
-        server.stop();
-
-        if (result.feedback) {
-          // @ts-ignore - Event properties contain sessionID
-          const sessionId = event.properties?.sessionID;
-
-          if (sessionId) {
-            const shouldSwitchAgent = result.agentSwitch && result.agentSwitch !== 'disabled';
-            const targetAgent = result.agentSwitch || 'build';
-
-            const message = result.approved
-              ? `# Code Review\n\nCode review completed — no changes requested.`
-              : `# Code Review Feedback\n\n${result.feedback}\n\nPlease address this feedback.`;
-
-            try {
-              await ctx.client.session.prompt({
-                path: { id: sessionId },
-                body: {
-                  ...(shouldSwitchAgent && { agent: targetAgent }),
-                  parts: [{ type: "text", text: message }],
-                },
-              });
-            } catch {
-              // Session may not be available
-            }
-          }
-        }
-      }
-
-      // Handle /plannotator-annotate command
-      const isAnnotateCommand = commandName === "plannotator-annotate";
-
-      if (isCommandEvent && isAnnotateCommand) {
-        // @ts-ignore - Event properties contain arguments
-        const filePath = event.properties?.arguments || event.arguments || "";
-
-        if (!filePath) {
-          ctx.client.app.log({
-            level: "error",
-            message: "Usage: /plannotator-annotate <file.md>",
-          });
-          return;
-        }
-
-        ctx.client.app.log({
-          level: "info",
-          message: `Opening annotation UI for ${filePath}...`,
-        });
-
-        const projectRoot = process.cwd();
-        const resolved = await resolveMarkdownFile(filePath, projectRoot);
-
-        if (resolved.kind === "ambiguous") {
-          ctx.client.app.log({
-            level: "error",
-            message: `Ambiguous filename "${resolved.input}" — found ${resolved.matches.length} matches:\n${resolved.matches.map((m) => `  ${m}`).join("\n")}`,
-          });
-          return;
-        }
-        if (resolved.kind === "not_found") {
-          ctx.client.app.log({
-            level: "error",
-            message: `File not found: ${resolved.input}`,
-          });
-          return;
-        }
-
-        const absolutePath = resolved.path;
-        ctx.client.app.log({
-          level: "info",
-          message: `Resolved: ${absolutePath}`,
-        });
-        const markdown = await Bun.file(absolutePath).text();
-
-        const server = await startAnnotateServer({
-          markdown,
-          filePath: absolutePath,
-          origin: "opencode",
-          sharingEnabled: await getSharingEnabled(),
-          shareBaseUrl: getShareBaseUrl(),
-          htmlContent: htmlContent,
-          onReady: handleAnnotateServerReady,
-        });
-
-        const result = await server.waitForDecision();
-        await Bun.sleep(1500);
-        server.stop();
-
-        if (result.feedback) {
-          // @ts-ignore - Event properties contain sessionID
-          const sessionId = event.properties?.sessionID;
-
-          if (sessionId) {
-            try {
-              await ctx.client.session.prompt({
-                path: { id: sessionId },
-                body: {
-                  parts: [
-                    {
-                      type: "text",
-                      text: `# Markdown Annotations\n\nFile: ${absolutePath}\n\n${result.feedback}\n\nPlease address the annotation feedback above.`,
-                    },
-                  ],
-                },
-              });
-            } catch {
-              // Session may not be available
-            }
-          }
-        }
-      }
+      if (commandName === "plannotator-review")
+        return handleReviewCommand(event, deps);
+      if (commandName === "plannotator-annotate")
+        return handleAnnotateCommand(event, deps);
+      if (commandName === "plannotator-last")
+        return handleAnnotateLastCommand(event, deps);
     },
 
     tool: {

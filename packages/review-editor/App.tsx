@@ -20,6 +20,7 @@ import { ReviewPanel } from './components/ReviewPanel';
 import { FileTree } from './components/FileTree';
 import { DEMO_DIFF } from './demoData';
 import type { DiffOption, WorktreeInfo, GitContext } from '@plannotator/shared/types';
+import type { PRMetadata } from '@plannotator/shared/pr-provider';
 
 declare const __APP_VERSION__: string;
 
@@ -174,6 +175,7 @@ const ReviewApp: React.FC = () => {
   const [showApproveWarning, setShowApproveWarning] = useState(false);
   const [sharingEnabled, setSharingEnabled] = useState(true);
   const [repoInfo, setRepoInfo] = useState<{ display: string; branch?: string } | null>(null);
+  const [prMetadata, setPrMetadata] = useState<PRMetadata | null>(null);
 
   const identity = useMemo(() => getIdentity(), []);
 
@@ -243,6 +245,7 @@ const ReviewApp: React.FC = () => {
         gitContext?: GitContext;
         sharingEnabled?: boolean;
         repoInfo?: { display: string; branch?: string };
+        prMetadata?: PRMetadata;
         error?: string;
       }) => {
         const apiFiles = parseDiffToFiles(data.rawPatch);
@@ -261,6 +264,7 @@ const ReviewApp: React.FC = () => {
         if (data.gitContext) setGitContext(data.gitContext);
         if (data.sharingEnabled !== undefined) setSharingEnabled(data.sharingEnabled);
         if (data.repoInfo) setRepoInfo(data.repoInfo);
+        if (data.prMetadata) setPrMetadata(data.prMetadata);
         if (data.error) setDiffError(data.error);
       })
       .catch(() => {
@@ -656,29 +660,35 @@ const ReviewApp: React.FC = () => {
             >
               v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0'}
             </a>
-            <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-secondary/15 text-secondary hidden md:inline">
-              Code Review
+            <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium hidden md:inline ${
+              prMetadata ? 'bg-violet-500/15 text-violet-400' : 'bg-secondary/15 text-secondary'
+            }`}>
+              {prMetadata ? 'PR Review' : 'Code Review'}
             </span>
-            {/* Agent badge — unreliable for now across multiple harnesses */}
-            {/* {origin && (
-              <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium hidden md:inline ${
-                origin === 'claude-code'
-                  ? 'bg-orange-500/15 text-orange-400'
-                  : origin === 'pi'
-                    ? 'bg-violet-500/15 text-violet-400'
-                    : 'bg-zinc-500/20 text-zinc-400'
-              }`}>
-                {origin === 'claude-code' ? 'Claude Code' : origin === 'pi' ? 'Pi' : 'OpenCode'}
-              </span>
-            )} */}
-            {repoInfo && (
+            {prMetadata ? (
+              <>
+                <span className="text-muted-foreground/40 hidden md:inline">|</span>
+                <span className="text-xs text-muted-foreground/60 font-mono hidden md:inline">
+                  {prMetadata.owner}/{prMetadata.repo}
+                </span>
+                <a
+                  href={prMetadata.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-accent/80 hover:text-accent hidden md:inline truncate max-w-[300px] transition-colors"
+                  title={prMetadata.title}
+                >
+                  #{prMetadata.number} {prMetadata.title}
+                </a>
+              </>
+            ) : repoInfo ? (
               <>
                 <span className="text-muted-foreground/40 hidden md:inline">|</span>
                 <span className="text-xs text-muted-foreground/60 font-mono hidden md:inline truncate max-w-[200px]" title={repoInfo.display}>
                   {repoInfo.display}
                 </span>
               </>
-            )}
+            ) : null}
           </div>
 
           <div className="flex items-center gap-1 md:gap-2">

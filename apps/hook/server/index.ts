@@ -50,7 +50,7 @@ import { registerSession, unregisterSession, listSessions } from "@plannotator/s
 import { openBrowser } from "@plannotator/server/browser";
 import { detectProjectName } from "@plannotator/server/project";
 import { planDenyFeedback } from "@plannotator/shared/feedback-templates";
-import { findSessionLogsForCwd, getLastRenderedMessage } from "./session-log";
+import { findSessionLogsForCwd, getLastRenderedMessage, type RenderedMessage } from "./session-log";
 import { findCodexRolloutByThreadId, getLastCodexMessage } from "./codex-session";
 import path from "path";
 
@@ -288,7 +288,7 @@ if (args[0] === "sessions") {
   const codexThreadId = process.env.CODEX_THREAD_ID;
   const isCodex = !!codexThreadId;
 
-  let lastMessage: { messageId: string; text: string; lineNumbers: number[] } | null = null;
+  let lastMessage: RenderedMessage | null = null;
 
   if (codexThreadId) {
     // Codex path: find rollout by thread ID

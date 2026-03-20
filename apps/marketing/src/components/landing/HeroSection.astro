@@ -96,8 +96,9 @@ import AnnoReplace from './AnnoReplace.astro';
       <div class="mt-2 max-w-lg hidden sm:block" id="install-detail-wrap">
         <p class="text-[11px] text-muted-foreground/50" id="install-detail"></p>
         <div class="hero-detail-steps hidden mt-1.5 space-y-1" id="install-steps">
-          <div class="hero-detail-step" id="install-step-1"></div>
-          <div class="hero-detail-step" id="install-step-2"></div>
+          <div class="hero-detail-step" id="install-step-1" style="display:none"></div>
+          <div class="hero-detail-step" id="install-step-2" style="display:none"></div>
+          <div class="hero-detail-step" id="install-step-3" style="display:none"></div>
         </div>
       </div>
 
@@ -137,6 +138,7 @@ import AnnoReplace from './AnnoReplace.astro';
     var stepsEl = document.getElementById('install-steps');
     var step1El = document.getElementById('install-step-1');
     var step2El = document.getElementById('install-step-2');
+    var step3El = document.getElementById('install-step-3');
     var videoLink = document.getElementById('watch-demo-link');
     var copyBtn = document.getElementById('install-copy-btn');
 
@@ -173,6 +175,7 @@ import AnnoReplace from './AnnoReplace.astro';
       codex: {
         steps: [
           '!plannotator review',
+          '!plannotator annotate <file>',
           '!plannotator last'
         ],
         detail: 'Then use in Codex:'
@@ -197,14 +200,15 @@ import AnnoReplace from './AnnoReplace.astro';
       var config = agents[btn.dataset.agent] || {};
       detailEl.textContent = config.detail || '';
 
-      if (config.steps) {
+      // Clear all steps completely, then rebuild
+      var allSteps = [step1El, step2El, step3El];
+      allSteps.forEach(function(el) { el.innerHTML = ''; el.style.display = 'none'; });
+
+      if (config.steps && config.steps.length) {
         stepsEl.classList.remove('hidden');
-        makeStep(step1El, config.steps[0]);
-        if (config.steps[1]) {
-          step2El.classList.remove('hidden');
-          makeStep(step2El, config.steps[1]);
-        } else {
-          step2El.classList.add('hidden');
+        for (var i = 0; i < config.steps.length && i < allSteps.length; i++) {
+          allSteps[i].style.display = '';
+          makeStep(allSteps[i], config.steps[i]);
         }
       } else {
         stepsEl.classList.add('hidden');

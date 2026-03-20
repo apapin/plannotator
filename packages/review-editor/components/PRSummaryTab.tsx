@@ -11,8 +11,8 @@ interface PRSummaryTabProps {
 }
 
 /** Check if content contains HTML tags that should be rendered natively. */
-const HTML_TAG_RE = /^<[a-z][a-z0-9]*[\s/>]/i;
-const containsHtml = (text: string) => HTML_TAG_RE.test(text.trim());
+const HTML_TAG_RE = /<[a-z][a-z0-9]*[\s/>]/i;
+const containsHtml = (text: string) => HTML_TAG_RE.test(text);
 
 /** Sanitize HTML using DOMPurify — defense-in-depth for GitHub API content. */
 function sanitizeHtml(html: string): string {

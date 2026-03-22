@@ -160,9 +160,9 @@ function readSessionMetadata(pid: number): SessionMetadata | null {
  *
  * Strategy:
  * 1. Read ~/.claude/sessions/<ppid>.json to get the exact sessionId and cwd.
- * 2. Build the project slug from the session's original cwd (not the current
- *    shell cwd, which may have diverged after `cd`).
- * 3. Return the exact JSONL path: ~/.claude/projects/<slug>/<sessionId>.jsonl
+ * 2. Use findSessionLogsForCwd() with the session's original cwd (not the
+ *    current shell cwd), which handles case-insensitive slug matching on Windows.
+ * 3. Return the log matching the sessionId, or null.
  *
  * Returns null if session metadata is unavailable or the log file doesn't exist.
  */
@@ -173,9 +173,8 @@ export function resolveSessionLogByPpid(): string | null {
   const meta = readSessionMetadata(ppid);
   if (!meta?.sessionId || !meta?.cwd) return null;
 
-  const slug = projectSlugFromCwd(meta.cwd);
-  const projectsDir = join(homedir(), ".claude", "projects");
-  return join(projectsDir, slug, `${meta.sessionId}.jsonl`);
+  const candidates = findSessionLogsForCwd(meta.cwd);
+  return candidates.find((p) => p.includes(meta.sessionId)) ?? null;
 }
 
 /**

@@ -13,7 +13,7 @@ import { PRChecksTab } from './PRChecksTab';
 import { AITab } from './AITab';
 import { SparklesIcon } from './SparklesIcon';
 import type { PRMetadata } from '@plannotator/shared/pr-provider';
-import type { AIMessage } from '../hooks/useAIChat';
+import type { AIChatEntry } from '../hooks/useAIChat';
 
 interface DiffFile {
   path: string;
@@ -38,7 +38,7 @@ interface ReviewPanelProps {
   prMetadata?: PRMetadata | null;
   // AI props
   aiAvailable?: boolean;
-  aiMessages?: AIMessage[];
+  aiMessages?: AIChatEntry[];
   isAICreatingSession?: boolean;
   isAIStreaming?: boolean;
   onScrollToAILines?: (filePath: string, lineStart: number, lineEnd: number, side: 'old' | 'new') => void;

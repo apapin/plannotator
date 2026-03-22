@@ -10,7 +10,7 @@ import { FileHeader } from './FileHeader';
 import { InlineAnnotation } from './InlineAnnotation';
 import { InlineAIMarker } from './InlineAIMarker';
 import { AnnotationToolbar } from './AnnotationToolbar';
-import type { AIMessage } from '../hooks/useAIChat';
+import type { AIChatEntry } from '../hooks/useAIChat';
 import { SuggestionModal } from './SuggestionModal';
 import { type ReviewSearchMatch } from '../utils/reviewSearch';
 import {
@@ -49,10 +49,10 @@ interface DiffViewerProps {
   onAskAI?: (question: string) => void;
   isAILoading?: boolean;
   onViewAIResponse?: (questionId?: string) => void;
-  aiMessages?: AIMessage[];
+  aiMessages?: AIChatEntry[];
   onClickAIMarker?: (questionId: string) => void;
   /** AI messages overlapping the current pending selection */
-  aiHistoryMessages?: AIMessage[];
+  aiHistoryMessages?: AIChatEntry[];
 }
 
 export const DiffViewer: React.FC<DiffViewerProps> = ({

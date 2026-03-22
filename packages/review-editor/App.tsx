@@ -17,6 +17,7 @@ import { CodeAnnotation, CodeAnnotationType, SelectedLineRange } from '@plannota
 import { useResizablePanel } from '@plannotator/ui/hooks/useResizablePanel';
 import { useCodeAnnotationDraft } from '@plannotator/ui/hooks/useCodeAnnotationDraft';
 import { useGitAdd } from './hooks/useGitAdd';
+import { generateId } from './utils/generateId';
 import { useAIChat } from './hooks/useAIChat';
 import { isTypingTarget, useReviewSearch } from './hooks/useReviewSearch';
 import { useEditorAnnotations } from '@plannotator/ui/hooks/useEditorAnnotations';
@@ -84,11 +85,6 @@ function parseDiffToFiles(rawPatch: string): DiffFile[] {
   }
 
   return files;
-}
-
-// Generate unique ID
-function generateId(): string {
-  return Math.random().toString(36).substring(2, 9);
 }
 
 const ReviewApp: React.FC = () => {
@@ -277,7 +273,7 @@ const ReviewApp: React.FC = () => {
   // General AI question from sidebar input
   const handleAskGeneral = useCallback((question: string) => {
     aiChat.ask({ prompt: question });
-  }, [aiChat]);
+  }, [aiChat.ask]);
 
   // Resizable panels
   const panelResize = useResizablePanel({ storageKey: 'plannotator-review-panel-width' });

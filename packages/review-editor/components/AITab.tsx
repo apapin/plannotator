@@ -1,5 +1,5 @@
-import React, { useRef, useEffect, useState, useMemo } from 'react';
-import type { AIMessage, PendingPermission } from '../hooks/useAIChat';
+import React, { useRef, useEffect, useState, useMemo, memo } from 'react';
+import type { AIChatEntry, PendingPermission } from '../hooks/useAIChat';
 import { renderMarkdown } from '../utils/renderMarkdown';
 import { formatLineRange } from '../utils/formatLineRange';
 import { formatTimestamp } from '../utils/formatTimestamp';
@@ -7,12 +7,10 @@ import { SparklesIcon } from './SparklesIcon';
 import { CountBadge } from './CountBadge';
 import { CopyButton } from './CopyButton';
 import { PermissionCard } from './PermissionCard';
-
-const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
-const submitHint = isMac ? '⌘↵' : 'Ctrl+Enter';
+import { submitHint } from '../utils/platform';
 
 interface AITabProps {
-  messages: AIMessage[];
+  messages: AIChatEntry[];
   isCreatingSession: boolean;
   isStreaming: boolean;
   activeFilePath?: string;
@@ -25,10 +23,10 @@ interface AITabProps {
 
 interface FileGroup {
   filePath: string;
-  messages: AIMessage[];
+  messages: AIChatEntry[];
 }
 
-function getQuestionScope(q: AIMessage['question']): 'general' | 'file' | 'line' {
+function getQuestionScope(q: AIChatEntry['question']): 'general' | 'file' | 'line' {
   if (!q.filePath) return 'general';
   if (q.lineStart == null) return 'file';
   return 'line';
@@ -52,8 +50,8 @@ export const AITab: React.FC<AITabProps> = ({
 
   // Group messages by file
   const { fileGroups, generalMessages } = useMemo(() => {
-    const grouped = new Map<string, AIMessage[]>();
-    const general: AIMessage[] = [];
+    const grouped = new Map<string, AIChatEntry[]>();
+    const general: AIChatEntry[] = [];
 
     for (const msg of messages) {
       if (!msg.question.filePath) {
@@ -115,17 +113,21 @@ export const AITab: React.FC<AITabProps> = ({
     }
   }, [scrollToQuestionId]);
 
-  // Auto-scroll on streaming
+  // Auto-scroll when new messages arrive (not on every streaming token)
+  const prevMsgCount = useRef(messages.length);
   useEffect(() => {
     if (!scrollRef.current) return;
-    if (!isStreaming && messages.length === 0) return;
+    const isNewMessage = messages.length > prevMsgCount.current;
+    prevMsgCount.current = messages.length;
 
-    const allQAs = scrollRef.current.querySelectorAll('[data-question-id]');
-    const lastQA = allQAs[allQAs.length - 1];
-    if (lastQA) {
-      lastQA.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    if (isNewMessage) {
+      const allQAs = scrollRef.current.querySelectorAll('[data-question-id]');
+      const lastQA = allQAs[allQAs.length - 1];
+      if (lastQA) {
+        lastQA.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }
     }
-  }, [messages, isStreaming]);
+  }, [messages.length]);
 
   const toggleFile = (filePath: string) => {
     setExpandedFiles(prev => {
@@ -272,13 +274,17 @@ const GeneralInput: React.FC<{
   </div>
 );
 
-/** Single Q&A pair */
-const QAPair: React.FC<{
-  question: AIMessage['question'];
-  response: AIMessage['response'];
+/** Single Q&A pair — memoized to avoid re-parsing markdown on sibling updates */
+const QAPair = memo<{
+  question: AIChatEntry['question'];
+  response: AIChatEntry['response'];
   onScrollToLines: AITabProps['onScrollToLines'];
-}> = ({ question, response, onScrollToLines }) => {
+}>(({ question, response, onScrollToLines }) => {
   const scope = getQuestionScope(question);
+  const renderedResponse = useMemo(
+    () => response.text ? renderMarkdown(response.text) : null,
+    [response.text],
+  );
 
   return (
     <div data-question-id={question.id} className="flex flex-col gap-1.5">
@@ -314,7 +320,7 @@ const QAPair: React.FC<{
         ) : response.text ? (
           <>
             <div className="text-xs review-comment-body">
-              {renderMarkdown(response.text)}
+              {renderedResponse}
               {response.isStreaming && <span className="ai-streaming-cursor inline-block ml-0.5" />}
             </div>
             {!response.isStreaming && <CopyButton text={response.text} />}
@@ -327,4 +333,4 @@ const QAPair: React.FC<{
       </div>
     </div>
   );
-};
+});

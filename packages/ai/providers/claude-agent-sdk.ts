@@ -49,7 +49,7 @@ interface ClaudeSDKQueryOptions {
   systemPrompt?: string;
   resume?: string;
   forkSession?: boolean;
-  permissionMode?: string;
+  permissionMode?: ClaudeAgentSDKConfig['permissionMode'];
   allowDangerouslySkipPermissions?: boolean;
   pathToClaudeCodeExecutable?: string;
   settingSources?: string[];
@@ -156,7 +156,7 @@ interface SessionConfig {
   maxTurns: number;
   maxBudgetUsd?: number;
   allowedTools: string[];
-  permissionMode: string;
+  permissionMode: ClaudeAgentSDKConfig['permissionMode'];
   cwd: string;
   parentSessionId: string | null;
   forkFromSession: string | null;
@@ -178,7 +178,7 @@ class ClaudeAgentSDKSession implements AISession {
   /** Monotonic counter — each query() call gets a unique generation. */
   private _queryGen = 0;
   /** Active Query object — needed to send control responses (permission decisions) */
-  private _activeQuery: any = null;
+  private _activeQuery: { streamInput: (iter: AsyncIterable<unknown>) => Promise<void> } | null = null;
 
   constructor(config: SessionConfig) {
     this.config = config;
@@ -413,7 +413,6 @@ function mapSDKMessage(msg: Record<string, unknown>): AIMessage[] {
       if (msg.tool_use_result != null) {
         return [{
           type: "tool_result",
-          toolUseId: "",
           result: typeof msg.tool_use_result === "string"
             ? msg.tool_use_result
             : JSON.stringify(msg.tool_use_result),

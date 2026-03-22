@@ -4,7 +4,7 @@ import { useTabIndent } from '../hooks/useTabIndent';
 import { formatLineRange } from '../utils/formatLineRange';
 import { AskAIInput } from './AskAIInput';
 import { SparklesIcon } from './SparklesIcon';
-import type { AIMessage } from '../hooks/useAIChat';
+import type { AIChatEntry } from '../hooks/useAIChat';
 
 interface AnnotationToolbarProps {
   toolbarState: ToolbarState;
@@ -26,7 +26,7 @@ interface AnnotationToolbarProps {
   isAILoading?: boolean;
   onViewAIResponse?: (questionId?: string) => void;
   /** AI messages that overlap the current line selection */
-  aiHistoryMessages?: AIMessage[];
+  aiHistoryMessages?: AIChatEntry[];
 }
 
 /** Floating comment input form that appears after line selection */

@@ -186,17 +186,12 @@ export function createAIEndpoints(deps: AIEndpointDeps) {
       const stream = new ReadableStream({
         async start(controller) {
           try {
-            let msgCount = 0;
             for await (const message of entry.session.query(effectivePrompt)) {
-              msgCount++;
-              // DEBUG: log every message the provider yields
-              console.log(`[AI STREAM #${msgCount}]`, message.type, message.type === 'text_delta' ? '' : message.type === 'text' ? `(${(message as any).text?.length} chars)` : message.type === 'result' ? `success=${(message as any).success}` : message.type === 'tool_use' ? (message as any).toolName : '');
               const data = JSON.stringify(message);
               controller.enqueue(
                 encoder.encode(`data: ${data}\n\n`)
               );
             }
-            console.log(`[AI STREAM] Done. Total messages: ${msgCount}`);
             controller.enqueue(encoder.encode("data: [DONE]\n\n"));
           } catch (err) {
             const errorMsg: AIMessage = {

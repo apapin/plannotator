@@ -100,7 +100,7 @@ export interface AIToolUseMessage {
 
 export interface AIToolResultMessage {
   type: "tool_result";
-  toolUseId: string;
+  toolUseId?: string;
   result: string;
 }
 

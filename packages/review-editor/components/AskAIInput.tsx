@@ -1,10 +1,8 @@
 import React, { useState } from 'react';
 import { formatLineRange } from '../utils/formatLineRange';
 import { SparklesIcon } from './SparklesIcon';
-import type { AIMessage } from '../hooks/useAIChat';
-
-const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
-const submitHint = isMac ? '⌘↵' : 'Ctrl+Enter';
+import type { AIChatEntry } from '../hooks/useAIChat';
+import { submitHint } from '../utils/platform';
 
 interface AskAIInputProps {
   lineStart: number;
@@ -15,7 +13,7 @@ interface AskAIInputProps {
   /** Pre-filled text from the comment textarea */
   initialText?: string;
   /** AI messages that overlap the current line selection */
-  aiHistory: AIMessage[];
+  aiHistory: AIChatEntry[];
   onViewResponse?: (questionId: string) => void;
   /** Toggle back to comment mode */
   onSwitchToComment?: () => void;

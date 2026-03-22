@@ -1,7 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { AIQuestion, AIResponse } from '@plannotator/ui/types';
+import { generateId } from '../utils/generateId';
 
-export interface AIMessage {
+export interface AIChatEntry {
   question: AIQuestion;
   response: AIResponse;
 }
@@ -32,7 +33,7 @@ interface AskParams {
 
 export function useAIChat({ patch }: UseAIChatOptions) {
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<AIMessage[]>([]);
+  const [messages, setMessages] = useState<AIChatEntry[]>([]);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,7 +67,6 @@ export function useAIChat({ patch }: UseAIChatOptions) {
 
       const data = await res.json() as { sessionId: string };
       setSessionId(data.sessionId);
-      sessionIdRef.current = data.sessionId;
       return data.sessionId;
     } finally {
       setIsCreatingSession(false);
@@ -83,7 +83,7 @@ export function useAIChat({ patch }: UseAIChatOptions) {
     abortRef.current = controller;
     setError(null);
 
-    const questionId = Math.random().toString(36).substring(2, 9);
+    const questionId = generateId();
     const question: AIQuestion = {
       id: questionId,
       prompt: params.prompt,
@@ -164,9 +164,6 @@ export function useAIChat({ patch }: UseAIChatOptions) {
 
           try {
             const msg = JSON.parse(data);
-
-            // DEBUG: log every SSE message to browser console
-            console.log('[AI SSE]', msg.type, msg.type === 'text_delta' ? msg.delta?.slice(0, 50) : msg.type === 'text' ? `(${msg.text?.length} chars)` : msg.type === 'result' ? `success=${msg.success} result=${msg.result?.slice(0, 80)}` : msg.type === 'tool_use' ? `${msg.toolName}` : msg.type === 'tool_result' ? `(${msg.result?.slice(0, 50)})` : JSON.stringify(msg).slice(0, 100));
 
             if (msg.type === 'text_delta') {
               setMessages(prev =>

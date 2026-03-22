@@ -14,8 +14,14 @@ import {
   findAnchorIndex,
   extractLastRenderedMessage,
   projectSlugFromCwd,
+  findSessionLogsByAncestorWalk,
+  findSessionLogsForCwd,
   type SessionLogEntry,
 } from "./session-log";
+import { mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
+import { tmpdir } from "node:os";
 
 // --- Fixture Helpers ---
 
@@ -544,5 +550,70 @@ describe("parseSessionLog", () => {
 
   test("handles empty input", () => {
     expect(parseSessionLog("")).toHaveLength(0);
+  });
+});
+
+describe("findSessionLogsByAncestorWalk", () => {
+  // These tests use the real ~/.claude/projects/ directory structure.
+  // They verify the ancestor walk logic without needing mocks.
+
+  test("returns empty array for root directory (no parents to walk)", () => {
+    const result = findSessionLogsByAncestorWalk("/");
+    expect(result).toEqual([]);
+  });
+
+  test("walks up to find parent directory session logs", () => {
+    // Create a temporary project slug structure
+    const testId = `plannotator-test-${Date.now()}`;
+    const testDir = join(tmpdir(), testId, "sub", "deep");
+    const slugDir = join(
+      homedir(),
+      ".claude",
+      "projects",
+      // Slug for the parent (tmpdir/testId)
+      `${join(tmpdir(), testId)}`.replace(/[^a-zA-Z0-9-]/g, "-")
+    );
+
+    try {
+      // Set up: create a fake session log at the parent slug
+      mkdirSync(slugDir, { recursive: true });
+      const fakeLog = join(slugDir, "fake-session.jsonl");
+      writeFileSync(fakeLog, '{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"hello"}]}}\n');
+
+      // Walk from the deep subdirectory — should find the parent's logs
+      const result = findSessionLogsByAncestorWalk(testDir);
+      expect(result.length).toBeGreaterThan(0);
+      expect(result[0]).toBe(fakeLog);
+    } finally {
+      // Cleanup
+      rmSync(slugDir, { recursive: true, force: true });
+    }
+  });
+
+  test("does not return results for the exact CWD (caller already tried it)", () => {
+    // Create a temp slug for the exact CWD
+    const testId = `plannotator-test-exact-${Date.now()}`;
+    const testDir = join(tmpdir(), testId);
+    const slugDir = join(
+      homedir(),
+      ".claude",
+      "projects",
+      testDir.replace(/[^a-zA-Z0-9-]/g, "-")
+    );
+
+    try {
+      mkdirSync(slugDir, { recursive: true });
+      writeFileSync(
+        join(slugDir, "fake.jsonl"),
+        '{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"hi"}]}}\n'
+      );
+
+      // Ancestor walk skips the exact CWD — the caller already tried it
+      const result = findSessionLogsByAncestorWalk(testDir);
+      // Should not find the CWD's own slug; only parents
+      expect(result.every((p) => !p.includes(slugDir))).toBe(true);
+    } finally {
+      rmSync(slugDir, { recursive: true, force: true });
+    }
   });
 });

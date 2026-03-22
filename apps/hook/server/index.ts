@@ -44,14 +44,14 @@ import {
   handleAnnotateServerReady,
 } from "@plannotator/server/annotate";
 import { getGitContext, runGitDiff } from "@plannotator/server/git";
-import { parsePRUrl, checkGhAuth, fetchPR } from "@plannotator/server/pr";
+import { parsePRUrl, checkAuth, fetchPR, getCliName, getCliInstallUrl, getMRLabel, getMRNumberLabel, getDisplayRepo } from "@plannotator/server/pr";
 import { writeRemoteShareLink } from "@plannotator/server/share-url";
 import { resolveMarkdownFile } from "@plannotator/server/resolve-file";
 import { registerSession, unregisterSession, listSessions } from "@plannotator/server/sessions";
 import { openBrowser } from "@plannotator/server/browser";
 import { detectProjectName } from "@plannotator/server/project";
 import { planDenyFeedback } from "@plannotator/shared/feedback-templates";
-import { findSessionLogsForCwd, getLastRenderedMessage, type RenderedMessage } from "./session-log";
+import { findSessionLogsForCwd, resolveSessionLogByPpid, findSessionLogsByAncestorWalk, getLastRenderedMessage, type RenderedMessage } from "./session-log";
 import { findCodexRolloutByThreadId, getLastCodexMessage } from "./codex-session";
 import path from "path";
 
@@ -149,29 +149,34 @@ if (args[0] === "sessions") {
     // --- PR Review Mode ---
     const prRef = parsePRUrl(urlArg);
     if (!prRef) {
-      console.error(`Invalid PR URL: ${urlArg}`);
-      console.error("Supported formats: https://github.com/owner/repo/pull/123");
+      console.error(`Invalid PR/MR URL: ${urlArg}`);
+      console.error("Supported formats:");
+      console.error("  GitHub: https://github.com/owner/repo/pull/123");
+      console.error("  GitLab: https://gitlab.com/group/project/-/merge_requests/42");
       process.exit(1);
     }
 
+    const cliName = getCliName(prRef);
+    const cliUrl = getCliInstallUrl(prRef);
+
     try {
-      await checkGhAuth();
+      await checkAuth(prRef);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes("not found") || msg.includes("ENOENT")) {
-        console.error("GitHub CLI (gh) is not installed.");
-        console.error("Install it from https://cli.github.com");
+        console.error(`${cliName === "gh" ? "GitHub" : "GitLab"} CLI (${cliName}) is not installed.`);
+        console.error(`Install it from ${cliUrl}`);
       } else {
         console.error(msg);
       }
       process.exit(1);
     }
 
-    console.error(`Fetching PR #${prRef.number} from ${prRef.owner}/${prRef.repo}...`);
+    console.error(`Fetching ${getMRLabel(prRef)} ${getMRNumberLabel(prRef)} from ${getDisplayRepo(prRef)}...`);
     try {
       const pr = await fetchPR(prRef);
       rawPatch = pr.rawPatch;
-      gitRef = `PR #${prRef.number}`;
+      gitRef = `${getMRLabel(prRef)} ${getMRNumberLabel(prRef)}`;
       prMetadata = pr.metadata;
     } catch (err) {
       console.error(err instanceof Error ? err.message : "Failed to fetch PR");
@@ -216,7 +221,7 @@ if (args[0] === "sessions") {
     mode: "review",
     project: reviewProject,
     startedAt: new Date().toISOString(),
-    label: isPRMode ? `pr-review-${prMetadata!.owner}/${prMetadata!.repo}#${prMetadata!.number}` : `review-${reviewProject}`,
+    label: isPRMode ? `${getMRLabel(prMetadata!).toLowerCase()}-review-${getDisplayRepo(prMetadata!)}${getMRNumberLabel(prMetadata!)}` : `review-${reviewProject}`,
   });
 
   // Wait for user feedback
@@ -351,21 +356,43 @@ if (args[0] === "sessions") {
       }
     }
   } else {
-    // Claude Code path: find session logs by CWD
-    const candidates = findSessionLogsForCwd(projectRoot);
+    // Claude Code path: resolve session log
+    //
+    // Strategy (most precise → least precise):
+    // 1. PPID session metadata: ~/.claude/sessions/<ppid>.json gives us the
+    //    exact sessionId and original cwd. Deterministic, O(1), no scanning.
+    // 2. CWD slug match: existing behavior — works when the shell CWD hasn't
+    //    changed from the session's project directory.
+    // 3. Ancestor walk: walk up the directory tree trying parent slugs. Handles
+    //    the common case where the user `cd`'d deeper into a subdirectory.
 
     if (process.env.PLANNOTATOR_DEBUG) {
       console.error(`[DEBUG] Project root: ${projectRoot}`);
-      console.error(`[DEBUG] Candidates: ${candidates.join(", ")}`);
+      console.error(`[DEBUG] PPID: ${process.ppid}`);
     }
 
-    for (const logPath of candidates) {
+    /** Try each log path, return the first that yields a message. */
+    function tryLogCandidates(label: string, getPaths: () => string[]): void {
+      if (lastMessage) return;
+      const paths = getPaths();
       if (process.env.PLANNOTATOR_DEBUG) {
-        console.error(`[DEBUG] Trying: ${logPath}`);
+        console.error(`[DEBUG] ${label}: ${paths.length ? paths.join(", ") : "(none)"}`);
       }
-      lastMessage = getLastRenderedMessage(logPath);
-      if (lastMessage) break;
+      for (const logPath of paths) {
+        lastMessage = getLastRenderedMessage(logPath);
+        if (lastMessage) return;
+      }
     }
+
+    // 1. Try PPID-based session metadata (most reliable)
+    const ppidLog = resolveSessionLogByPpid();
+    tryLogCandidates("PPID session metadata", () => ppidLog ? [ppidLog] : []);
+
+    // 2. Fall back to CWD slug match
+    tryLogCandidates("CWD slug match", () => findSessionLogsForCwd(projectRoot));
+
+    // 3. Fall back to ancestor directory walk
+    tryLogCandidates("Ancestor walk", () => findSessionLogsByAncestorWalk(projectRoot));
   }
 
   if (!lastMessage) {

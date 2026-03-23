@@ -39,7 +39,7 @@ import { getRepoInfo } from "./repo";
 import { detectProjectName } from "./project";
 import { handleImage, handleUpload, handleAgents, handleServerReady, handleDraftSave, handleDraftLoad, handleDraftDelete, handleFavicon, type OpencodeClient } from "./shared-handlers";
 import { contentHash, deleteDraft } from "./draft";
-import { handleDoc, handleObsidianVaults, handleObsidianFiles, handleObsidianDoc } from "./reference-handlers";
+import { handleDoc, handleObsidianVaults, handleObsidianFiles, handleObsidianDoc, handleFileBrowserFiles } from "./reference-handlers";
 import { createEditorAnnotationHandler } from "./editor-annotations";
 
 // Re-export utilities
@@ -264,7 +264,7 @@ export async function startPlannotatorServer(
                 shareBaseUrl,
               });
             }
-            return Response.json({ plan, origin, permissionMode, sharingEnabled, shareBaseUrl, pasteApiUrl, repoInfo, previousPlan, versionInfo });
+            return Response.json({ plan, origin, permissionMode, sharingEnabled, shareBaseUrl, pasteApiUrl, repoInfo, previousPlan, versionInfo, projectRoot: process.cwd() });
           }
 
           // API: Serve a linked markdown document
@@ -320,6 +320,11 @@ export async function startPlannotatorServer(
           // API: Read an Obsidian vault document
           if (url.pathname === "/api/reference/obsidian/doc" && req.method === "GET") {
             return handleObsidianDoc(req);
+          }
+
+          // API: List markdown files in a directory as a tree
+          if (url.pathname === "/api/reference/files" && req.method === "GET") {
+            return handleFileBrowserFiles(req);
           }
 
           // API: Get available agents (OpenCode only)

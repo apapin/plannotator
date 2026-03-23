@@ -46,7 +46,9 @@ import { useVaultBrowser } from '@plannotator/ui/hooks/useVaultBrowser';
 import { useAnnotationDraft } from '@plannotator/ui/hooks/useAnnotationDraft';
 import { useArchive } from '@plannotator/ui/hooks/useArchive';
 import { useEditorAnnotations } from '@plannotator/ui/hooks/useEditorAnnotations';
+import { useFileBrowser } from '@plannotator/ui/hooks/useFileBrowser';
 import { isVaultBrowserEnabled } from '@plannotator/ui/utils/obsidian';
+import { isFileBrowserEnabled, getFileBrowserSettings } from '@plannotator/ui/utils/fileBrowser';
 import { SidebarTabs } from '@plannotator/ui/components/sidebar/SidebarTabs';
 import { SidebarContainer } from '@plannotator/ui/components/sidebar/SidebarContainer';
 import type { ArchivedPlan } from '@plannotator/ui/components/sidebar/ArchiveBrowser';
@@ -97,6 +99,7 @@ const App: React.FC = () => {
   const [shareBaseUrl, setShareBaseUrl] = useState<string | undefined>(undefined);
   const [pasteApiUrl, setPasteApiUrl] = useState<string | undefined>(undefined);
   const [repoInfo, setRepoInfo] = useState<{ display: string; branch?: string } | null>(null);
+  const [projectRoot, setProjectRoot] = useState<string | null>(null);
 
   useEffect(() => {
     document.title = repoInfo ? `${repoInfo.display} · Plannotator` : "Plannotator";
@@ -205,10 +208,48 @@ const App: React.FC = () => {
     vaultBrowser.setActiveFile(relativePath);
   }, [vaultPath, linkedDocHook, vaultBrowser, buildVaultDocUrl]);
 
-  // Route linked doc opens through vault endpoint when viewing a vault file
+  // Markdown file browser
+  const fileBrowser = useFileBrowser();
+  const showFilesTab = useMemo(() => !!projectRoot || isFileBrowserEnabled(), [projectRoot, uiPrefs]);
+  const fileBrowserDirs = useMemo(() => {
+    const projectDirs = projectRoot ? [projectRoot] : [];
+    const userDirs = isFileBrowserEnabled()
+      ? getFileBrowserSettings().directories
+      : [];
+    return [...new Set([...projectDirs, ...userDirs])];
+  }, [projectRoot, uiPrefs]);
+
+  // Clear active file when file browser is disabled
+  useEffect(() => {
+    if (!showFilesTab) fileBrowser.setActiveFile(null);
+  }, [showFilesTab]);
+
+  // Auto-fetch file trees when files tab is first opened
+  useEffect(() => {
+    if (sidebar.activeTab === 'files' && showFilesTab && fileBrowserDirs.length > 0
+        && fileBrowser.dirs.length === 0) {
+      fileBrowser.fetchAll(fileBrowserDirs);
+    }
+  }, [sidebar.activeTab, showFilesTab, fileBrowserDirs]);
+
+  // File browser file selection: open via linked doc system
+  const handleFileBrowserSelect = React.useCallback((absolutePath: string, dirPath: string) => {
+    const buildUrl = (path: string) =>
+      `/api/doc?path=${encodeURIComponent(path)}&base=${encodeURIComponent(dirPath)}`;
+    linkedDocHook.open(absolutePath, buildUrl, 'files');
+    fileBrowser.setActiveFile(absolutePath);
+  }, [linkedDocHook, fileBrowser]);
+
+  // Route linked doc opens through vault/file browser endpoint when viewing one of those files
   const handleOpenLinkedDoc = React.useCallback((docPath: string) => {
     if (vaultBrowser.activeFile && vaultPath) {
       linkedDocHook.open(docPath, buildVaultDocUrl(vaultPath));
+    } else if (fileBrowser.activeFile && fileBrowser.activeDirPath) {
+      // When viewing a file browser doc, resolve links relative to current file's directory
+      const baseDir = linkedDocHook.filepath?.replace(/\/[^/]+$/, '') || fileBrowser.activeDirPath;
+      linkedDocHook.open(docPath, (path) =>
+        `/api/doc?path=${encodeURIComponent(path)}&base=${encodeURIComponent(baseDir)}`
+      );
     } else {
       // Pass the current file's directory as base for relative path resolution
       const baseDir = linkedDocHook.filepath
@@ -222,14 +263,15 @@ const App: React.FC = () => {
         linkedDocHook.open(docPath);
       }
     }
-  }, [vaultBrowser.activeFile, vaultPath, linkedDocHook, buildVaultDocUrl, imageBaseDir]);
+  }, [vaultBrowser.activeFile, vaultPath, fileBrowser.activeFile, fileBrowser.activeDirPath, linkedDocHook, buildVaultDocUrl, imageBaseDir]);
 
-  // Wrap linked doc back to also clear vault active file
+  // Wrap linked doc back to also clear vault/file browser active file
   const handleLinkedDocBack = React.useCallback(() => {
     linkedDocHook.back();
     vaultBrowser.setActiveFile(null);
+    fileBrowser.setActiveFile(null);
     archive.clearSelection();
-  }, [linkedDocHook, vaultBrowser, archive]);
+  }, [linkedDocHook, vaultBrowser, fileBrowser, archive]);
 
   const handleVaultFetchTree = React.useCallback(() => {
     vaultBrowser.fetchTree(vaultPath);
@@ -339,7 +381,7 @@ const App: React.FC = () => {
         if (!res.ok) throw new Error('Not in API mode');
         return res.json();
       })
-      .then((data: { plan: string; origin?: 'claude-code' | 'opencode' | 'pi' | 'codex'; mode?: 'annotate' | 'annotate-last' | 'archive'; filePath?: string; sharingEnabled?: boolean; shareBaseUrl?: string; pasteApiUrl?: string; repoInfo?: { display: string; branch?: string }; previousPlan?: string | null; versionInfo?: { version: number; totalVersions: number; project: string }; archivePlans?: ArchivedPlan[] }) => {
+      .then((data: { plan: string; origin?: 'claude-code' | 'opencode' | 'pi' | 'codex'; mode?: 'annotate' | 'annotate-last' | 'archive'; filePath?: string; sharingEnabled?: boolean; shareBaseUrl?: string; pasteApiUrl?: string; repoInfo?: { display: string; branch?: string }; previousPlan?: string | null; versionInfo?: { version: number; totalVersions: number; project: string }; archivePlans?: ArchivedPlan[]; projectRoot?: string }) => {
         if (data.mode === 'archive') {
           // Archive mode: show first archived plan or clear demo content
           setMarkdown(data.plan || '');
@@ -370,6 +412,9 @@ const App: React.FC = () => {
         }
         if (data.repoInfo) {
           setRepoInfo(data.repoInfo);
+        }
+        if (data.projectRoot) {
+          setProjectRoot(data.projectRoot);
         }
         // Capture plan version history data
         if (data.previousPlan !== undefined) {
@@ -1244,6 +1289,7 @@ const App: React.FC = () => {
               activeTab={sidebar.activeTab}
               onToggleTab={sidebar.toggleTab}
               hasDiff={planDiff.hasPreviousVersion}
+              showFilesTab={showFilesTab && !archive.archiveMode}
               showVaultTab={showVaultTab}
               className="hidden lg:flex"
             />
@@ -1266,6 +1312,10 @@ const App: React.FC = () => {
                 onTocNavigate={handleTocNavigate}
                 linkedDocFilepath={linkedDocHook.filepath}
                 onLinkedDocBack={linkedDocHook.isActive ? handleLinkedDocBack : undefined}
+                showFilesTab={showFilesTab && !archive.archiveMode}
+                fileBrowser={fileBrowser}
+                onFilesSelectFile={handleFileBrowserSelect}
+                onFilesFetchAll={() => fileBrowser.fetchAll(fileBrowserDirs)}
                 showVaultTab={showVaultTab && !archive.archiveMode}
                 vaultPath={vaultPath}
                 vaultBrowser={vaultBrowser}
@@ -1366,7 +1416,7 @@ const App: React.FC = () => {
                   showDemoBadge={!isApiMode && !isLoadingShared && !isSharedSession}
                   maxWidth={planMaxWidth}
                   onOpenLinkedDoc={handleOpenLinkedDoc}
-                  linkedDocInfo={linkedDocHook.isActive ? { filepath: linkedDocHook.filepath!, onBack: handleLinkedDocBack, label: vaultBrowser.activeFile ? 'Vault File' : undefined } : null}
+                  linkedDocInfo={linkedDocHook.isActive ? { filepath: linkedDocHook.filepath!, onBack: handleLinkedDocBack, label: vaultBrowser.activeFile ? 'Vault File' : fileBrowser.activeFile ? 'File' : undefined } : null}
                   imageBaseDir={imageBaseDir}
                   copyLabel={annotateSource === 'message' ? 'Copy message' : annotateSource === 'file' ? 'Copy file' : undefined}
                   archiveInfo={archive.currentInfo}

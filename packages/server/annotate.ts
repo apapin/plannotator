@@ -14,7 +14,7 @@
 import { isRemoteSession, getServerPort } from "./remote";
 import { getRepoInfo } from "./repo";
 import { handleImage, handleUpload, handleServerReady, handleDraftSave, handleDraftLoad, handleDraftDelete, handleFavicon } from "./shared-handlers";
-import { handleDoc } from "./reference-handlers";
+import { handleDoc, handleFileBrowserFiles } from "./reference-handlers";
 import { contentHash, deleteDraft } from "./draft";
 import { dirname } from "path";
 
@@ -127,6 +127,7 @@ export async function startAnnotateServer(
               sharingEnabled,
               shareBaseUrl,
               repoInfo,
+              projectRoot: process.cwd(),
             });
           }
 
@@ -144,6 +145,11 @@ export async function startAnnotateServer(
               return handleDoc(new Request(docUrl.toString()));
             }
             return handleDoc(req);
+          }
+
+          // API: List markdown files in a directory as a tree
+          if (url.pathname === "/api/reference/files" && req.method === "GET") {
+            return handleFileBrowserFiles(req);
           }
 
           // API: Upload image -> save to temp -> return path

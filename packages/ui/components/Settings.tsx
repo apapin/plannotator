@@ -59,8 +59,13 @@ import { ThemeTab } from './ThemeTab';
 import { isMac, modKey, altKey } from '../utils/platform';
 import { getAIProviderSettings } from '../utils/aiProvider';
 import { AISettingsTab } from './AISettingsTab';
+import {
+  getFileBrowserSettings,
+  saveFileBrowserSettings,
+  type FileBrowserSettings,
+} from '../utils/fileBrowser';
 
-type SettingsTab = 'general' | 'theme' | 'display' | 'saving' | 'labels' | 'shortcuts' | 'ai' | 'obsidian' | 'bear' | 'octarine';
+type SettingsTab = 'general' | 'theme' | 'display' | 'saving' | 'labels' | 'shortcuts' | 'ai' | 'files' | 'obsidian' | 'bear' | 'octarine';
 
 interface SettingsProps {
   taterMode: boolean;
@@ -102,6 +107,8 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
   const [editingTipValue, setEditingTipValue] = useState('');
   const [showNewHints, setShowNewHints] = useState(() => hasNewSettings());
   const [aiProvider, setAiProvider] = useState<string | null>(null);
+  const [fileBrowserSettings, setFileBrowserSettings] = useState<FileBrowserSettings>({ enabled: false, directories: [] });
+  const [newDirPath, setNewDirPath] = useState('');
 
   // Fetch available agents for OpenCode
   const { agents: availableAgents, validateAgent, getAgentWarning } = useAgents(origin ?? null);
@@ -121,9 +128,12 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
     return t;
   }, [mode, aiProviders.length]);
 
-  const integrationTabs: { id: SettingsTab; label: string }[] = mode === 'plan'
-    ? [{ id: 'obsidian', label: 'Obsidian' }, { id: 'bear', label: 'Bear' }, { id: 'octarine', label: 'Octarine' }]
-    : [];
+  const integrationTabs: { id: SettingsTab; label: string }[] = [
+    { id: 'files', label: 'Files' },
+    ...(mode === 'plan'
+      ? [{ id: 'obsidian' as SettingsTab, label: 'Obsidian' }, { id: 'bear' as SettingsTab, label: 'Bear' }, { id: 'octarine' as SettingsTab, label: 'Octarine' }]
+      : []),
+  ];
   const obsidianDefaultSaveAvailable = obsidian.enabled && getEffectiveVaultPath(obsidian).trim().length > 0;
   const bearDefaultSaveAvailable = bear.enabled;
   const octarineDefaultSaveAvailable = octarine.enabled && octarine.workspace.trim().length > 0;
@@ -151,6 +161,7 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
       setDefaultNotesApp(getDefaultNotesApp());
       setQuickLabelsState(getQuickLabels());
       setAiProvider(getAIProviderSettings().providerId);
+      setFileBrowserSettings(getFileBrowserSettings());
 
       // Validate agent setting when dialog opens
       if (origin === 'opencode') {
@@ -198,6 +209,13 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
         .finally(() => setVaultsLoading(false));
     }
   }, [obsidian.enabled]);
+
+  const handleFileBrowserChange = (updates: Partial<FileBrowserSettings>) => {
+    const newSettings = { ...fileBrowserSettings, ...updates };
+    setFileBrowserSettings(newSettings);
+    saveFileBrowserSettings(newSettings);
+    if (onUIPreferencesChange) onUIPreferencesChange(uiPrefs);
+  };
 
   const handleObsidianChange = (updates: Partial<ObsidianSettings>) => {
     const newSettings = { ...obsidian, ...updates };
@@ -1037,6 +1055,108 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
                     selectedProviderId={aiProvider}
                     onProviderChange={setAiProvider}
                   />
+                )}
+
+                {/* === FILES TAB === */}
+                {activeTab === 'files' && (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-sm font-medium">File Browser</div>
+                        <div className="text-xs text-muted-foreground">
+                          Your project files are shown automatically. Add extra directories below.
+                        </div>
+                      </div>
+                      <button
+                        role="switch"
+                        aria-checked={fileBrowserSettings.enabled}
+                        onClick={() => handleFileBrowserChange({ enabled: !fileBrowserSettings.enabled })}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          fileBrowserSettings.enabled ? 'bg-primary' : 'bg-muted'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
+                            fileBrowserSettings.enabled ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {fileBrowserSettings.enabled && (
+                      <>
+                        <div className="border-t border-border" />
+
+                        {/* Directory list */}
+                        {fileBrowserSettings.directories.length > 0 && (
+                          <div className="space-y-1">
+                            <label className="text-xs text-muted-foreground">Directories</label>
+                            {fileBrowserSettings.directories.map((dir) => (
+                              <div key={dir} className="flex items-center gap-2 group">
+                                <div className="flex-1 px-3 py-2 bg-muted rounded-lg text-xs font-mono truncate" title={dir}>
+                                  {dir}
+                                </div>
+                                <button
+                                  onClick={() => handleFileBrowserChange({
+                                    directories: fileBrowserSettings.directories.filter((d) => d !== dir),
+                                  })}
+                                  className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100"
+                                  title="Remove directory"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Add directory */}
+                        <div className="space-y-1.5">
+                          <label className="text-xs text-muted-foreground">Add Directory</label>
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={newDirPath}
+                              onChange={(e) => setNewDirPath(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && newDirPath.trim()) {
+                                  const trimmed = newDirPath.trim();
+                                  if (!fileBrowserSettings.directories.includes(trimmed)) {
+                                    handleFileBrowserChange({
+                                      directories: [...fileBrowserSettings.directories, trimmed],
+                                    });
+                                  }
+                                  setNewDirPath('');
+                                }
+                              }}
+                              placeholder="/path/to/directory"
+                              className="flex-1 px-3 py-2 bg-muted rounded-lg text-xs font-mono placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/50"
+                            />
+                            <button
+                              onClick={() => {
+                                const trimmed = newDirPath.trim();
+                                if (trimmed && !fileBrowserSettings.directories.includes(trimmed)) {
+                                  handleFileBrowserChange({
+                                    directories: [...fileBrowserSettings.directories, trimmed],
+                                  });
+                                }
+                                setNewDirPath('');
+                              }}
+                              disabled={!newDirPath.trim()}
+                              className="px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+                            >
+                              Add
+                            </button>
+                          </div>
+                          <div className="text-[10px] text-muted-foreground/70">
+                            Add directories outside your project that contain markdown files.
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </>
                 )}
 
                 {/* === OBSIDIAN TAB === */}

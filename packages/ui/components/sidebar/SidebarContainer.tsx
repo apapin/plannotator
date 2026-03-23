@@ -10,9 +10,11 @@ import type { SidebarTab } from "../../hooks/useSidebar";
 import type { Block, Annotation } from "../../types";
 import type { VersionInfo, VersionEntry } from "../../hooks/usePlanDiff";
 import type { UseVaultBrowserReturn } from "../../hooks/useVaultBrowser";
+import type { UseFileBrowserReturn } from "../../hooks/useFileBrowser";
 import { TableOfContents } from "../TableOfContents";
 import { VersionBrowser } from "./VersionBrowser";
 import { VaultBrowser } from "./VaultBrowser";
+import { FileBrowser } from "./FileBrowser";
 import { ArchiveBrowser, type ArchivedPlan } from "./ArchiveBrowser";
 
 interface SidebarContainerProps {
@@ -27,6 +29,11 @@ interface SidebarContainerProps {
   onTocNavigate: (blockId: string) => void;
   linkedDocFilepath?: string | null;
   onLinkedDocBack?: () => void;
+  // File Browser props
+  showFilesTab?: boolean;
+  fileBrowser?: UseFileBrowserReturn;
+  onFilesSelectFile?: (absolutePath: string, dirPath: string) => void;
+  onFilesFetchAll?: () => void;
   // Vault Browser props
   showVaultTab?: boolean;
   vaultPath?: string;
@@ -64,6 +71,10 @@ export const SidebarContainer: React.FC<SidebarContainerProps> = ({
   onTocNavigate,
   linkedDocFilepath,
   onLinkedDocBack,
+  showFilesTab,
+  fileBrowser,
+  onFilesSelectFile,
+  onFilesFetchAll,
   showVaultTab,
   vaultPath,
   vaultBrowser,
@@ -133,6 +144,28 @@ export const SidebarContainer: React.FC<SidebarContainerProps> = ({
           }
           label="Versions"
         />
+        {showFilesTab && (
+          <TabButton
+            active={activeTab === "files"}
+            onClick={() => onTabChange("files")}
+            icon={
+              <svg
+                className="w-3 h-3"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                />
+              </svg>
+            }
+            label="Files"
+          />
+        )}
         {showVaultTab && (
           <TabButton
             active={activeTab === "vault"}
@@ -225,6 +258,18 @@ export const SidebarContainer: React.FC<SidebarContainerProps> = ({
             isSelectingVersion={isSelectingVersion}
             fetchingVersion={fetchingVersion}
             onFetchVersions={onFetchVersions}
+          />
+        )}
+        {activeTab === "files" && showFilesTab && fileBrowser && (
+          <FileBrowser
+            dirs={fileBrowser.dirs}
+            expandedFolders={fileBrowser.expandedFolders}
+            onToggleFolder={fileBrowser.toggleFolder}
+            collapsedDirs={fileBrowser.collapsedDirs}
+            onToggleCollapse={fileBrowser.toggleCollapse}
+            onSelectFile={onFilesSelectFile ?? (() => {})}
+            activeFile={fileBrowser.activeFile}
+            onFetchAll={onFilesFetchAll ?? (() => {})}
           />
         )}
         {activeTab === "vault" && showVaultTab && vaultPath && vaultBrowser && (

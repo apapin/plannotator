@@ -2,7 +2,7 @@
  * Reference/document route handlers for the plan server.
  *
  * Handles /api/doc, /api/obsidian/vaults, /api/reference/obsidian/files,
- * and /api/reference/obsidian/doc. Extracted from index.ts for modularity.
+ * /api/reference/obsidian/doc, and /api/reference/files. Extracted from index.ts for modularity.
  */
 
 import { existsSync, statSync } from "fs";
@@ -192,5 +192,43 @@ export async function handleObsidianDoc(req: Request): Promise<Response> {
     return Response.json({ markdown, filepath: resolvedFile });
   } catch {
     return Response.json({ error: "Failed to read file" }, { status: 500 });
+  }
+}
+
+// --- File Browser ---
+
+const FILE_BROWSER_EXCLUDED = [
+  "node_modules/", ".git/", "dist/", "build/", ".next/",
+  "__pycache__/", ".obsidian/", ".trash/", ".venv/", "vendor/",
+  "target/", ".cache/", "coverage/", ".turbo/", ".svelte-kit/",
+  ".nuxt/", ".output/", ".parcel-cache/", ".webpack/", ".expo/",
+];
+
+/** List markdown files in a directory as a nested tree. */
+export async function handleFileBrowserFiles(req: Request): Promise<Response> {
+  const url = new URL(req.url);
+  const dirPath = url.searchParams.get("dirPath");
+  if (!dirPath) {
+    return Response.json({ error: "Missing dirPath parameter" }, { status: 400 });
+  }
+
+  const resolvedDir = resolve(dirPath);
+  if (!existsSync(resolvedDir) || !statSync(resolvedDir).isDirectory()) {
+    return Response.json({ error: "Invalid directory path" }, { status: 400 });
+  }
+
+  try {
+    const glob = new Bun.Glob("**/*.md");
+    const files: string[] = [];
+    for await (const match of glob.scan({ cwd: resolvedDir, onlyFiles: true })) {
+      if (FILE_BROWSER_EXCLUDED.some((dir) => match.includes(dir))) continue;
+      files.push(match);
+    }
+    files.sort();
+
+    const tree = buildFileTree(files);
+    return Response.json({ tree });
+  } catch {
+    return Response.json({ error: "Failed to list directory files" }, { status: 500 });
   }
 }

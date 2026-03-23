@@ -14,12 +14,7 @@ import { AITab } from './AITab';
 import { SparklesIcon } from './SparklesIcon';
 import type { PRMetadata } from '@plannotator/shared/pr-provider';
 import type { AIChatEntry } from '../hooks/useAIChat';
-
-interface DiffFile {
-  path: string;
-  additions: number;
-  deletions: number;
-}
+import type { DiffFile } from '../types';
 
 type ReviewPanelTab = 'annotations' | 'ai' | 'summary' | 'comments' | 'checks';
 
@@ -49,6 +44,10 @@ interface ReviewPanelProps {
   onAskGeneral?: (question: string) => void;
   aiPermissionRequests?: import('../hooks/useAIChat').PendingPermission[];
   onRespondToPermission?: (requestId: string, allow: boolean) => void;
+  aiProviders?: Array<{ id: string; name: string; models?: Array<{ id: string; label: string; default?: boolean }> }>;
+  aiConfig?: { providerId: string | null; model: string | null; reasoningEffort?: string | null };
+  onAIConfigChange?: (config: { providerId?: string | null; model?: string | null; reasoningEffort?: string | null }) => void;
+  hasAISession?: boolean;
 }
 
 const SuggestionPreview: React.FC<{ code: string; originalCode?: string; language?: string }> = ({ code, originalCode, language }) => {
@@ -144,6 +143,10 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
   onAskGeneral,
   aiPermissionRequests = [],
   onRespondToPermission,
+  aiProviders,
+  aiConfig,
+  onAIConfigChange,
+  hasAISession,
 }) => {
   const totalCount = annotations.length + (editorAnnotations?.length ?? 0);
   const [copied, setCopied] = useState(false);
@@ -404,6 +407,10 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
               onAskGeneral={onAskGeneral}
               permissionRequests={aiPermissionRequests}
               onRespondToPermission={onRespondToPermission}
+              aiProviders={aiProviders}
+              aiConfig={aiConfig}
+              onAIConfigChange={onAIConfigChange}
+              hasAISession={hasAISession}
             />
           )}
 

@@ -7,7 +7,14 @@ import { SparklesIcon } from './SparklesIcon';
 import { CountBadge } from './CountBadge';
 import { CopyButton } from './CopyButton';
 import { PermissionCard } from './PermissionCard';
+import { AIConfigBar } from './AIConfigBar';
 import { submitHint } from '../utils/platform';
+
+interface AIProviderInfo {
+  id: string;
+  name: string;
+  models?: Array<{ id: string; label: string; default?: boolean }>;
+}
 
 interface AITabProps {
   messages: AIChatEntry[];
@@ -19,6 +26,10 @@ interface AITabProps {
   onAskGeneral?: (question: string) => void;
   permissionRequests?: PendingPermission[];
   onRespondToPermission?: (requestId: string, allow: boolean) => void;
+  aiProviders?: AIProviderInfo[];
+  aiConfig?: { providerId: string | null; model: string | null; reasoningEffort?: string | null };
+  onAIConfigChange?: (config: { providerId?: string | null; model?: string | null; reasoningEffort?: string | null }) => void;
+  hasAISession?: boolean;
 }
 
 interface FileGroup {
@@ -42,6 +53,10 @@ export const AITab: React.FC<AITabProps> = ({
   onAskGeneral,
   permissionRequests = [],
   onRespondToPermission,
+  aiProviders = [],
+  aiConfig,
+  onAIConfigChange,
+  hasAISession = false,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
@@ -156,6 +171,16 @@ export const AITab: React.FC<AITabProps> = ({
             Select lines and click <strong>Ask AI</strong>, or ask a general question below.
           </p>
         </div>
+        <AIConfigBar
+          providers={aiProviders}
+          selectedProviderId={aiConfig?.providerId ?? null}
+          selectedModel={aiConfig?.model ?? null}
+          onProviderChange={(providerId) => onAIConfigChange?.({ providerId })}
+          onModelChange={(model) => onAIConfigChange?.({ model })}
+          selectedReasoningEffort={aiConfig?.reasoningEffort ?? null}
+          onReasoningEffortChange={(effort) => onAIConfigChange?.({ reasoningEffort: effort })}
+          hasSession={hasAISession}
+        />
         {onAskGeneral && <GeneralInput value={generalInput} onChange={setGeneralInput} onSubmit={handleGeneralSubmit} />}
       </div>
     );
@@ -232,6 +257,16 @@ export const AITab: React.FC<AITabProps> = ({
           </div>
         )}
       </div>
+
+      {/* Config bar */}
+      <AIConfigBar
+        providers={aiProviders}
+        selectedProviderId={aiConfig?.providerId ?? null}
+        selectedModel={aiConfig?.model ?? null}
+        onProviderChange={(providerId) => onAIConfigChange?.({ providerId })}
+        onModelChange={(model) => onAIConfigChange?.({ model })}
+        hasSession={hasAISession}
+      />
 
       {/* General question input */}
       {onAskGeneral && <GeneralInput value={generalInput} onChange={setGeneralInput} onSubmit={handleGeneralSubmit} />}

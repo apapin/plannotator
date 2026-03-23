@@ -1,7 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { AIQuestion, AIResponse } from '@plannotator/ui/types';
 import { generateId } from '../utils/generateId';
-
 export interface AIChatEntry {
   question: AIQuestion;
   response: AIResponse;
@@ -20,6 +19,9 @@ export interface PendingPermission {
 
 interface UseAIChatOptions {
   patch: string;
+  providerId?: string | null;
+  model?: string | null;
+  reasoningEffort?: string | null;
 }
 
 interface AskParams {
@@ -31,7 +33,7 @@ interface AskParams {
   selectedCode?: string;
 }
 
-export function useAIChat({ patch }: UseAIChatOptions) {
+export function useAIChat({ patch, providerId, model, reasoningEffort }: UseAIChatOptions) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<AIChatEntry[]>([]);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
@@ -56,6 +58,9 @@ export function useAIChat({ patch }: UseAIChatOptions) {
             mode: 'code-review',
             review: { patch },
           },
+          ...(providerId && { providerId }),
+          ...(model && { model }),
+          ...(reasoningEffort && { reasoningEffort }),
         }),
         signal,
       });
@@ -71,7 +76,7 @@ export function useAIChat({ patch }: UseAIChatOptions) {
     } finally {
       setIsCreatingSession(false);
     }
-  }, [patch]);
+  }, [patch, providerId, model, reasoningEffort]);
 
   const ask = useCallback(async (params: AskParams) => {
     // Abort any in-flight request
@@ -288,6 +293,15 @@ export function useAIChat({ patch }: UseAIChatOptions) {
     }).catch(() => {});
   }, []);
 
+  const resetSession = useCallback(() => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    setSessionId(null);
+    setIsStreaming(false);
+  }, []);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -306,6 +320,7 @@ export function useAIChat({ patch }: UseAIChatOptions) {
     respondToPermission,
     ask,
     abort,
+    resetSession,
     sessionId,
   };
 }

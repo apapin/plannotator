@@ -73,6 +73,25 @@ The review UI shows your changes in a familiar diff format:
 
 Select any text in the diff to annotate it, just like in plan review. Your annotations are exported as structured feedback referencing specific lines and files.
 
+## Ask AI
+
+When an AI provider is available, the diff viewer includes inline AI chat. Select lines in the diff and choose "Ask AI" to ask questions about the code. Responses stream into a sidebar panel grouped by file.
+
+### Supported providers
+
+Plannotator supports multiple AI providers. Providers are auto-detected based on which CLI tools are installed on your system:
+
+- **Claude** — Requires the `claude` CLI ([Claude Code](https://docs.anthropic.com/en/docs/claude-code))
+- **Codex** — Requires the `codex` CLI ([OpenAI Codex](https://github.com/openai/codex))
+
+Both providers can be available simultaneously. Plannotator does not manage API keys — you must be authenticated with each CLI independently (`claude` uses `~/.claude/` credentials, `codex` uses `OPENAI_API_KEY`).
+
+### Choosing a provider
+
+When multiple providers are available, set your default in **Settings → AI**. The AI tab shows all detected providers as selectable cards. Your choice persists across sessions.
+
+If only one provider is installed, it's used automatically — no configuration needed.
+
 ## Submitting feedback
 
 - **Send Feedback** — Formats your annotations and sends them to the agent
@@ -88,3 +107,8 @@ After submission, the agent receives your feedback and can act on it — fixing 
 | `/api/feedback` | POST | Submit review feedback |
 | `/api/image` | GET | Serve image by path |
 | `/api/upload` | POST | Upload image attachment |
+| `/api/ai/capabilities` | GET | Check available AI providers |
+| `/api/ai/session` | POST | Create AI chat session |
+| `/api/ai/query` | POST | Send prompt, stream SSE response |
+| `/api/ai/abort` | POST | Abort current AI query |
+| `/api/ai/permission` | POST | Respond to tool approval request |

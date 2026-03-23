@@ -13,6 +13,7 @@ import { PullRequestIcon } from '@plannotator/ui/components/PullRequestIcon';
 import { getPlatformLabel, getMRLabel, getMRNumberLabel, getDisplayRepo } from '@plannotator/shared/pr-provider';
 import { getIdentity } from '@plannotator/ui/utils/identity';
 import { getAgentSwitchSettings, getEffectiveAgentName } from '@plannotator/ui/utils/agentSwitch';
+import { getAIProviderSettings, saveAIProviderSettings, getPreferredModel } from '@plannotator/ui/utils/aiProvider';
 import { CodeAnnotation, CodeAnnotationType, SelectedLineRange } from '@plannotator/ui/types';
 import { useResizablePanel } from '@plannotator/ui/hooks/useResizablePanel';
 import { useCodeAnnotationDraft } from '@plannotator/ui/hooks/useCodeAnnotationDraft';
@@ -28,6 +29,7 @@ import { ReviewPanel } from './components/ReviewPanel';
 import { FileTree } from './components/FileTree';
 import { DEMO_DIFF } from './demoData';
 import { exportReviewFeedback } from './utils/exportFeedback';
+import type { DiffFile } from './types';
 import type { DiffOption, WorktreeInfo, GitContext } from '@plannotator/shared/types';
 import type { PRMetadata } from '@plannotator/shared/pr-provider';
 
@@ -35,14 +37,6 @@ declare const __APP_VERSION__: string;
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 const altKey = isMac ? '⌥' : 'Alt';
-
-interface DiffFile {
-  path: string;
-  oldPath?: string;
-  patch: string;
-  additions: number;
-  deletions: number;
-}
 
 interface DiffData {
   files: DiffFile[];
@@ -189,16 +183,51 @@ const ReviewApp: React.FC = () => {
 
   // AI Chat
   const [aiAvailable, setAiAvailable] = useState(false);
+  const [aiProviders, setAiProviders] = useState<Array<{ id: string; name: string; capabilities: Record<string, boolean>; models?: Array<{ id: string; label: string; default?: boolean }> }>>([]);
+  const [aiConfig, setAiConfig] = useState(() => {
+    const saved = getAIProviderSettings();
+    const pid = saved.providerId;
+    return {
+      providerId: pid,
+      model: pid ? (saved.preferredModels[pid] ?? null) : null,
+      reasoningEffort: null as string | null,
+    };
+  });
   const [reviewPanelTabOverride, setReviewPanelTabOverride] = useState<'ai' | undefined>(undefined);
-  const aiChat = useAIChat({ patch: diffData?.rawPatch ?? '' });
+  const aiChat = useAIChat({
+    patch: diffData?.rawPatch ?? '',
+    providerId: aiConfig.providerId,
+    model: aiConfig.model,
+    reasoningEffort: aiConfig.reasoningEffort,
+  });
 
   // Check AI capabilities on mount
   useEffect(() => {
     fetch('/api/ai/capabilities')
       .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data?.available) setAiAvailable(true); })
+      .then(data => {
+        if (data?.available) {
+          setAiAvailable(true);
+          setAiProviders(data.providers ?? []);
+        }
+      })
       .catch(() => {});
   }, []);
+
+  const handleAIConfigChange = useCallback((config: { providerId?: string | null; model?: string | null }) => {
+    setAiConfig(prev => {
+      const next = { ...prev, ...config };
+      // If provider changed, load that provider's preferred model
+      if (config.providerId !== undefined && config.providerId !== prev.providerId) {
+        next.model = config.providerId ? getPreferredModel(config.providerId) : null;
+      }
+      // Persist provider selection
+      const saved = getAIProviderSettings();
+      saveAIProviderSettings({ ...saved, providerId: next.providerId });
+      return next;
+    });
+    aiChat.resetSession();
+  }, [aiChat]);
 
   const handleAskAI = useCallback((question: string) => {
     if (!pendingSelection || !files[activeFileIndex]) return;
@@ -1214,6 +1243,7 @@ const ReviewApp: React.FC = () => {
               onIdentityChange={handleIdentityChange}
               origin={origin}
               mode="review"
+              aiProviders={aiProviders}
             />
 
             {/* Panel toggle */}
@@ -1407,6 +1437,10 @@ const ReviewApp: React.FC = () => {
             onAskGeneral={handleAskGeneral}
             aiPermissionRequests={aiChat.permissionRequests}
             onRespondToPermission={aiChat.respondToPermission}
+            aiProviders={aiProviders}
+            aiConfig={aiConfig}
+            onAIConfigChange={handleAIConfigChange}
+            hasAISession={!!aiChat.sessionId}
           />
         </div>
 

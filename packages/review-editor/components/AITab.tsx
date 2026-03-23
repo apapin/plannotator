@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useMemo, memo } from 'react';
+import React, { useRef, useEffect, useState, useMemo, useCallback, memo } from 'react';
 import type { AIChatEntry, PendingPermission } from '../hooks/useAIChat';
 import { renderMarkdown } from '../utils/renderMarkdown';
 import { formatLineRange } from '../utils/formatLineRange';
@@ -245,11 +245,15 @@ export const AITab: React.FC<AITabProps> = ({
 
         {/* General questions */}
         {generalMessages.length > 0 && (
-          <div className="mb-3 mt-1">
-            <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-              General
-            </div>
-            <div className="space-y-2 mt-1">
+          <div className="mb-3 mt-2">
+            {fileGroups.length > 0 && (
+              <div className="flex items-center gap-2 px-2 mb-1.5">
+                <div className="flex-1 border-t border-border/40" />
+                <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">General</span>
+                <div className="flex-1 border-t border-border/40" />
+              </div>
+            )}
+            <div className="space-y-2">
               {generalMessages.map(({ question, response }) => (
                 <QAPair key={question.id} question={question} response={response} onScrollToLines={onScrollToLines} />
               ))}
@@ -276,42 +280,58 @@ export const AITab: React.FC<AITabProps> = ({
   );
 };
 
-/** General question input pinned at bottom */
+/** General question input pinned at bottom — textarea grows upward on multi-line */
 const GeneralInput: React.FC<{
   value: string;
   onChange: (v: string) => void;
   onSubmit: () => void;
   disabled?: boolean;
-}> = ({ value, onChange, onSubmit, disabled }) => (
-  <div className="border-t border-border/50 p-2">
-    <div className="flex gap-1.5">
-      <textarea
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="Ask about the overall changes..."
-        rows={1}
-        className="flex-1 px-2.5 py-1.5 bg-muted rounded-md text-xs text-foreground placeholder:text-muted-foreground/50 resize-none focus:outline-none focus:ring-1 focus:ring-primary/50"
-        disabled={disabled}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing && !disabled) {
-            e.preventDefault();
-            onSubmit();
-          }
-        }}
-      />
-      <button
-        onClick={onSubmit}
-        disabled={disabled || !value.trim()}
-        className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed transition-colors flex-shrink-0"
-        title={`Send (${submitHint})`}
-      >
-        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
-        </svg>
-      </button>
+}> = ({ value, onChange, onSubmit, disabled }) => {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const autoResize = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    // Cap at ~6 lines (6 * 16px line-height + padding)
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+  }, []);
+
+  useEffect(() => { autoResize(); }, [value, autoResize]);
+
+  return (
+    <div className="border-t border-border/50 p-2">
+      <div className="flex items-end gap-1.5">
+        <textarea
+          ref={textareaRef}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="Ask about the overall changes..."
+          rows={1}
+          className="flex-1 px-2.5 py-1.5 bg-muted rounded-md text-xs text-foreground placeholder:text-muted-foreground/50 resize-none focus:outline-none focus:ring-1 focus:ring-primary/50 leading-relaxed"
+          style={{ maxHeight: 120 }}
+          disabled={disabled}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing && !disabled) {
+              e.preventDefault();
+              onSubmit();
+            }
+          }}
+        />
+        <button
+          onClick={onSubmit}
+          disabled={disabled || !value.trim()}
+          className="p-1.5 mb-px rounded-md text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed transition-colors flex-shrink-0"
+          title={`Send (${submitHint})`}
+        >
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+          </svg>
+        </button>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 /** Single Q&A pair — memoized to avoid re-parsing markdown on sibling updates */
 const QAPair = memo<{

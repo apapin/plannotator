@@ -10,7 +10,7 @@
  * Sessions default to read-only sandbox mode for safety in inline chat.
  */
 
-import { buildSystemPrompt, buildForkPreamble } from "../context.ts";
+import { buildSystemPrompt } from "../context.ts";
 import type {
   AIProvider,
   AIProviderCapabilities,
@@ -63,24 +63,11 @@ export class CodexSDKProvider implements AIProvider {
     });
   }
 
-  async forkSession(options: CreateSessionOptions): Promise<AISession> {
-    const parent = options.context.parent;
-    if (!parent) {
-      throw new Error(
-        "Cannot fork: no parent session provided in context. " +
-          "Use createSession() for standalone sessions."
-      );
-    }
-
-    // Fake fork: fresh thread with preamble injected as first query prefix.
-    // The parent conversation history is NOT inherited.
-    return new CodexSDKSession({
-      ...this.baseConfig(options),
-      systemPrompt: null,
-      forkPreamble: buildForkPreamble(options.context),
-      cwd: parent.cwd,
-      parentSessionId: parent.sessionId,
-    });
+  async forkSession(_options: CreateSessionOptions): Promise<AISession> {
+    throw new Error(
+      "Codex does not support session forking. " +
+        "The endpoint layer should fall back to createSession()."
+    );
   }
 
   async resumeSession(sessionId: string): Promise<AISession> {
@@ -132,7 +119,6 @@ async function getCodexClass() {
 
 interface SessionConfig {
   systemPrompt: string | null;
-  forkPreamble?: string;
   model: string;
   maxTurns: number;
   sandboxMode: "read-only" | "workspace-write" | "danger-full-access";
@@ -288,14 +274,9 @@ class CodexSDKSession implements AISession {
   // -------------------------------------------------------------------------
 
   private buildQueryPrompt(userPrompt: string): string {
-    // On first query, prepend system prompt or fork preamble
-    if (!this._firstQuerySent) {
-      if (this.config.forkPreamble) {
-        return `${this.config.forkPreamble}\n\n---\n\nUser question: ${userPrompt}`;
-      }
-      if (this.config.systemPrompt) {
-        return `${this.config.systemPrompt}\n\n---\n\nUser question: ${userPrompt}`;
-      }
+    // On first query, prepend system prompt
+    if (!this._firstQuerySent && this.config.systemPrompt) {
+      return `${this.config.systemPrompt}\n\n---\n\nUser question: ${userPrompt}`;
     }
     return userPrompt;
   }

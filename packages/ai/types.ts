@@ -271,7 +271,9 @@ export interface AIProvider {
    * ask contextual questions like "why did you change this function?"
    * without the AI losing insight.
    *
-   * If the provider doesn't support forking, this should throw.
+   * Providers that don't support real forking MUST throw. The endpoint
+   * layer checks `capabilities.fork` before calling this, so it should
+   * only be reached by providers that genuinely support history inheritance.
    */
   forkSession(options: CreateSessionOptions): Promise<AISession>;
 
@@ -316,7 +318,7 @@ export interface ClaudeAgentSDKConfig extends AIProviderConfig {
   allowedTools?: string[];
   /**
    * Permission mode for the session.
-   * Defaults to "plan" (read-only, no execution).
+   * Defaults to "default" (inherits user's existing permission rules).
    */
   permissionMode?: "default" | "plan" | "bypassPermissions";
   /**

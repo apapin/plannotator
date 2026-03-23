@@ -136,8 +136,11 @@ export function createAIEndpoints(deps: AIEndpointDeps) {
           reasoningEffort,
         };
 
-        // Fork if parent session is provided, otherwise create fresh
-        const session = context.parent
+        // Fork if parent session is provided AND provider supports it.
+        // Providers that can't fork (e.g. Codex) fall back to a fresh
+        // session with the full system prompt — no fake history.
+        const shouldFork = context.parent && provider.capabilities.fork;
+        const session = shouldFork
           ? await provider.forkSession(options)
           : await provider.createSession(options);
 

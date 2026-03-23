@@ -197,7 +197,8 @@ export async function startPlannotatorServer(
           // API: List archived plans (from ~/.plannotator/plans/)
           // Cached for session lifetime — new plans won't appear during a single review
           if (url.pathname === "/api/archive/plans" && req.method === "GET") {
-            if (!cachedArchivePlans) cachedArchivePlans = listArchivedPlans();
+            const customPath = url.searchParams.get("customPath") || undefined;
+            if (!cachedArchivePlans) cachedArchivePlans = listArchivedPlans(customPath);
             return Response.json({ plans: cachedArchivePlans });
           }
 
@@ -207,7 +208,8 @@ export async function startPlannotatorServer(
             if (!filename) {
               return Response.json({ error: "Missing filename parameter" }, { status: 400 });
             }
-            const content = readArchivedPlan(filename);
+            const customPath = url.searchParams.get("customPath") || undefined;
+            const content = readArchivedPlan(filename, customPath);
             if (content === null) {
               return Response.json({ error: "Plan not found" }, { status: 404 });
             }

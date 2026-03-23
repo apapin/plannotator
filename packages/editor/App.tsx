@@ -226,6 +226,7 @@ const App: React.FC = () => {
   const handleLinkedDocBack = React.useCallback(() => {
     linkedDocHook.back();
     vaultBrowser.setActiveFile(null);
+    setSelectedArchiveFile(null);
   }, [linkedDocHook, vaultBrowser]);
 
   const handleVaultFetchTree = React.useCallback(() => {
@@ -664,10 +665,15 @@ const App: React.FC = () => {
     }
   };
 
+  // Archive: build URL with optional customPath query param
+  const archiveCustomPath = useMemo(() => getPlanSaveSettings().customPath || undefined, []);
+
   // Archive: select a plan to view
   const handleArchiveSelect = async (filename: string) => {
     try {
-      const res = await fetch(`/api/archive/plan?filename=${encodeURIComponent(filename)}`);
+      const params = new URLSearchParams({ filename });
+      if (archiveCustomPath) params.set("customPath", archiveCustomPath);
+      const res = await fetch(`/api/archive/plan?${params}`);
       if (!res.ok) return;
       const data = await res.json() as { markdown: string; filepath: string };
 
@@ -680,7 +686,12 @@ const App: React.FC = () => {
         setSelectedArchiveFile(filename);
       } else {
         // In-session: use linked doc overlay
-        linkedDocHook.open(filename, (f) => `/api/archive/plan?filename=${encodeURIComponent(f)}`);
+        const buildUrl = (f: string) => {
+          const p = new URLSearchParams({ filename: f });
+          if (archiveCustomPath) p.set("customPath", archiveCustomPath);
+          return `/api/archive/plan?${p}`;
+        };
+        linkedDocHook.open(filename, buildUrl, "archive");
         setSelectedArchiveFile(filename);
       }
     } catch { /* ignore */ }
@@ -692,7 +703,10 @@ const App: React.FC = () => {
     hasFetchedArchive.current = true;
     setIsLoadingArchive(true);
     try {
-      const res = await fetch('/api/archive/plans');
+      const params = new URLSearchParams();
+      if (archiveCustomPath) params.set("customPath", archiveCustomPath);
+      const qs = params.toString();
+      const res = await fetch(`/api/archive/plans${qs ? `?${qs}` : ''}`);
       if (!res.ok) return;
       const data = await res.json() as { plans: ArchivedPlan[] };
       setArchivePlans(data.plans);
@@ -1333,7 +1347,7 @@ const App: React.FC = () => {
                 isSelectingVersion={planDiff.isSelectingVersion}
                 fetchingVersion={planDiff.fetchingVersion}
                 onFetchVersions={planDiff.fetchVersions}
-                showArchiveTab={isApiMode}
+                showArchiveTab={isApiMode && !annotateMode}
                 archivePlans={archivePlans}
                 selectedArchiveFile={selectedArchiveFile}
                 onArchiveSelect={handleArchiveSelect}

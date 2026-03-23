@@ -6,7 +6,7 @@
  */
 
 import { homedir } from "os";
-import { join } from "path";
+import { join, resolve, sep } from "path";
 import { mkdirSync, writeFileSync, readFileSync, readdirSync, statSync, existsSync } from "fs";
 import { sanitizeTag } from "./project";
 
@@ -169,7 +169,7 @@ export function listArchivedPlans(customPath?: string | null): ArchivedPlan[] {
       } catch { /* keep defaults */ }
       plans.push(parsed);
     }
-    return plans.sort((a, b) => b.date.localeCompare(a.date) || a.title.localeCompare(b.title));
+    return plans.sort((a, b) => b.date.localeCompare(a.date) || b.timestamp.localeCompare(a.timestamp));
   } catch {
     return [];
   }
@@ -181,9 +181,9 @@ export function listArchivedPlans(customPath?: string | null): ArchivedPlan[] {
  */
 export function readArchivedPlan(filename: string, customPath?: string | null): string | null {
   const planDir = getPlanDir(customPath);
-  const filePath = join(planDir, filename);
-  // Guard against path traversal
-  if (!filePath.startsWith(planDir)) return null;
+  const filePath = resolve(planDir, filename);
+  // Guard against path traversal (resolve + trailing separator, matching reference-handlers.ts)
+  if (!filePath.startsWith(planDir + sep)) return null;
   try {
     return readFileSync(filePath, "utf-8");
   } catch {

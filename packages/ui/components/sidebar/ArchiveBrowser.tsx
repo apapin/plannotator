@@ -58,15 +58,11 @@ export const ArchiveBrowser: React.FC<ArchiveBrowserProps> = ({
     );
   }
 
-  // Group plans by date
-  let currentDate = "";
-
   return (
     <div className="p-2">
       <div className="space-y-0.5">
-        {plans.map((plan) => {
-          const showDateHeader = plan.date !== currentDate;
-          if (showDateHeader) currentDate = plan.date;
+        {plans.map((plan, i) => {
+          const showDateHeader = i === 0 || plan.date !== plans[i - 1].date;
 
           const isSelected = selectedFile === plan.filename;
 

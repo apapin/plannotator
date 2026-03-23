@@ -139,14 +139,6 @@
     "packages/ai": {
       "name": "@plannotator/ai",
       "version": "0.0.1",
-      "peerDependencies": {
-        "@anthropic-ai/claude-agent-sdk": ">=0.1.0",
-        "@openai/codex-sdk": ">=0.100.0",
-      },
-      "optionalPeers": [
-        "@anthropic-ai/claude-agent-sdk",
-        "@openai/codex-sdk",
-      ],
     },
     "packages/editor": {
       "name": "@plannotator/editor",

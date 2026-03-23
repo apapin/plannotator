@@ -904,3 +904,144 @@ describe("Multi-provider endpoints", () => {
     expect(data.sessionId).toBeDefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// buildEffectivePrompt
+// ---------------------------------------------------------------------------
+
+import { buildEffectivePrompt } from "./context.ts";
+
+describe("buildEffectivePrompt", () => {
+  test("prepends preamble on first query", () => {
+    const result = buildEffectivePrompt("What is this?", "System context here", false);
+    expect(result).toBe("System context here\n\n---\n\nUser question: What is this?");
+  });
+
+  test("returns bare prompt on subsequent queries", () => {
+    const result = buildEffectivePrompt("What is this?", "System context here", true);
+    expect(result).toBe("What is this?");
+  });
+
+  test("returns bare prompt when preamble is null", () => {
+    const result = buildEffectivePrompt("What is this?", null, false);
+    expect(result).toBe("What is this?");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// mapPiEvent
+// ---------------------------------------------------------------------------
+
+import { mapPiEvent } from "./providers/pi-sdk.ts";
+
+describe("mapPiEvent", () => {
+  const SESSION_ID = "pi-session-123";
+
+  test("text_delta from message_update", () => {
+    const result = mapPiEvent({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", delta: "Hello", contentIndex: 0, partial: {} },
+    }, SESSION_ID);
+    expect(result).toEqual([{ type: "text_delta", delta: "Hello" }]);
+  });
+
+  test("toolcall_end from message_update", () => {
+    const result = mapPiEvent({
+      type: "message_update",
+      assistantMessageEvent: {
+        type: "toolcall_end",
+        contentIndex: 0,
+        toolCall: { type: "toolCall", id: "tc_1", name: "read", arguments: { path: "/foo" } },
+        partial: {},
+      },
+    }, SESSION_ID);
+    expect(result).toEqual([{
+      type: "tool_use",
+      toolName: "read",
+      toolInput: { path: "/foo" },
+      toolUseId: "tc_1",
+    }]);
+  });
+
+  test("tool_execution_end maps to tool_result", () => {
+    const result = mapPiEvent({
+      type: "tool_execution_end",
+      toolCallId: "tc_1",
+      toolName: "read",
+      result: "file contents",
+      isError: false,
+    }, SESSION_ID);
+    expect(result).toEqual([{
+      type: "tool_result",
+      toolUseId: "tc_1",
+      result: "file contents",
+    }]);
+  });
+
+  test("tool_execution_end with error maps to error", () => {
+    const result = mapPiEvent({
+      type: "tool_execution_end",
+      toolCallId: "tc_1",
+      toolName: "read",
+      result: "not found",
+      isError: true,
+    }, SESSION_ID);
+    expect(result).toEqual([{
+      type: "error",
+      error: "not found",
+      code: "pi_tool_error",
+    }]);
+  });
+
+  test("agent_end maps to result", () => {
+    const result = mapPiEvent({
+      type: "agent_end",
+      messages: [],
+    }, SESSION_ID);
+    expect(result).toEqual([{
+      type: "result",
+      sessionId: SESSION_ID,
+      success: true,
+    }]);
+  });
+
+  test("ignored events return empty", () => {
+    expect(mapPiEvent({ type: "agent_start" }, SESSION_ID)).toEqual([]);
+    expect(mapPiEvent({ type: "turn_start" }, SESSION_ID)).toEqual([]);
+    expect(mapPiEvent({ type: "turn_end", message: {}, toolResults: [] }, SESSION_ID)).toEqual([]);
+    expect(mapPiEvent({ type: "message_start", message: {} }, SESSION_ID)).toEqual([]);
+    expect(mapPiEvent({ type: "message_end", message: {} }, SESSION_ID)).toEqual([]);
+    expect(mapPiEvent({ type: "tool_execution_start", toolCallId: "x", toolName: "y", args: {} }, SESSION_ID)).toEqual([]);
+  });
+
+  test("message_update with thinking events returns empty", () => {
+    const result = mapPiEvent({
+      type: "message_update",
+      assistantMessageEvent: { type: "thinking_delta", delta: "hmm", contentIndex: 0, partial: {} },
+    }, SESSION_ID);
+    expect(result).toEqual([]);
+  });
+
+  test("message_update with done returns empty", () => {
+    const result = mapPiEvent({
+      type: "message_update",
+      assistantMessageEvent: { type: "done", reason: "stop", message: {} },
+    }, SESSION_ID);
+    expect(result).toEqual([]);
+  });
+
+  test("tool_execution_end with object result stringifies it", () => {
+    const result = mapPiEvent({
+      type: "tool_execution_end",
+      toolCallId: "tc_2",
+      toolName: "ls",
+      result: { files: ["a.ts", "b.ts"] },
+      isError: false,
+    }, SESSION_ID);
+    expect(result).toEqual([{
+      type: "tool_result",
+      toolUseId: "tc_2",
+      result: JSON.stringify({ files: ["a.ts", "b.ts"] }),
+    }]);
+  });
+});

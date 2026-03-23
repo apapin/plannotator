@@ -135,6 +135,25 @@ export async function startReviewServer(
     // Codex SDK not available
   }
 
+  // Try Pi
+  try {
+    const { PiSDKProvider } = await import("@plannotator/ai/providers/pi-sdk");
+    const piPath = Bun.which("pi");
+    if (piPath) {
+      const provider = await createProvider({
+        type: "pi-sdk",
+        cwd: process.cwd(),
+        piExecutablePath: piPath,
+      });
+      if (provider instanceof PiSDKProvider) {
+        await provider.fetchModels();
+      }
+      aiRegistry.register(provider);
+    }
+  } catch {
+    // Pi not available
+  }
+
   // Create endpoints if any provider registered
   if (aiRegistry.size > 0) {
     aiEndpoints = createAIEndpoints({

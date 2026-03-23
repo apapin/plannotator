@@ -13,6 +13,14 @@ export const CodexIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h
   <img src={codexPng} alt="" className={`${className} rounded-sm`} />
 );
 
+/** Pi icon — extracted from apps/marketing/public/assets/icon-pi.svg */
+export const PiIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4' }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" className={className}>
+    <path fill="currentColor" fillRule="evenodd" d="M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z"/>
+    <path fill="currentColor" d="M517.36 400H634.72V634.72H517.36Z"/>
+  </svg>
+);
+
 /** Generic fallback icon for unknown providers */
 const GenericProviderIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4' }) => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className={className}>
@@ -24,6 +32,7 @@ const GenericProviderIcon: React.FC<{ className?: string }> = ({ className = 'w-
 export const PROVIDER_META: Record<string, { label: string; icon: React.FC<{ className?: string }> }> = {
   'claude-agent-sdk': { label: 'Claude', icon: ClaudeIcon },
   'codex-sdk': { label: 'Codex', icon: CodexIcon },
+  'pi-sdk': { label: 'Pi', icon: PiIcon },
 };
 
 /** Get provider metadata, with fallback for unknown providers. */

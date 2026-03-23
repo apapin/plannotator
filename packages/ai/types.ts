@@ -349,3 +349,13 @@ export interface CodexSDKConfig extends AIProviderConfig {
    */
   codexExecutablePath?: string;
 }
+
+export interface PiSDKConfig extends AIProviderConfig {
+  type: "pi-sdk";
+  /**
+   * Explicit path to the pi CLI binary.
+   * Required when running inside a compiled binary where PATH resolution
+   * doesn't work the same way (e.g., bun build --compile).
+   */
+  piExecutablePath?: string;
+}

@@ -347,6 +347,8 @@ const App: React.FC = () => {
         }
         if (data.mode === 'archive') {
           if (data.archivePlans) archive.init(data.archivePlans);
+          setSharingEnabled(false);
+          archive.fetchPlans();
           sidebar.open('archive');
         }
         if (data.mode && data.mode !== 'archive') {

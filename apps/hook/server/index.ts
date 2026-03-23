@@ -1,7 +1,7 @@
 /**
  * Plannotator CLI for Claude Code
  *
- * Supports four modes:
+ * Supports five modes:
  *
  * 1. Plan Review (default, no args):
  *    - Spawned by ExitPlanMode hook
@@ -18,7 +18,12 @@
  *    - Opens any markdown file in the annotation UI
  *    - Outputs structured feedback to stdout
  *
- * 4. Sessions (`plannotator sessions`):
+ * 4. Archive (`plannotator archive`):
+ *    - Opens read-only browser for saved plan decisions
+ *    - Lists plans from ~/.plannotator/plans/ with status badges
+ *    - Done button closes the browser
+ *
+ * 5. Sessions (`plannotator sessions`):
  *    - Lists active Plannotator server sessions
  *    - `--open [N]` reopens a session in the browser
  *    - `--clean` removes stale session files

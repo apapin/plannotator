@@ -33,7 +33,6 @@ import {
   getPlanVersion,
   getVersionCount,
   listVersions,
-  listProjectPlans,
   listArchivedPlans,
   readArchivedPlan,
   type ArchivedPlan,
@@ -525,8 +524,6 @@ export async function startPlanReviewServer(options: {
       json(res, { plan: content, version: v });
     } else if (url.pathname === "/api/plan/versions") {
       json(res, { project, slug, versions: listVersions(project, slug) });
-    } else if (url.pathname === "/api/plan/history") {
-      json(res, { project, plans: listProjectPlans(project) });
     } else if (url.pathname === "/api/plan") {
       if (options.mode === "archive") {
         json(res, {

@@ -29,6 +29,7 @@ export function getPlanDir(customPath?: string | null): string {
     planDir = join(homedir(), ".plannotator", "plans");
   }
 
+  planDir = resolve(planDir);
   mkdirSync(planDir, { recursive: true });
   return planDir;
 }

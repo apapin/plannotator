@@ -10,7 +10,6 @@ export {
   getPlanVersionPath,
   getVersionCount,
   listVersions,
-  listProjectPlans,
   parseArchiveFilename,
   listArchivedPlans,
   readArchivedPlan,

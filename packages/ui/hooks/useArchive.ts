@@ -120,12 +120,25 @@ export function useArchive(options: UseArchiveOptions): UseArchiveReturn {
       if (!res.ok) return;
       const data = await res.json() as { plans: ArchivedPlan[] };
       setPlans(data.plans);
+      // In standalone archive mode, auto-select and load the first plan
+      // so the viewer reflects the customPath results, not stale server data
+      if (archiveMode && data.plans.length > 0) {
+        const first = data.plans[0].filename;
+        setSelectedFile(first);
+        const fetchParams = new URLSearchParams({ filename: first });
+        if (customPath) fetchParams.set("customPath", customPath);
+        const planRes = await fetch(`/api/archive/plan?${fetchParams}`);
+        if (planRes.ok) {
+          const planData = await planRes.json() as { markdown: string };
+          setMarkdown(planData.markdown);
+        }
+      }
     } catch {
       hasFetched.current = false;
     } finally {
       setIsLoading(false);
     }
-  }, [customPath, isLoading]);
+  }, [archiveMode, customPath, isLoading, setMarkdown]);
 
   const done = useCallback(async () => {
     try {

@@ -340,16 +340,18 @@ const App: React.FC = () => {
         return res.json();
       })
       .then((data: { plan: string; origin?: 'claude-code' | 'opencode' | 'pi' | 'codex'; mode?: 'annotate' | 'annotate-last' | 'archive'; filePath?: string; sharingEnabled?: boolean; shareBaseUrl?: string; pasteApiUrl?: string; repoInfo?: { display: string; branch?: string }; previousPlan?: string | null; versionInfo?: { version: number; totalVersions: number; project: string }; archivePlans?: ArchivedPlan[] }) => {
-        if (data.plan) setMarkdown(data.plan);
+        if (data.mode === 'archive') {
+          // Archive mode: show first archived plan or clear demo content
+          setMarkdown(data.plan || '');
+          if (data.archivePlans) archive.init(data.archivePlans);
+          setSharingEnabled(false);
+          sidebar.open('archive');
+        } else if (data.plan) {
+          setMarkdown(data.plan);
+        }
         setIsApiMode(true);
         if (data.mode === 'annotate' || data.mode === 'annotate-last') {
           setAnnotateMode(true);
-        }
-        if (data.mode === 'archive') {
-          if (data.archivePlans) archive.init(data.archivePlans);
-          setSharingEnabled(false);
-          archive.fetchPlans();
-          sidebar.open('archive');
         }
         if (data.mode && data.mode !== 'archive') {
           setAnnotateSource(data.mode === 'annotate-last' ? 'message' : 'file');

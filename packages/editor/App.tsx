@@ -224,11 +224,14 @@ const App: React.FC = () => {
     if (!showFilesTab) fileBrowser.setActiveFile(null);
   }, [showFilesTab]);
 
-  // Auto-fetch file trees when files tab is first opened
   useEffect(() => {
-    if (sidebar.activeTab === 'files' && showFilesTab && fileBrowserDirs.length > 0
-        && fileBrowser.dirs.length === 0) {
-      fileBrowser.fetchAll(fileBrowserDirs);
+    if (sidebar.activeTab === 'files' && showFilesTab && fileBrowserDirs.length > 0) {
+      const loadedPaths = fileBrowser.dirs.map((d) => d.path);
+      const needsFetch = fileBrowserDirs.length !== loadedPaths.length
+        || fileBrowserDirs.some((d) => !loadedPaths.includes(d));
+      if (needsFetch) {
+        fileBrowser.fetchAll(fileBrowserDirs);
+      }
     }
   }, [sidebar.activeTab, showFilesTab, fileBrowserDirs]);
 

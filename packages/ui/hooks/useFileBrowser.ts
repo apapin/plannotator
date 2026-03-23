@@ -33,7 +33,6 @@ export function useFileBrowser(): UseFileBrowserReturn {
   const [dirs, setDirs] = useState<DirState[]>([]);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [activeFile, setActiveFile] = useState<string | null>(null);
-  const [activeDirPath, setActiveDirPath] = useState<string | null>(null);
   const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(new Set());
 
   const toggleCollapse = useCallback((dirPath: string) => {
@@ -45,24 +44,9 @@ export function useFileBrowser(): UseFileBrowserReturn {
     });
   }, []);
 
-  const setActiveFileWithDir = useCallback((path: string | null) => {
-    setActiveFile(path);
-    if (!path) {
-      setActiveDirPath(null);
-      return;
-    }
-    // Find which directory this file belongs to
-    setDirs((current) => {
-      const dir = current.find((d) => path.startsWith(d.path));
-      if (dir) setActiveDirPath(dir.path);
-      return current;
-    });
-  }, []);
-
   const fetchTree = useCallback(async (dirPath: string) => {
     const name = dirPath.split("/").pop() || dirPath;
 
-    // Add or update this directory entry
     setDirs((prev) => {
       const exists = prev.find((d) => d.path === dirPath);
       if (exists) {
@@ -94,7 +78,6 @@ export function useFileBrowser(): UseFileBrowserReturn {
         )
       );
 
-      // Auto-expand root-level folders for this directory
       const rootFolders = (data.tree as VaultNode[])
         .filter((n) => n.type === "folder")
         .map((n) => `${dirPath}:${n.path}`);
@@ -114,7 +97,6 @@ export function useFileBrowser(): UseFileBrowserReturn {
 
   const fetchAll = useCallback(
     (directories: string[]) => {
-      // Reset dirs to match current config, then fetch each
       setDirs(
         directories.map((path) => ({
           path,
@@ -150,7 +132,7 @@ export function useFileBrowser(): UseFileBrowserReturn {
     fetchTree,
     fetchAll,
     activeFile,
-    activeDirPath,
-    setActiveFile: setActiveFileWithDir,
+    activeDirPath: activeFile ? (dirs.find((d) => activeFile.startsWith(d.path))?.path ?? null) : null,
+    setActiveFile,
   };
 }

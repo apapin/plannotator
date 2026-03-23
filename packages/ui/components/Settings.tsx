@@ -217,6 +217,16 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
     if (onUIPreferencesChange) onUIPreferencesChange(uiPrefs);
   };
 
+  const addDirectory = () => {
+    const trimmed = newDirPath.trim();
+    if (trimmed && !fileBrowserSettings.directories.includes(trimmed)) {
+      handleFileBrowserChange({
+        directories: [...fileBrowserSettings.directories, trimmed],
+      });
+    }
+    setNewDirPath('');
+  };
+
   const handleObsidianChange = (updates: Partial<ObsidianSettings>) => {
     const newSettings = { ...obsidian, ...updates };
     setObsidian(newSettings);
@@ -1121,29 +1131,13 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
                               value={newDirPath}
                               onChange={(e) => setNewDirPath(e.target.value)}
                               onKeyDown={(e) => {
-                                if (e.key === 'Enter' && newDirPath.trim()) {
-                                  const trimmed = newDirPath.trim();
-                                  if (!fileBrowserSettings.directories.includes(trimmed)) {
-                                    handleFileBrowserChange({
-                                      directories: [...fileBrowserSettings.directories, trimmed],
-                                    });
-                                  }
-                                  setNewDirPath('');
-                                }
+                                if (e.key === 'Enter') addDirectory();
                               }}
                               placeholder="/path/to/directory"
                               className="flex-1 px-3 py-2 bg-muted rounded-lg text-xs font-mono placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/50"
                             />
                             <button
-                              onClick={() => {
-                                const trimmed = newDirPath.trim();
-                                if (trimmed && !fileBrowserSettings.directories.includes(trimmed)) {
-                                  handleFileBrowserChange({
-                                    directories: [...fileBrowserSettings.directories, trimmed],
-                                  });
-                                }
-                                setNewDirPath('');
-                              }}
+                              onClick={addDirectory}
                               disabled={!newDirPath.trim()}
                               className="px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
                             >

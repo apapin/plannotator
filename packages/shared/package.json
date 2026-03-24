@@ -16,6 +16,7 @@
     "./integrations-common": "./integrations-common.ts",
     "./repo": "./repo.ts",
     "./reference-common": "./reference-common.ts",
-    "./favicon": "./favicon.ts"
+    "./favicon": "./favicon.ts",
+    "./resolve-file": "./resolve-file.ts"
   }
 }

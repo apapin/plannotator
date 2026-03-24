@@ -12,7 +12,7 @@ import {
   isAbsoluteMarkdownPath,
   normalizeMarkdownPathInput,
   resolveMarkdownFile,
-} from "./resolve-file";
+} from "@plannotator/shared/resolve-file";
 
 const tempDirs: string[] = [];
 
@@ -76,13 +76,13 @@ describe("resolveMarkdownFile", () => {
   test("resolves absolute path to existing file", async () => {
     const root = createTempProject({ "plan.md": "# Plan" });
     const absPath = resolve(root, "plan.md");
-    const result = await resolveMarkdownFile(absPath, root);
+    const result = resolveMarkdownFile(absPath, root);
     expect(result).toEqual({ kind: "found", path: absPath });
   });
 
   test("returns not_found for absolute path that doesn't exist", async () => {
     const root = createTempProject();
-    const result = await resolveMarkdownFile("/nonexistent/path.md", root);
+    const result = resolveMarkdownFile("/nonexistent/path.md", root);
     expect(result.kind).toBe("not_found");
   });
 
@@ -90,7 +90,7 @@ describe("resolveMarkdownFile", () => {
 
   test("resolves exact relative path", async () => {
     const root = createTempProject({ "docs/guide.md": "# Guide" });
-    const result = await resolveMarkdownFile("docs/guide.md", root);
+    const result = resolveMarkdownFile("docs/guide.md", root);
     expect(result).toEqual({
       kind: "found",
       path: resolve(root, "docs/guide.md"),
@@ -99,7 +99,7 @@ describe("resolveMarkdownFile", () => {
 
   test("resolves bare filename in root", async () => {
     const root = createTempProject({ "README.md": "# Hello" });
-    const result = await resolveMarkdownFile("README.md", root);
+    const result = resolveMarkdownFile("README.md", root);
     expect(result).toEqual({
       kind: "found",
       path: resolve(root, "README.md"),
@@ -108,7 +108,7 @@ describe("resolveMarkdownFile", () => {
 
   test("resolves relative paths with Windows separators", async () => {
     const root = createTempProject({ "docs/test-plan.md": "# Test plan\n" });
-    const result = await resolveMarkdownFile("docs\\test-plan.md", root);
+    const result = resolveMarkdownFile("docs\\test-plan.md", root);
     expect(result).toEqual({
       kind: "found",
       path: resolve(root, "docs/test-plan.md"),
@@ -119,7 +119,7 @@ describe("resolveMarkdownFile", () => {
 
   test("finds bare filenames case-insensitively", async () => {
     const root = createTempProject({ "notes/Architecture.MD": "# Architecture\n" });
-    const result = await resolveMarkdownFile("architecture.md", root);
+    const result = resolveMarkdownFile("architecture.md", root);
     expect(result).toEqual({
       kind: "found",
       path: resolve(root, "notes/Architecture.MD"),
@@ -128,7 +128,7 @@ describe("resolveMarkdownFile", () => {
 
   test("finds relative paths case-insensitively", async () => {
     const root = createTempProject({ "Docs/Specs/Design.MDX": "# Design\n" });
-    const result = await resolveMarkdownFile("docs/specs/design.mdx", root);
+    const result = resolveMarkdownFile("docs/specs/design.mdx", root);
     expect(result.kind).toBe("found");
     if (result.kind === "found") {
       expect(await Bun.file(result.path).text()).toBe("# Design\n");
@@ -140,7 +140,7 @@ describe("resolveMarkdownFile", () => {
       "docs/plan.md": "# Plan 1",
       "api/plan.md": "# Plan 2",
     });
-    const result = await resolveMarkdownFile("plan.md", root);
+    const result = resolveMarkdownFile("plan.md", root);
     expect(result.kind).toBe("ambiguous");
     if (result.kind === "ambiguous") {
       expect(result.matches).toHaveLength(2);
@@ -153,7 +153,7 @@ describe("resolveMarkdownFile", () => {
     const root = createTempProject({
       "node_modules/pkg/README.md": "# Pkg",
     });
-    const result = await resolveMarkdownFile("readme.md", root);
+    const result = resolveMarkdownFile("readme.md", root);
     expect(result.kind).toBe("not_found");
   });
 
@@ -161,7 +161,7 @@ describe("resolveMarkdownFile", () => {
     const root = createTempProject({
       ".git/hooks/pre-commit.md": "# hook",
     });
-    const result = await resolveMarkdownFile("pre-commit.md", root);
+    const result = resolveMarkdownFile("pre-commit.md", root);
     expect(result.kind).toBe("not_found");
   });
 
@@ -169,13 +169,13 @@ describe("resolveMarkdownFile", () => {
 
   test("rejects non-markdown files", async () => {
     const root = createTempProject({ "script.ts": "export {}" });
-    const result = await resolveMarkdownFile("script.ts", root);
+    const result = resolveMarkdownFile("script.ts", root);
     expect(result.kind).toBe("not_found");
   });
 
   test("accepts .mdx files", async () => {
     const root = createTempProject({ "page.mdx": "# Page" });
-    const result = await resolveMarkdownFile("page.mdx", root);
+    const result = resolveMarkdownFile("page.mdx", root);
     expect(result).toEqual({
       kind: "found",
       path: resolve(root, "page.mdx"),
@@ -186,7 +186,7 @@ describe("resolveMarkdownFile", () => {
 
   test("returns not_found for nonexistent file", async () => {
     const root = createTempProject();
-    const result = await resolveMarkdownFile("nope.md", root);
+    const result = resolveMarkdownFile("nope.md", root);
     expect(result.kind).toBe("not_found");
   });
 
@@ -194,7 +194,7 @@ describe("resolveMarkdownFile", () => {
     const root = createTempProject({
       "a/b/c/d/deep.md": "# Deep",
     });
-    const result = await resolveMarkdownFile("deep.md", root);
+    const result = resolveMarkdownFile("deep.md", root);
     expect(result).toEqual({
       kind: "found",
       path: resolve(root, "a/b/c/d/deep.md"),

@@ -9,7 +9,7 @@ import { existsSync, statSync } from "fs";
 import { resolve } from "path";
 import { buildFileTree, FILE_BROWSER_EXCLUDED } from "@plannotator/shared/reference-common";
 import { detectObsidianVaults } from "./integrations";
-import { resolveMarkdownFile } from "./resolve-file";
+import { resolveMarkdownFile } from "@plannotator/shared/resolve-file";
 
 // --- Route handlers ---
 
@@ -42,7 +42,7 @@ export async function handleDoc(req: Request): Promise<Response> {
 	}
 
 	const projectRoot = process.cwd();
-	const result = await resolveMarkdownFile(requestedPath, projectRoot);
+	const result = resolveMarkdownFile(requestedPath, projectRoot);
 
 	if (result.kind === "ambiguous") {
 		return Response.json(

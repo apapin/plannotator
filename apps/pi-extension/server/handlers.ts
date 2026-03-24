@@ -179,10 +179,16 @@ export function handleDraftRequest(
 	draftKey: string,
 ): Promise<void> | void {
 	if (req.method === "POST") {
-		return parseBody(req).then((body) => {
-			saveDraft(draftKey, body);
-			json(res, { ok: true });
-		});
+		return parseBody(req)
+			.then((body) => {
+				saveDraft(draftKey, body);
+				json(res, { ok: true });
+			})
+			.catch((err: unknown) => {
+				const message = err instanceof Error ? err.message : "Failed to save draft";
+				console.error(`[draft] save failed: ${message}`);
+				json(res, { error: message }, 500);
+			});
 	} else if (req.method === "DELETE") {
 		deleteDraft(draftKey);
 		json(res, { ok: true });

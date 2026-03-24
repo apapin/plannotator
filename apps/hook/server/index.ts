@@ -51,7 +51,7 @@ import {
 import { getGitContext, runGitDiff } from "@plannotator/server/git";
 import { parsePRUrl, checkAuth, fetchPR, getCliName, getCliInstallUrl, getMRLabel, getMRNumberLabel, getDisplayRepo } from "@plannotator/server/pr";
 import { writeRemoteShareLink } from "@plannotator/server/share-url";
-import { resolveMarkdownFile } from "@plannotator/server/resolve-file";
+import { resolveMarkdownFile } from "@plannotator/shared/resolve-file";
 import { registerSession, unregisterSession, listSessions } from "@plannotator/server/sessions";
 import { openBrowser } from "@plannotator/server/browser";
 import { detectProjectName } from "@plannotator/server/project";
@@ -274,7 +274,7 @@ if (args[0] === "sessions") {
   }
 
   // Smart file resolution: exact path, case-insensitive relative, or bare filename search
-  const resolved = await resolveMarkdownFile(filePath, projectRoot);
+  const resolved = resolveMarkdownFile(filePath, projectRoot);
 
   if (resolved.kind === "ambiguous") {
     console.error(`Ambiguous filename "${resolved.input}" — found ${resolved.matches.length} matches:`);

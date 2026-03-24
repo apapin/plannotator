@@ -12,7 +12,7 @@ import {
 	type Dirent,
 } from "node:fs";
 import type { ServerResponse } from "node:http";
-import { isAbsolute, join, resolve as resolvePath } from "node:path";
+import { join, resolve as resolvePath } from "node:path";
 
 import { json } from "./helpers";
 
@@ -22,6 +22,7 @@ import {
 	FILE_BROWSER_EXCLUDED,
 } from "../generated/reference-common.js";
 import { detectObsidianVaults } from "../generated/integrations-common.js";
+import { resolveMarkdownFile } from "../generated/resolve-file.js";
 
 type Res = ServerResponse;
 
@@ -46,7 +47,7 @@ function walkMarkdownFiles(dir: string, root: string, results: string[]): void {
 	}
 }
 
-/** Serve a linked markdown document. Node.js equivalent of handleDoc. */
+/** Serve a linked markdown document. Uses shared resolveMarkdownFile for parity with Bun server. */
 export function handleDocRequest(res: Res, url: URL): void {
 	const requestedPath = url.searchParams.get("path");
 	if (!requestedPath) {
@@ -69,70 +70,36 @@ export function handleDocRequest(res: Res, url: URL): void {
 				return;
 			}
 		} catch {
-			/* fall through */
+			/* fall through to standard resolution */
 		}
 	}
 
-	// Absolute path
-	if (isAbsolute(requestedPath)) {
-		if (/\.mdx?$/i.test(requestedPath) && existsSync(requestedPath)) {
-			try {
-				const markdown = readFileSync(requestedPath, "utf-8");
-				json(res, { markdown, filepath: requestedPath });
-				return;
-			} catch {
-				/* fall through */
-			}
-		}
-		json(res, { error: `File not found: ${requestedPath}` }, 404);
+	const projectRoot = process.cwd();
+	const result = resolveMarkdownFile(requestedPath, projectRoot);
+
+	if (result.kind === "ambiguous") {
+		json(
+			res,
+			{
+				error: `Ambiguous filename '${result.input}': found ${result.matches.length} matches`,
+				matches: result.matches,
+			},
+			400,
+		);
 		return;
 	}
 
-	// Relative to cwd
-	const projectRoot = process.cwd();
-	const fromRoot = resolvePath(projectRoot, requestedPath);
-	if (/\.mdx?$/i.test(fromRoot) && existsSync(fromRoot)) {
-		try {
-			const markdown = readFileSync(fromRoot, "utf-8");
-			json(res, { markdown, filepath: fromRoot });
-			return;
-		} catch {
-			/* fall through */
-		}
+	if (result.kind === "not_found") {
+		json(res, { error: `File not found: ${result.input}` }, 404);
+		return;
 	}
 
-	// Case-insensitive search for bare filenames
-	if (!requestedPath.includes("/") && /\.mdx?$/i.test(requestedPath)) {
-		const files: string[] = [];
-		walkMarkdownFiles(projectRoot, projectRoot, files);
-		const target = requestedPath.toLowerCase();
-		const matches = files.filter(
-			(f) => f.split("/").pop()!.toLowerCase() === target,
-		);
-		if (matches.length === 1) {
-			const fullPath = resolvePath(projectRoot, matches[0]);
-			try {
-				const markdown = readFileSync(fullPath, "utf-8");
-				json(res, { markdown, filepath: fullPath });
-				return;
-			} catch {
-				/* fall through */
-			}
-		}
-		if (matches.length > 1) {
-			json(
-				res,
-				{
-					error: `Ambiguous filename '${requestedPath}': found ${matches.length} matches`,
-					matches,
-				},
-				400,
-			);
-			return;
-		}
+	try {
+		const markdown = readFileSync(result.path, "utf-8");
+		json(res, { markdown, filepath: result.path });
+	} catch {
+		json(res, { error: "Failed to read file" }, 500);
 	}
-
-	json(res, { error: `File not found: ${requestedPath}` }, 404);
 }
 
 export function handleObsidianVaultsRequest(res: Res): void {

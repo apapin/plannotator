@@ -32,7 +32,7 @@
     "project.ts"
   ],
   "scripts": {
-    "build": "cp ../hook/dist/index.html plannotator.html && cp ../hook/dist/review.html review-editor.html && mkdir -p generated && for f in feedback-templates review-core storage draft project pr-provider pr-github pr-gitlab checklist integrations-common repo reference-common favicon; do src=\"../../packages/shared/$f.ts\"; printf '// @generated — DO NOT EDIT. Source: packages/shared/%s.ts\\n' \"$f\" | cat - \"$src\" > \"generated/$f.ts\"; done",
+    "build": "cp ../hook/dist/index.html plannotator.html && cp ../hook/dist/review.html review-editor.html && mkdir -p generated && for f in feedback-templates review-core storage draft project pr-provider pr-github pr-gitlab checklist integrations-common repo reference-common favicon resolve-file; do src=\"../../packages/shared/$f.ts\"; printf '// @generated — DO NOT EDIT. Source: packages/shared/%s.ts\\n' \"$f\" | cat - \"$src\" > \"generated/$f.ts\"; done",
     "prepublishOnly": "cd ../.. && bun run build:pi"
   },
   "peerDependencies": {

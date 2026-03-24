@@ -32,29 +32,33 @@ export function createEditorAnnotationHandler() {
 			}
 
 			if (url.pathname === "/api/editor-annotation" && req.method === "POST") {
-				const body = await parseBody(req);
-				if (
-					!body.filePath ||
-					!body.selectedText ||
-					!body.lineStart ||
-					!body.lineEnd
-				) {
-					json(res, { error: "Missing required fields" }, 400);
-					return true;
+				try {
+					const body = await parseBody(req);
+					if (
+						!body.filePath ||
+						!body.selectedText ||
+						!body.lineStart ||
+						!body.lineEnd
+					) {
+						json(res, { error: "Missing required fields" }, 400);
+						return true;
+					}
+
+					const annotation: EditorAnnotation = {
+						id: randomUUID(),
+						filePath: String(body.filePath),
+						selectedText: String(body.selectedText),
+						lineStart: Number(body.lineStart),
+						lineEnd: Number(body.lineEnd),
+						comment: typeof body.comment === "string" ? body.comment : undefined,
+						createdAt: Date.now(),
+					};
+
+					annotations.push(annotation);
+					json(res, { id: annotation.id });
+				} catch {
+					json(res, { error: "Invalid JSON" }, 400);
 				}
-
-				const annotation: EditorAnnotation = {
-					id: randomUUID(),
-					filePath: String(body.filePath),
-					selectedText: String(body.selectedText),
-					lineStart: Number(body.lineStart),
-					lineEnd: Number(body.lineEnd),
-					comment: typeof body.comment === "string" ? body.comment : undefined,
-					createdAt: Date.now(),
-				};
-
-				annotations.push(annotation);
-				json(res, { id: annotation.id });
 				return true;
 			}
 

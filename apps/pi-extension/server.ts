@@ -916,8 +916,8 @@ export async function startPlanReviewServer(options: {
     ? { version: historyResult.version, totalVersions: getVersionCount(project, slug), project }
     : null;
 
-  let resolveDecision!: (result: { approved: boolean; feedback?: string }) => void;
-  const decisionPromise = new Promise<{ approved: boolean; feedback?: string }>((r) => {
+  let resolveDecision!: (result: { approved: boolean; feedback?: string; agentSwitch?: string; permissionMode?: string }) => void;
+  const decisionPromise = new Promise<{ approved: boolean; feedback?: string; agentSwitch?: string; permissionMode?: string }>((r) => {
     resolveDecision = r;
   });
 
@@ -973,7 +973,7 @@ export async function startPlanReviewServer(options: {
           mode: "archive", archivePlans, sharingEnabled, shareBaseUrl, pasteApiUrl,
         });
       } else {
-        json(res, { plan: options.plan, origin: options.origin ?? "pi", previousPlan, versionInfo, sharingEnabled, shareBaseUrl, pasteApiUrl });
+        json(res, { plan: options.plan, origin: options.origin ?? "pi", previousPlan, versionInfo, sharingEnabled, shareBaseUrl, pasteApiUrl, repoInfo: getRepoInfo(), projectRoot: process.cwd() });
       }
     } else if (url.pathname === "/api/image") {
       handleImageRequest(res, url);
@@ -1013,7 +1013,12 @@ export async function startPlanReviewServer(options: {
     } else if (url.pathname === "/api/approve" && req.method === "POST") {
       const body = await parseBody(req);
       deleteDraft(draftKey);
-      resolveDecision({ approved: true, feedback: body.feedback as string | undefined });
+      resolveDecision({
+        approved: true,
+        feedback: body.feedback as string | undefined,
+        agentSwitch: body.agentSwitch as string | undefined,
+        permissionMode: body.permissionMode as string | undefined,
+      });
       json(res, { ok: true });
     } else if (url.pathname === "/api/deny" && req.method === "POST") {
       const body = await parseBody(req);
@@ -1090,8 +1095,9 @@ export function getGitContext(): Promise<GitContext> {
 export function runGitDiff(
   diffType: DiffType,
   defaultBranch = "main",
+  cwd?: string,
 ): Promise<{ patch: string; label: string; error?: string }> {
-  return runGitDiffCore(reviewRuntime, diffType, defaultBranch);
+  return runGitDiffCore(reviewRuntime, diffType, defaultBranch, cwd);
 }
 
 export async function startReviewServer(options: {
@@ -1255,7 +1261,8 @@ export async function startReviewServer(options: {
         return;
       }
       const defaultBranch = options.gitContext?.defaultBranch || "main";
-      const result = await runGitDiff(newType, defaultBranch);
+      const defaultCwd = options.gitContext?.cwd;
+      const result = await runGitDiff(newType, defaultBranch, defaultCwd);
       currentPatch = result.patch;
       currentGitRef = result.label;
       currentDiffType = newType;
@@ -1331,12 +1338,14 @@ export async function startReviewServer(options: {
       }
 
       const defaultBranch = options.gitContext?.defaultBranch || "main";
+      const defaultCwd = options.gitContext?.cwd;
       const result = await getFileContentsForDiffCore(
         reviewRuntime,
         currentDiffType,
         defaultBranch,
         filePath,
         oldPath,
+        defaultCwd,
       );
       json(res, result);
     } else if (url.pathname === "/api/image") {
@@ -1361,6 +1370,9 @@ export async function startReviewServer(options: {
         if (currentDiffType.startsWith("worktree:")) {
           const parsed = parseWorktreeDiffType(currentDiffType);
           if (parsed) cwd = parsed.path;
+        }
+        if (!cwd) {
+          cwd = options.gitContext?.cwd;
         }
         if (body.undo) {
           await gitResetFileCore(reviewRuntime, filePath, cwd);
@@ -1434,7 +1446,7 @@ export interface AnnotateServerResult {
   port: number;
   portSource: "env" | "remote-default" | "random";
   url: string;
-  waitForDecision: () => Promise<{ feedback: string }>;
+  waitForDecision: () => Promise<{ feedback: string; annotations: unknown[] }>;
   stop: () => void;
 }
 
@@ -1455,8 +1467,8 @@ export async function startAnnotateServer(options: {
   const pasteApiUrl =
     (options.pasteApiUrl ?? process.env.PLANNOTATOR_PASTE_URL) || undefined;
 
-  let resolveDecision!: (result: { feedback: string }) => void;
-  const decisionPromise = new Promise<{ feedback: string }>((r) => {
+  let resolveDecision!: (result: { feedback: string; annotations: unknown[] }) => void;
+  const decisionPromise = new Promise<{ feedback: string; annotations: unknown[] }>((r) => {
     resolveDecision = r;
   });
 
@@ -1475,6 +1487,8 @@ export async function startAnnotateServer(options: {
         sharingEnabled,
         shareBaseUrl,
         pasteApiUrl,
+        repoInfo: getRepoInfo(),
+        projectRoot: process.cwd(),
       });
     } else if (url.pathname === "/api/image") {
       handleImageRequest(res, url);
@@ -1495,7 +1509,10 @@ export async function startAnnotateServer(options: {
     } else if (url.pathname === "/api/feedback" && req.method === "POST") {
       const body = await parseBody(req);
       deleteDraft(draftKey);
-      resolveDecision({ feedback: (body.feedback as string) || "" });
+      resolveDecision({
+        feedback: (body.feedback as string) || "",
+        annotations: (body.annotations as unknown[]) || [],
+      });
       json(res, { ok: true });
     } else {
       html(res, options.htmlContent);

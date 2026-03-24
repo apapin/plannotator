@@ -1,0 +1,13 @@
+{
+  "name": "@plannotator/gemini-hook",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "serve": "bun run server/index.ts"
+  },
+  "dependencies": {
+    "@plannotator/server": "workspace:*",
+    "@plannotator/shared": "workspace:*"
+  }
+}

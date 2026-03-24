@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "BeforeTool": [
+      {
+        "matcher": "exit_plan_mode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "plannotator-gemini",
+            "timeout": 345600
+          }
+        ]
+      }
+    ]
+  }
+}

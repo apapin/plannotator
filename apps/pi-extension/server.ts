@@ -40,6 +40,25 @@ import {
 } from "./storage.js";
 import { contentHash, saveDraft, loadDraft, deleteDraft } from "./draft.js";
 import { sanitizeTag } from "./project.js";
+import {
+  type PRRef,
+  type PRMetadata,
+  type PRContext,
+  type PRRuntime,
+  type PRReviewFileComment,
+  parsePRUrl as parsePRUrlCore,
+  checkAuth as checkAuthCore,
+  getUser as getUserCore,
+  fetchPR as fetchPRCore,
+  fetchPRContext as fetchPRContextCore,
+  fetchPRFileContent as fetchPRFileContentCore,
+  submitPRReview as submitPRReviewCore,
+  prRefFromMetadata,
+  getPlatformLabel,
+  getMRLabel,
+  getMRNumberLabel,
+  getDisplayRepo,
+} from "./pr-provider.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -589,6 +608,45 @@ function openEditorDiff(oldPath: string, newPath: string): Promise<{ ok: true } 
   });
 }
 
+// ── PR Runtime (Node.js) ────────────────────────────────────────────────
+
+const prRuntime: PRRuntime = {
+  async runCommand(cmd, args) {
+    return new Promise((resolve, reject) => {
+      const proc = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
+      let stdout = "";
+      let stderr = "";
+      proc.stdout?.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
+      proc.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
+      proc.on("error", reject);
+      proc.on("close", (exitCode) => { resolve({ stdout, stderr, exitCode: exitCode ?? 1 }); });
+    });
+  },
+  async runCommandWithInput(cmd, args, input) {
+    return new Promise((resolve, reject) => {
+      const proc = spawn(cmd, args, { stdio: ["pipe", "pipe", "pipe"] });
+      let stdout = "";
+      let stderr = "";
+      proc.stdout?.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
+      proc.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
+      proc.on("error", reject);
+      proc.on("close", (exitCode) => { resolve({ stdout, stderr, exitCode: exitCode ?? 1 }); });
+      proc.stdin?.write(input);
+      proc.stdin?.end();
+    });
+  },
+};
+
+export const parsePRUrl = parsePRUrlCore;
+export function checkPRAuth(ref: PRRef) { return checkAuthCore(prRuntime, ref); }
+export function getPRUser(ref: PRRef) { return getUserCore(prRuntime, ref); }
+export function fetchPR(ref: PRRef) { return fetchPRCore(prRuntime, ref); }
+export function fetchPRContext(ref: PRRef) { return fetchPRContextCore(prRuntime, ref); }
+export function fetchPRFileContent(ref: PRRef, sha: string, filePath: string) { return fetchPRFileContentCore(prRuntime, ref, sha, filePath); }
+export function submitPRReview(ref: PRRef, headSha: string, action: "approve" | "comment", body: string, fileComments: PRReviewFileComment[]) {
+  return submitPRReviewCore(prRuntime, ref, headSha, action, body, fileComments);
+}
+
 // ── Web Request Conversion ──────────────────────────────────────────────
 
 function toWebRequest(req: IncomingMessage): Request {
@@ -1047,9 +1105,15 @@ export async function startReviewServer(options: {
   sharingEnabled?: boolean;
   shareBaseUrl?: string;
   pasteApiUrl?: string;
+  prMetadata?: PRMetadata;
 }): Promise<ReviewServerResult> {
   const draftKey = contentHash(options.rawPatch);
-  const repoInfo = getRepoInfo();
+  const isPRMode = !!options.prMetadata;
+  const prRef = isPRMode ? prRefFromMetadata(options.prMetadata!) : null;
+  const platformUser = prRef ? await getPRUser(prRef) : null;
+  const repoInfo = isPRMode
+    ? { display: getDisplayRepo(options.prMetadata!), branch: `${getMRLabel(options.prMetadata!)} ${getMRNumberLabel(options.prMetadata!)}` }
+    : getRepoInfo();
   const editorAnnotations = createEditorAnnotationHandler();
   let currentPatch = options.rawPatch;
   let currentGitRef = options.gitRef;
@@ -1085,15 +1149,20 @@ export async function startReviewServer(options: {
         rawPatch: currentPatch,
         gitRef: currentGitRef,
         origin: options.origin ?? "pi",
-        diffType: currentDiffType,
-        gitContext: options.gitContext,
+        diffType: isPRMode ? undefined : currentDiffType,
+        gitContext: isPRMode ? undefined : options.gitContext,
         sharingEnabled,
         shareBaseUrl,
         pasteApiUrl,
         repoInfo,
+        ...(isPRMode && { prMetadata: options.prMetadata, platformUser }),
         ...(currentError ? { error: currentError } : {}),
       });
     } else if (url.pathname === "/api/diff/switch" && req.method === "POST") {
+      if (isPRMode) {
+        json(res, { error: "Not available for PR reviews" }, 400);
+        return;
+      }
       const body = await parseBody(req);
       const newType = body.diffType as DiffType;
       if (!newType) {
@@ -1112,6 +1181,35 @@ export async function startReviewServer(options: {
         diffType: currentDiffType,
         ...(currentError ? { error: currentError } : {}),
       });
+    } else if (url.pathname === "/api/pr-context" && req.method === "GET") {
+      if (!isPRMode || !prRef) {
+        json(res, { error: "Not in PR mode" }, 400);
+        return;
+      }
+      try {
+        const context = await fetchPRContext(prRef);
+        json(res, context);
+      } catch (err) {
+        json(res, { error: err instanceof Error ? err.message : "Failed to fetch PR context" }, 500);
+      }
+    } else if (url.pathname === "/api/pr-action" && req.method === "POST") {
+      if (!isPRMode || !options.prMetadata || !prRef) {
+        json(res, { error: "Not in PR mode" }, 400);
+        return;
+      }
+      try {
+        const body = await parseBody(req);
+        await submitPRReview(
+          prRef,
+          options.prMetadata.headSha,
+          body.action as "approve" | "comment",
+          body.body as string,
+          (body.fileComments as PRReviewFileComment[]) || [],
+        );
+        json(res, { ok: true, prUrl: options.prMetadata.url });
+      } catch (err) {
+        json(res, { error: err instanceof Error ? err.message : "Failed to submit PR review" }, 500);
+      }
     } else if (url.pathname === "/api/file-content" && req.method === "GET") {
       const filePath = url.searchParams.get("path");
       if (!filePath) {
@@ -1133,6 +1231,20 @@ export async function startReviewServer(options: {
           return;
         }
       }
+
+      if (isPRMode && prRef && options.prMetadata) {
+        try {
+          const [oldContent, newContent] = await Promise.all([
+            fetchPRFileContent(prRef, options.prMetadata.baseSha, oldPath || filePath),
+            fetchPRFileContent(prRef, options.prMetadata.headSha, filePath),
+          ]);
+          json(res, { oldContent, newContent });
+        } catch (err) {
+          json(res, { error: err instanceof Error ? err.message : "Failed to fetch file content" }, 500);
+        }
+        return;
+      }
+
       const defaultBranch = options.gitContext?.defaultBranch || "main";
       const result = await getFileContentsForDiffCore(
         reviewRuntime,
@@ -1149,6 +1261,10 @@ export async function startReviewServer(options: {
     } else if (url.pathname === "/api/agents" && req.method === "GET") {
       json(res, { agents: [] });
     } else if (url.pathname === "/api/git-add" && req.method === "POST") {
+      if (isPRMode) {
+        json(res, { error: "Not available for PR reviews" }, 400);
+        return;
+      }
       const body = await parseBody(req);
       const filePath = body.filePath as string | undefined;
       if (!filePath) {

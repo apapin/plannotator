@@ -6,1787 +6,986 @@
  * each UI needs — plan review, code review, and markdown annotation.
  */
 
-import { createServer, type IncomingMessage, type Server } from "node:http";
-import { execSync, spawn, spawnSync } from "node:child_process";
-import os from "node:os";
-import { randomUUID } from "node:crypto";
-import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, statSync } from "node:fs";
-import { join, basename, dirname, resolve as resolvePath, isAbsolute } from "node:path";
+import { createServer } from "node:http";
+import { execSync, spawnSync } from "node:child_process";
+import { readFileSync, existsSync } from "node:fs";
+import { dirname, resolve as resolvePath } from "node:path";
 import { Readable } from "node:stream";
+
+import { contentHash, deleteDraft } from "./draft.js";
+import { parseBody, json, html, send, toWebRequest } from "./server/helpers.js";
+import { handleImageRequest, handleUploadRequest, handleDraftRequest, handleFavicon } from "./server/handlers.js";
+import { createEditorAnnotationHandler } from "./server/annotations.js";
+import { handleDocRequest, handleObsidianVaultsRequest, handleObsidianFilesRequest, handleObsidianDocRequest, handleFileBrowserRequest } from "./server/reference.js";
+import { type ObsidianConfig, type BearConfig, type OctarineConfig, type IntegrationResult, saveToObsidian, saveToBear, saveToOctarine } from "./server/integrations.js";
+import { openEditorDiff } from "./server/ide.js";
+import { listenOnPort } from "./server/network.js";
+import { detectProjectName, getRepoInfo } from "./server/project.js";
+import { parsePRUrl, checkPRAuth, getPRUser, fetchPR, fetchPRContext, fetchPRFileContent, submitPRReview } from "./server/pr.js";
+import { type PRMetadata, type PRReviewFileComment, prRefFromMetadata, getDisplayRepo, getMRLabel, getMRNumberLabel } from "./pr-provider.js";
 import {
-  type DiffOption,
-  type DiffType,
-  type GitCommandResult,
-  type GitContext,
-  type ReviewGitRuntime,
-  getFileContentsForDiff as getFileContentsForDiffCore,
-  getGitContext as getGitContextCore,
-  gitAddFile as gitAddFileCore,
-  gitResetFile as gitResetFileCore,
-  parseWorktreeDiffType,
-  runGitDiff as runGitDiffCore,
-  validateFilePath,
+	type DiffType,
+	type GitCommandResult,
+	type GitContext,
+	type ReviewGitRuntime,
+	getFileContentsForDiff as getFileContentsForDiffCore,
+	getGitContext as getGitContextCore,
+	gitAddFile as gitAddFileCore,
+	gitResetFile as gitResetFileCore,
+	parseWorktreeDiffType,
+	runGitDiff as runGitDiffCore,
+	validateFilePath,
 } from "./review-core.js";
 import {
-  generateSlug,
-  saveToHistory,
-  getPlanVersion,
-  getPlanVersionPath,
-  getVersionCount,
-  listVersions,
-  listArchivedPlans,
-  readArchivedPlan,
-  saveAnnotations,
-  saveFinalSnapshot,
-  type ArchivedPlan,
+	generateSlug,
+	saveToHistory,
+	getPlanVersion,
+	getPlanVersionPath,
+	getVersionCount,
+	listVersions,
+	listArchivedPlans,
+	readArchivedPlan,
+	saveAnnotations,
+	saveFinalSnapshot,
+	type ArchivedPlan,
 } from "./storage.js";
-import { contentHash, saveDraft, loadDraft, deleteDraft } from "./draft.js";
-import { sanitizeTag } from "./project.js";
-import {
-  type PRRef,
-  type PRMetadata,
-  type PRContext,
-  type PRRuntime,
-  type PRReviewFileComment,
-  parsePRUrl as parsePRUrlCore,
-  checkAuth as checkAuthCore,
-  getUser as getUserCore,
-  fetchPR as fetchPRCore,
-  fetchPRContext as fetchPRContextCore,
-  fetchPRFileContent as fetchPRFileContentCore,
-  submitPRReview as submitPRReviewCore,
-  prRefFromMetadata,
-  getPlatformLabel,
-  getMRLabel,
-  getMRNumberLabel,
-  getDisplayRepo,
-} from "./pr-provider.js";
-
-// ── Helpers ──────────────────────────────────────────────────────────────
-
-function parseBody(req: IncomingMessage): Promise<Record<string, unknown>> {
-  return new Promise((resolve) => {
-    let data = "";
-    req.on("data", (chunk: string) => (data += chunk));
-    req.on("end", () => {
-      try {
-        resolve(JSON.parse(data));
-      } catch {
-        resolve({});
-      }
-    });
-  });
-}
-
-function json(res: import("node:http").ServerResponse, data: unknown, status = 200): void {
-  res.writeHead(status, { "Content-Type": "application/json" });
-  res.end(JSON.stringify(data));
-}
-
-function html(res: import("node:http").ServerResponse, content: string): void {
-  res.writeHead(200, { "Content-Type": "text/html" });
-  res.end(content);
-}
-
-function send(
-  res: import("node:http").ServerResponse,
-  body: string | Buffer,
-  status = 200,
-  headers: Record<string, string> = {},
-): void {
-  res.writeHead(status, headers);
-  res.end(body);
-}
-
-interface EditorAnnotation {
-  id: string;
-  filePath: string;
-  selectedText: string;
-  lineStart: number;
-  lineEnd: number;
-  comment?: string;
-  createdAt: number;
-}
-
-function createEditorAnnotationHandler() {
-  const annotations: EditorAnnotation[] = [];
-
-  return {
-    async handle(req: IncomingMessage, res: import("node:http").ServerResponse, url: URL): Promise<boolean> {
-      if (url.pathname === "/api/editor-annotations" && req.method === "GET") {
-        json(res, { annotations });
-        return true;
-      }
-
-      if (url.pathname === "/api/editor-annotation" && req.method === "POST") {
-        const body = await parseBody(req);
-        if (!body.filePath || !body.selectedText || !body.lineStart || !body.lineEnd) {
-          json(res, { error: "Missing required fields" }, 400);
-          return true;
-        }
-
-        const annotation: EditorAnnotation = {
-          id: randomUUID(),
-          filePath: String(body.filePath),
-          selectedText: String(body.selectedText),
-          lineStart: Number(body.lineStart),
-          lineEnd: Number(body.lineEnd),
-          comment: typeof body.comment === "string" ? body.comment : undefined,
-          createdAt: Date.now(),
-        };
-
-        annotations.push(annotation);
-        json(res, { id: annotation.id });
-        return true;
-      }
-
-      if (url.pathname === "/api/editor-annotation" && req.method === "DELETE") {
-        const id = url.searchParams.get("id");
-        if (!id) {
-          json(res, { error: "Missing id parameter" }, 400);
-          return true;
-        }
-        const idx = annotations.findIndex((annotation) => annotation.id === id);
-        if (idx !== -1) {
-          annotations.splice(idx, 1);
-        }
-        json(res, { ok: true });
-        return true;
-      }
-
-      return false;
-    },
-  };
-}
-
-const ALLOWED_IMAGE_EXTENSIONS = new Set([
-  "png",
-  "jpg",
-  "jpeg",
-  "gif",
-  "webp",
-  "svg",
-  "bmp",
-  "ico",
-  "tiff",
-  "tif",
-  "avif",
-]);
-
-const IMAGE_CONTENT_TYPES: Record<string, string> = {
-  png: "image/png",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  gif: "image/gif",
-  webp: "image/webp",
-  svg: "image/svg+xml",
-  bmp: "image/bmp",
-  ico: "image/x-icon",
-  tiff: "image/tiff",
-  tif: "image/tiff",
-  avif: "image/avif",
-};
-
-const UPLOAD_DIR = join(os.tmpdir(), "plannotator");
-
-function getExtension(filePath: string): string {
-  const lastDot = filePath.lastIndexOf(".");
-  if (lastDot === -1) return "";
-  return filePath.slice(lastDot + 1).toLowerCase();
-}
-
-function validateImagePath(rawPath: string): {
-  valid: boolean;
-  resolved: string;
-  error?: string;
-} {
-  const resolved = resolvePath(rawPath);
-  const ext = getExtension(resolved);
-
-  if (!ALLOWED_IMAGE_EXTENSIONS.has(ext)) {
-    return {
-      valid: false,
-      resolved,
-      error: "Path does not point to a supported image file",
-    };
-  }
-
-  return { valid: true, resolved };
-}
-
-function validateUploadExtension(fileName: string): {
-  valid: boolean;
-  ext: string;
-  error?: string;
-} {
-  const ext = getExtension(fileName) || "png";
-  if (!ALLOWED_IMAGE_EXTENSIONS.has(ext)) {
-    return {
-      valid: false,
-      ext,
-      error: `File extension ".${ext}" is not a supported image type`,
-    };
-  }
-
-  return { valid: true, ext };
-}
-
-function getImageContentType(filePath: string): string {
-  return IMAGE_CONTENT_TYPES[getExtension(filePath)] || "application/octet-stream";
-}
-
-// ── Shared Request Handlers ──────────────────────────────────────────────
-// Extracted from review server so plan + annotate servers can reuse them.
-
-type Res = import("node:http").ServerResponse;
-
-function handleImageRequest(res: Res, url: URL): void {
-  const imagePath = url.searchParams.get("path");
-  if (!imagePath) {
-    send(res, "Missing path parameter", 400, { "Content-Type": "text/plain" });
-    return;
-  }
-
-  const tryServePath = (candidate: string): boolean => {
-    const validation = validateImagePath(candidate);
-    if (!validation.valid) return false;
-    try {
-      if (!existsSync(validation.resolved)) return false;
-      const data = readFileSync(validation.resolved);
-      send(res, data, 200, { "Content-Type": getImageContentType(validation.resolved) });
-      return true;
-    } catch {
-      return false;
-    }
-  };
-
-  if (tryServePath(imagePath)) return;
-
-  const base = url.searchParams.get("base");
-  if (base && !imagePath.startsWith("/") && tryServePath(resolvePath(base, imagePath))) {
-    return;
-  }
-
-  const validation = validateImagePath(imagePath);
-  if (!validation.valid) {
-    send(res, validation.error || "Invalid image path", 403, { "Content-Type": "text/plain" });
-    return;
-  }
-
-  send(res, "File not found", 404, { "Content-Type": "text/plain" });
-}
-
-async function handleUploadRequest(req: IncomingMessage, res: Res): Promise<void> {
-  try {
-    const request = toWebRequest(req);
-    const formData = await request.formData();
-    const file = formData.get("file");
-    if (!file || typeof file !== "object" || !("arrayBuffer" in file) || !("name" in file)) {
-      json(res, { error: "No file provided" }, 400);
-      return;
-    }
-
-    const upload = file as File;
-    const extResult = validateUploadExtension(upload.name);
-    if (!extResult.valid) {
-      json(res, { error: extResult.error }, 400);
-      return;
-    }
-
-    mkdirSync(UPLOAD_DIR, { recursive: true });
-    const tempPath = join(UPLOAD_DIR, `${randomUUID()}.${extResult.ext}`);
-    const bytes = Buffer.from(await upload.arrayBuffer());
-    writeFileSync(tempPath, bytes);
-    json(res, { path: tempPath, originalName: upload.name });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Upload failed";
-    json(res, { error: message }, 500);
-  }
-}
-
-function handleDraftRequest(req: IncomingMessage, res: Res, draftKey: string): Promise<void> | void {
-  if (req.method === "POST") {
-    return parseBody(req).then((body) => {
-      saveDraft(draftKey, body);
-      json(res, { ok: true });
-    });
-  } else if (req.method === "DELETE") {
-    deleteDraft(draftKey);
-    json(res, { ok: true });
-  } else {
-    const draft = loadDraft(draftKey);
-    if (!draft) {
-      json(res, { found: false }, 404);
-      return;
-    }
-    json(res, draft);
-  }
-}
-
-const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#070b14"/>
-  <rect x="12" y="28" width="40" height="14" rx="3" fill="#E0BA55" opacity="0.35"/>
-  <text x="32" y="46" text-anchor="middle" font-family="Inter,system-ui,sans-serif" font-weight="800" font-size="42" fill="white">P</text>
-</svg>`;
-
-function handleFavicon(res: Res): void {
-  send(res, FAVICON_SVG, 200, { "Content-Type": "image/svg+xml", "Cache-Control": "public, max-age=86400" });
-}
-
-// ── Document & Reference Handlers ───────────────────────────────────────
-// Node.js equivalents of packages/server/reference-handlers.ts
-
-interface VaultNode {
-  name: string;
-  path: string;
-  type: "file" | "folder";
-  children?: VaultNode[];
-}
-
-function buildFileTree(relativePaths: string[]): VaultNode[] {
-  const root: VaultNode[] = [];
-  for (const filePath of relativePaths) {
-    const parts = filePath.split("/");
-    let current = root;
-    let pathSoFar = "";
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      pathSoFar = pathSoFar ? `${pathSoFar}/${part}` : part;
-      const isFile = i === parts.length - 1;
-      let node = current.find((n) => n.name === part && n.type === (isFile ? "file" : "folder"));
-      if (!node) {
-        node = { name: part, path: pathSoFar, type: isFile ? "file" : "folder" };
-        if (!isFile) node.children = [];
-        current.push(node);
-      }
-      if (!isFile) current = node.children!;
-    }
-  }
-  const sortNodes = (nodes: VaultNode[]) => {
-    nodes.sort((a, b) => {
-      if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    });
-    for (const node of nodes) {
-      if (node.children) sortNodes(node.children);
-    }
-  };
-  sortNodes(root);
-  return root;
-}
-
-const IGNORED_DIRS = [
-  "node_modules", ".git", "dist", "build", ".next",
-  "__pycache__", ".obsidian", ".trash", ".venv", "vendor",
-  "target", ".cache", "coverage", ".turbo", ".svelte-kit",
-  ".nuxt", ".output", ".parcel-cache", ".webpack", ".expo",
-];
-
-/** Recursively walk a directory collecting markdown files, skipping ignored dirs. */
-function walkMarkdownFiles(dir: string, root: string, results: string[]): void {
-  let entries: ReturnType<typeof readdirSync>;
-  try {
-    entries = readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    if (entry.isDirectory()) {
-      if (IGNORED_DIRS.includes(entry.name)) continue;
-      walkMarkdownFiles(join(dir, entry.name), root, results);
-    } else if (entry.isFile() && /\.mdx?$/i.test(entry.name)) {
-      const relative = join(dir, entry.name).slice(root.length + 1).replace(/\\/g, "/");
-      results.push(relative);
-    }
-  }
-}
-
-/** Serve a linked markdown document. Node.js equivalent of handleDoc. */
-function handleDocRequest(res: Res, url: URL): void {
-  const requestedPath = url.searchParams.get("path");
-  if (!requestedPath) {
-    json(res, { error: "Missing path parameter" }, 400);
-    return;
-  }
-
-  // Try resolving relative to base directory first (used by annotate mode)
-  const base = url.searchParams.get("base");
-  if (base && !requestedPath.startsWith("/") && /\.mdx?$/i.test(requestedPath)) {
-    const fromBase = resolvePath(base, requestedPath);
-    try {
-      if (existsSync(fromBase)) {
-        const markdown = readFileSync(fromBase, "utf-8");
-        json(res, { markdown, filepath: fromBase });
-        return;
-      }
-    } catch { /* fall through */ }
-  }
-
-  // Absolute path
-  if (isAbsolute(requestedPath)) {
-    if (/\.mdx?$/i.test(requestedPath) && existsSync(requestedPath)) {
-      try {
-        const markdown = readFileSync(requestedPath, "utf-8");
-        json(res, { markdown, filepath: requestedPath });
-        return;
-      } catch { /* fall through */ }
-    }
-    json(res, { error: `File not found: ${requestedPath}` }, 404);
-    return;
-  }
-
-  // Relative to cwd
-  const projectRoot = process.cwd();
-  const fromRoot = resolvePath(projectRoot, requestedPath);
-  if (/\.mdx?$/i.test(fromRoot) && existsSync(fromRoot)) {
-    try {
-      const markdown = readFileSync(fromRoot, "utf-8");
-      json(res, { markdown, filepath: fromRoot });
-      return;
-    } catch { /* fall through */ }
-  }
-
-  // Case-insensitive search for bare filenames
-  if (!requestedPath.includes("/") && /\.mdx?$/i.test(requestedPath)) {
-    const files: string[] = [];
-    walkMarkdownFiles(projectRoot, projectRoot, files);
-    const target = requestedPath.toLowerCase();
-    const matches = files.filter((f) => f.split("/").pop()!.toLowerCase() === target);
-    if (matches.length === 1) {
-      const fullPath = resolvePath(projectRoot, matches[0]);
-      try {
-        const markdown = readFileSync(fullPath, "utf-8");
-        json(res, { markdown, filepath: fullPath });
-        return;
-      } catch { /* fall through */ }
-    }
-    if (matches.length > 1) {
-      json(res, { error: `Ambiguous filename '${requestedPath}': found ${matches.length} matches`, matches }, 400);
-      return;
-    }
-  }
-
-  json(res, { error: `File not found: ${requestedPath}` }, 404);
-}
-
-/** Detect Obsidian vaults. Node.js copy of detectObsidianVaults from integrations.ts. */
-function detectObsidianVaults(): string[] {
-  try {
-    const home = process.env.HOME || process.env.USERPROFILE || "";
-    let configPath: string;
-    if (process.platform === "darwin") {
-      configPath = join(home, "Library/Application Support/obsidian/obsidian.json");
-    } else if (process.platform === "win32") {
-      const appData = process.env.APPDATA || join(home, "AppData/Roaming");
-      configPath = join(appData, "obsidian/obsidian.json");
-    } else {
-      configPath = join(home, ".config/obsidian/obsidian.json");
-    }
-    if (!existsSync(configPath)) return [];
-    const config = JSON.parse(readFileSync(configPath, "utf-8"));
-    if (!config.vaults || typeof config.vaults !== "object") return [];
-    const vaults: string[] = [];
-    for (const vaultId of Object.keys(config.vaults)) {
-      const vault = config.vaults[vaultId];
-      if (vault.path && existsSync(vault.path)) vaults.push(vault.path);
-    }
-    return vaults;
-  } catch {
-    return [];
-  }
-}
-
-function handleObsidianVaultsRequest(res: Res): void {
-  json(res, { vaults: detectObsidianVaults() });
-}
-
-function handleObsidianFilesRequest(res: Res, url: URL): void {
-  const vaultPath = url.searchParams.get("vaultPath");
-  if (!vaultPath) { json(res, { error: "Missing vaultPath parameter" }, 400); return; }
-  const resolvedVault = resolvePath(vaultPath);
-  if (!existsSync(resolvedVault) || !statSync(resolvedVault).isDirectory()) {
-    json(res, { error: "Invalid vault path" }, 400);
-    return;
-  }
-  try {
-    const files: string[] = [];
-    walkMarkdownFiles(resolvedVault, resolvedVault, files);
-    files.sort();
-    json(res, { tree: buildFileTree(files) });
-  } catch {
-    json(res, { error: "Failed to list vault files" }, 500);
-  }
-}
-
-function handleObsidianDocRequest(res: Res, url: URL): void {
-  const vaultPath = url.searchParams.get("vaultPath");
-  const filePath = url.searchParams.get("path");
-  if (!vaultPath || !filePath) {
-    json(res, { error: "Missing vaultPath or path parameter" }, 400);
-    return;
-  }
-  if (!/\.mdx?$/i.test(filePath)) {
-    json(res, { error: "Only markdown files are supported" }, 400);
-    return;
-  }
-  const resolvedVault = resolvePath(vaultPath);
-  let resolvedFile = resolvePath(resolvedVault, filePath);
-
-  // Bare filename search within vault
-  if (!existsSync(resolvedFile) && !filePath.includes("/")) {
-    const files: string[] = [];
-    walkMarkdownFiles(resolvedVault, resolvedVault, files);
-    const matches = files.filter((f) => f.split("/").pop()!.toLowerCase() === filePath.toLowerCase());
-    if (matches.length === 1) {
-      resolvedFile = resolvePath(resolvedVault, matches[0]);
-    } else if (matches.length > 1) {
-      json(res, { error: `Ambiguous filename '${filePath}': found ${matches.length} matches`, matches }, 400);
-      return;
-    }
-  }
-
-  // Security: must be within vault
-  if (!resolvedFile.startsWith(resolvedVault + "/") && resolvedFile !== resolvedVault) {
-    json(res, { error: "Access denied: path is outside vault" }, 403);
-    return;
-  }
-
-  if (!existsSync(resolvedFile)) {
-    json(res, { error: `File not found: ${filePath}` }, 404);
-    return;
-  }
-  try {
-    const markdown = readFileSync(resolvedFile, "utf-8");
-    json(res, { markdown, filepath: resolvedFile });
-  } catch {
-    json(res, { error: "Failed to read file" }, 500);
-  }
-}
-
-function handleFileBrowserRequest(res: Res, url: URL): void {
-  const dirPath = url.searchParams.get("dirPath");
-  if (!dirPath) { json(res, { error: "Missing dirPath parameter" }, 400); return; }
-  const resolvedDir = resolvePath(dirPath);
-  if (!existsSync(resolvedDir) || !statSync(resolvedDir).isDirectory()) {
-    json(res, { error: "Invalid directory path" }, 400);
-    return;
-  }
-  try {
-    const files: string[] = [];
-    walkMarkdownFiles(resolvedDir, resolvedDir, files);
-    files.sort();
-    json(res, { tree: buildFileTree(files) });
-  } catch {
-    json(res, { error: "Failed to list directory files" }, 500);
-  }
-}
-
-// ── IDE Integration ─────────────────────────────────────────────────────
-
-/** Open two files in VS Code's diff viewer. Node.js equivalent of packages/server/ide.ts */
-function openEditorDiff(oldPath: string, newPath: string): Promise<{ ok: true } | { error: string }> {
-  return new Promise((resolve) => {
-    const proc = spawn("code", ["--diff", oldPath, newPath], { stdio: ["ignore", "ignore", "pipe"] });
-    let stderr = "";
-    proc.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
-    proc.on("error", (err) => {
-      if (err.message.includes("ENOENT")) {
-        resolve({ error: "VS Code CLI not found. Run 'Shell Command: Install code command in PATH' from the VS Code command palette." });
-      } else {
-        resolve({ error: err.message });
-      }
-    });
-    proc.on("close", (code) => {
-      if (code !== 0) {
-        if (stderr.includes("not found") || stderr.includes("ENOENT")) {
-          resolve({ error: "VS Code CLI not found. Run 'Shell Command: Install code command in PATH' from the VS Code command palette." });
-        } else {
-          resolve({ error: `code --diff exited with ${code}: ${stderr}` });
-        }
-      } else {
-        resolve({ ok: true });
-      }
-    });
-  });
-}
-
-// ── Note Integrations (Node.js) ─────────────────────────────────────────
-// Node.js equivalents of packages/server/integrations.ts
-
-interface ObsidianConfig {
-  vaultPath: string;
-  folder: string;
-  plan: string;
-  filenameFormat?: string;
-  filenameSeparator?: "space" | "dash" | "underscore";
-}
-
-interface BearConfig {
-  plan: string;
-  customTags?: string;
-  tagPosition?: "prepend" | "append";
-}
-
-interface OctarineConfig {
-  plan: string;
-  workspace: string;
-  folder: string;
-}
-
-interface IntegrationResult {
-  success: boolean;
-  error?: string;
-  path?: string;
-}
-
-/** Detect project name from git or cwd. Node.js equivalent of packages/server/project.ts */
-function detectProjectNameSync(): string | null {
-  try {
-    const result = execSync("git rev-parse --show-toplevel", { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }).trim();
-    if (result) {
-      const { extractRepoName } = require("./project.js");
-      const name = extractRepoName(result);
-      if (name) return name;
-    }
-  } catch { /* not in a git repo */ }
-  try {
-    const { extractDirName } = require("./project.js");
-    return extractDirName(process.cwd());
-  } catch { return null; }
-}
-
-function extractTitle(markdown: string): string {
-  const h1Match = markdown.match(/^#\s+(?:Implementation\s+Plan:|Plan:)?\s*(.+)$/im);
-  if (h1Match) {
-    return h1Match[1].trim().replace(/[<>:"/\\|?*(){}\[\]#~`]/g, "").replace(/\s+/g, " ").trim().slice(0, 50);
-  }
-  return "Plan";
-}
-
-async function extractTags(markdown: string): Promise<string[]> {
-  const tags = new Set<string>(["plannotator"]);
-  const projectName = detectProjectNameSync();
-  if (projectName) tags.add(projectName);
-  const stopWords = new Set(["the","and","for","with","this","that","from","into","plan","implementation","overview","phase","step","steps"]);
-  const h1Match = markdown.match(/^#\s+(?:Implementation\s+Plan:|Plan:)?\s*(.+)$/im);
-  if (h1Match) {
-    h1Match[1].toLowerCase().replace(/[^\w\s-]/g, " ").split(/\s+/).filter((w) => w.length > 2 && !stopWords.has(w)).slice(0, 3).forEach((w) => tags.add(w));
-  }
-  const langMatches = markdown.matchAll(/```(\w+)/g);
-  const seenLangs = new Set<string>();
-  for (const [, lang] of langMatches) {
-    const n = lang.toLowerCase();
-    if (!seenLangs.has(n) && !["json","yaml","yml","text","txt","markdown","md"].includes(n)) { seenLangs.add(n); tags.add(n); }
-  }
-  return Array.from(tags).slice(0, 7);
-}
-
-function generateFrontmatter(tags: string[]): string {
-  const now = new Date().toISOString();
-  const tagList = tags.map((t) => t.toLowerCase()).join(", ");
-  return `---\ncreated: ${now}\nsource: plannotator\ntags: [${tagList}]\n---`;
-}
-
-const DEFAULT_FILENAME_FORMAT = "{title} - {Mon} {D}, {YYYY} {h}-{mm}{ampm}";
-
-function generateFilename(markdown: string, format?: string, separator?: "space" | "dash" | "underscore"): string {
-  const title = extractTitle(markdown);
-  const now = new Date();
-  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  const hour24 = now.getHours();
-  const hour12 = hour24 % 12 || 12;
-  const ampm = hour24 >= 12 ? "pm" : "am";
-  const vars: Record<string, string> = {
-    title, YYYY: String(now.getFullYear()), MM: String(now.getMonth()+1).padStart(2,"0"),
-    DD: String(now.getDate()).padStart(2,"0"), Mon: months[now.getMonth()], D: String(now.getDate()),
-    HH: String(hour24).padStart(2,"0"), h: String(hour12), hh: String(hour12).padStart(2,"0"),
-    mm: String(now.getMinutes()).padStart(2,"0"), ss: String(now.getSeconds()).padStart(2,"0"), ampm,
-  };
-  const template = format?.trim() || DEFAULT_FILENAME_FORMAT;
-  const result = template.replace(/\{(\w+)\}/g, (match, key) => vars[key] ?? match);
-  let sanitized = result.replace(/[<>:"/\\|?*]/g, "").replace(/\s+/g, " ").trim();
-  if (separator === "dash") sanitized = sanitized.replace(/ /g, "-");
-  else if (separator === "underscore") sanitized = sanitized.replace(/ /g, "_");
-  return sanitized.endsWith(".md") ? sanitized : `${sanitized}.md`;
-}
-
-async function saveToObsidian(config: ObsidianConfig): Promise<IntegrationResult> {
-  try {
-    const { vaultPath, folder, plan } = config;
-    let normalizedVault = vaultPath.trim();
-    if (normalizedVault.startsWith("~")) {
-      const home = process.env.HOME || process.env.USERPROFILE || "";
-      normalizedVault = join(home, normalizedVault.slice(1));
-    }
-    if (!existsSync(normalizedVault)) return { success: false, error: `Vault path does not exist: ${normalizedVault}` };
-    if (!statSync(normalizedVault).isDirectory()) return { success: false, error: `Vault path is not a directory: ${normalizedVault}` };
-    const folderName = folder.trim() || "plannotator";
-    const targetFolder = join(normalizedVault, folderName);
-    if (!existsSync(targetFolder)) mkdirSync(targetFolder, { recursive: true });
-    const filename = generateFilename(plan, config.filenameFormat, config.filenameSeparator);
-    const filePath = join(targetFolder, filename);
-    const tags = await extractTags(plan);
-    const frontmatter = generateFrontmatter(tags);
-    const content = `${frontmatter}\n\n[[Plannotator Plans]]\n\n${plan}`;
-    writeFileSync(filePath, content);
-    return { success: true, path: filePath };
-  } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : "Unknown error" };
-  }
-}
-
-function stripH1(plan: string): string { return plan.replace(/^#\s+.+\n?/m, "").trimStart(); }
-
-function buildHashtags(customTags: string | undefined, autoTags: string[]): string {
-  if (customTags?.trim()) return customTags.split(",").map((t) => `#${t.trim()}`).filter((t) => t !== "#").join(" ");
-  return autoTags.map((t) => `#${t}`).join(" ");
-}
-
-function buildBearContent(body: string, hashtags: string, tagPosition: "prepend" | "append"): string {
-  return tagPosition === "prepend" ? `${hashtags}\n\n${body}` : `${body}\n\n${hashtags}`;
-}
-
-async function saveToBear(config: BearConfig): Promise<IntegrationResult> {
-  try {
-    const { plan, customTags, tagPosition = "append" } = config;
-    const title = extractTitle(plan);
-    const body = stripH1(plan);
-    const tags = customTags?.trim() ? undefined : await extractTags(plan);
-    const hashtags = buildHashtags(customTags, tags ?? []);
-    const content = buildBearContent(body, hashtags, tagPosition);
-    const url = `bear://x-callback-url/create?title=${encodeURIComponent(title)}&text=${encodeURIComponent(content)}&open_note=no`;
-    spawn("open", [url], { stdio: "ignore" });
-    return { success: true };
-  } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : "Unknown error" };
-  }
-}
-
-function generateOctarineFrontmatter(tags: string[]): string {
-  const now = new Date().toISOString().slice(0, 16);
-  const tagLines = tags.map((t) => `  - ${t.toLowerCase()}`).join("\n");
-  return `---\ntags:\n${tagLines}\nStatus: Draft\nAuthor: plannotator\nLast Edited: ${now}\n---`;
-}
-
-async function saveToOctarine(config: OctarineConfig): Promise<IntegrationResult> {
-  try {
-    const { plan } = config;
-    const workspace = config.workspace.trim();
-    if (!workspace) return { success: false, error: "Workspace is required" };
-    const folder = config.folder.trim() || "plannotator";
-    const filename = generateFilename(plan);
-    const base = filename.replace(/\.md$/, "");
-    const path = folder ? `${folder}/${base}` : base;
-    const tags = await extractTags(plan);
-    const frontmatter = generateOctarineFrontmatter(tags);
-    const content = `${frontmatter}\n\n${plan}`;
-    const url = `octarine://create?path=${encodeURIComponent(path)}&content=${encodeURIComponent(content)}&workspace=${encodeURIComponent(workspace)}&fresh=true&openAfter=false`;
-    spawn("open", [url], { stdio: "ignore" });
-    return { success: true, path };
-  } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : "Unknown error" };
-  }
-}
-
-// ── PR Runtime (Node.js) ────────────────────────────────────────────────
-
-const prRuntime: PRRuntime = {
-  async runCommand(cmd, args) {
-    return new Promise((resolve, reject) => {
-      const proc = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
-      let stdout = "";
-      let stderr = "";
-      proc.stdout?.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
-      proc.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
-      proc.on("error", reject);
-      proc.on("close", (exitCode) => { resolve({ stdout, stderr, exitCode: exitCode ?? 1 }); });
-    });
-  },
-  async runCommandWithInput(cmd, args, input) {
-    return new Promise((resolve, reject) => {
-      const proc = spawn(cmd, args, { stdio: ["pipe", "pipe", "pipe"] });
-      let stdout = "";
-      let stderr = "";
-      proc.stdout?.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
-      proc.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
-      proc.on("error", reject);
-      proc.on("close", (exitCode) => { resolve({ stdout, stderr, exitCode: exitCode ?? 1 }); });
-      proc.stdin?.write(input);
-      proc.stdin?.end();
-    });
-  },
-};
-
-export const parsePRUrl = parsePRUrlCore;
-export function checkPRAuth(ref: PRRef) { return checkAuthCore(prRuntime, ref); }
-export function getPRUser(ref: PRRef) { return getUserCore(prRuntime, ref); }
-export function fetchPR(ref: PRRef) { return fetchPRCore(prRuntime, ref); }
-export function fetchPRContext(ref: PRRef) { return fetchPRContextCore(prRuntime, ref); }
-export function fetchPRFileContent(ref: PRRef, sha: string, filePath: string) { return fetchPRFileContentCore(prRuntime, ref, sha, filePath); }
-export function submitPRReview(ref: PRRef, headSha: string, action: "approve" | "comment", body: string, fileComments: PRReviewFileComment[]) {
-  return submitPRReviewCore(prRuntime, ref, headSha, action, body, fileComments);
-}
-
-// ── Web Request Conversion ──────────────────────────────────────────────
-
-function toWebRequest(req: IncomingMessage): Request {
-  const headers = new Headers();
-  for (const [key, value] of Object.entries(req.headers)) {
-    if (value === undefined) continue;
-    if (Array.isArray(value)) {
-      for (const item of value) headers.append(key, item);
-    } else {
-      headers.set(key, value);
-    }
-  }
-
-  const init: RequestInit & { duplex?: "half" } = {
-    method: req.method,
-    headers,
-  };
-
-  if (req.method !== "GET" && req.method !== "HEAD") {
-    init.body = Readable.toWeb(req) as unknown as BodyInit;
-    init.duplex = "half";
-  }
-
-  return new Request(`http://localhost${req.url ?? "/"}`, init);
-}
-
-const DEFAULT_REMOTE_PORT = 19432;
-
-/**
- * Check if running in a remote session (SSH, devcontainer, etc.)
- * Honors PLANNOTATOR_REMOTE env var, or detects SSH_TTY/SSH_CONNECTION.
- */
-function isRemoteSession(): boolean {
-  const remote = process.env.PLANNOTATOR_REMOTE;
-  if (remote === "1" || remote?.toLowerCase() === "true") {
-    return true;
-  }
-  // Legacy SSH detection
-  if (process.env.SSH_TTY || process.env.SSH_CONNECTION) {
-    return true;
-  }
-  return false;
-}
-
-/**
- * Get the server port to use.
- * - PLANNOTATOR_PORT env var takes precedence
- * - Remote sessions default to 19432 (for port forwarding)
- * - Local sessions use random port
- * Returns { port, portSource } so caller can notify user if needed.
- */
-function getServerPort(): { port: number; portSource: "env" | "remote-default" | "random" } {
-  const envPort = process.env.PLANNOTATOR_PORT;
-  if (envPort) {
-    const parsed = parseInt(envPort, 10);
-    if (!isNaN(parsed) && parsed > 0 && parsed < 65536) {
-      return { port: parsed, portSource: "env" };
-    }
-    // Invalid port - fall back silently, caller can check env var themselves
-  }
-  if (isRemoteSession()) {
-    return { port: DEFAULT_REMOTE_PORT, portSource: "remote-default" };
-  }
-  return { port: 0, portSource: "random" };
-}
-
-const MAX_RETRIES = 5;
-const RETRY_DELAY_MS = 500;
-
-async function listenOnPort(server: Server): Promise<{ port: number; portSource: "env" | "remote-default" | "random" }> {
-  const result = getServerPort();
-
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      await new Promise<void>((resolve, reject) => {
-        server.once("error", reject);
-        server.listen(result.port, isRemoteSession() ? "0.0.0.0" : "127.0.0.1", () => {
-          server.removeListener("error", reject);
-          resolve();
-        });
-      });
-      const addr = server.address() as { port: number };
-      return { port: addr.port, portSource: result.portSource };
-    } catch (err: unknown) {
-      const isAddressInUse = err instanceof Error && err.message.includes("EADDRINUSE");
-      if (isAddressInUse && attempt < MAX_RETRIES) {
-        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
-        continue;
-      }
-      if (isAddressInUse) {
-        const hint = isRemoteSession() ? " (set PLANNOTATOR_PORT to use a different port)" : "";
-        throw new Error(`Port ${result.port} in use after ${MAX_RETRIES} retries${hint}`);
-      }
-      throw err;
-    }
-  }
-
-  // Unreachable, but satisfies TypeScript
-  throw new Error("Failed to bind port");
-}
-
-/**
- * Open URL in system browser (Node-compatible, no Bun $ dependency).
- * Honors PLANNOTATOR_BROWSER and BROWSER env vars, matching packages/server/browser.ts.
- * Returns { opened: true } if browser was opened, { opened: false, isRemote: true, url } if remote session.
- */
-export function openBrowser(url: string): { opened: boolean; isRemote?: boolean; url?: string } {
-  const browser = process.env.PLANNOTATOR_BROWSER || process.env.BROWSER;
-  if (isRemoteSession() && !browser) {
-    return { opened: false, isRemote: true, url };
-  }
-
-  try {
-    const platform = process.platform;
-    const wsl = platform === "linux" && os.release().toLowerCase().includes("microsoft");
-
-    let cmd: string;
-    let args: string[];
-
-    if (browser) {
-      if (process.env.PLANNOTATOR_BROWSER && platform === "darwin") {
-        cmd = "open";
-        args = ["-a", browser, url];
-      } else if (platform === "win32" || wsl) {
-        cmd = "cmd.exe";
-        args = ["/c", "start", "", browser, url];
-      } else {
-        cmd = browser;
-        args = [url];
-      }
-    } else if (platform === "win32" || wsl) {
-      cmd = "cmd.exe";
-      args = ["/c", "start", "", url];
-    } else if (platform === "darwin") {
-      cmd = "open";
-      args = [url];
-    } else {
-      cmd = "xdg-open";
-      args = [url];
-    }
-
-    const child = spawn(cmd, args, { detached: true, stdio: "ignore" });
-    child.once("error", () => {});
-    child.unref();
-    return { opened: true };
-  } catch {
-    return { opened: false };
-  }
-}
-
-// ── Pi-specific helpers ──────────────────────────────────────────────────
-
-function detectProjectName(): string {
-  try {
-    const toplevel = execSync("git rev-parse --show-toplevel", {
-      encoding: "utf-8",
-      stdio: ["pipe", "pipe", "pipe"],
-    }).trim();
-    const name = basename(toplevel);
-    return sanitizeTag(name) ?? "_unknown";
-  } catch {
-    // Not a git repo — fall back to cwd
-  }
-  try {
-    const name = basename(process.cwd());
-    return sanitizeTag(name) ?? "_unknown";
-  } catch {
-    return "_unknown";
-  }
-}
-
-function parseRemoteUrl(url: string): string | null {
-  if (!url) return null;
-
-  const sshMatch = url.match(/:([^/]+\/[^/]+?)(?:\.git)?$/);
-  if (sshMatch) return sshMatch[1];
-
-  const httpsMatch = url.match(/\/([^/]+\/[^/]+?)(?:\.git)?$/);
-  if (httpsMatch) return httpsMatch[1];
-
-  return null;
-}
-
-function getDirName(path: string): string | null {
-  if (!path) return null;
-  const trimmed = path.trim().replace(/\/+$/, "");
-  const parts = trimmed.split("/");
-  return parts[parts.length - 1] || null;
-}
-
-function getRepoInfo(): { display: string; branch?: string } | null {
-  const branch = git("rev-parse --abbrev-ref HEAD");
-  const safeBranch = branch && branch !== "HEAD" ? branch : undefined;
-
-  const originUrl = git("remote get-url origin");
-  const orgRepo = parseRemoteUrl(originUrl);
-  if (orgRepo) {
-    return { display: orgRepo, branch: safeBranch };
-  }
-
-  const topLevel = git("rev-parse --show-toplevel");
-  const repoName = getDirName(topLevel);
-  if (repoName) {
-    return { display: repoName, branch: safeBranch };
-  }
-
-  const cwdName = getDirName(process.cwd());
-  if (cwdName) {
-    return { display: cwdName };
-  }
-
-  return null;
-}
 
 // ── Plan Review Server ──────────────────────────────────────────────────
 
 export interface PlanServerResult {
-  port: number;
-  portSource: "env" | "remote-default" | "random";
-  url: string;
-  waitForDecision: () => Promise<{ approved: boolean; feedback?: string }>;
-  waitForDone?: () => Promise<void>;
-  stop: () => void;
+	port: number;
+	portSource: "env" | "remote-default" | "random";
+	url: string;
+	waitForDecision: () => Promise<{ approved: boolean; feedback?: string }>;
+	waitForDone?: () => Promise<void>;
+	stop: () => void;
 }
 
 export async function startPlanReviewServer(options: {
-  plan: string;
-  htmlContent: string;
-  origin?: string;
-  sharingEnabled?: boolean;
-  shareBaseUrl?: string;
-  pasteApiUrl?: string;
-  mode?: "archive";
-  customPlanPath?: string | null;
+	plan: string;
+	htmlContent: string;
+	origin?: string;
+	sharingEnabled?: boolean;
+	shareBaseUrl?: string;
+	pasteApiUrl?: string;
+	mode?: "archive";
+	customPlanPath?: string | null;
 }): Promise<PlanServerResult> {
-  const sharingEnabled =
-    options.sharingEnabled ?? process.env.PLANNOTATOR_SHARE !== "disabled";
-  const shareBaseUrl =
-    (options.shareBaseUrl ?? process.env.PLANNOTATOR_SHARE_URL) || undefined;
-  const pasteApiUrl =
-    (options.pasteApiUrl ?? process.env.PLANNOTATOR_PASTE_URL) || undefined;
+	const sharingEnabled =
+		options.sharingEnabled ?? process.env.PLANNOTATOR_SHARE !== "disabled";
+	const shareBaseUrl =
+		(options.shareBaseUrl ?? process.env.PLANNOTATOR_SHARE_URL) || undefined;
+	const pasteApiUrl =
+		(options.pasteApiUrl ?? process.env.PLANNOTATOR_PASTE_URL) || undefined;
 
-  // --- Archive mode setup ---
-  let archivePlans: ArchivedPlan[] = [];
-  let initialArchivePlan = "";
-  let resolveDone: (() => void) | undefined;
-  let donePromise: Promise<void> | undefined;
+	// --- Archive mode setup ---
+	let archivePlans: ArchivedPlan[] = [];
+	let initialArchivePlan = "";
+	let resolveDone: (() => void) | undefined;
+	let donePromise: Promise<void> | undefined;
 
-  if (options.mode === "archive") {
-    archivePlans = listArchivedPlans(options.customPlanPath ?? undefined);
-    initialArchivePlan = archivePlans.length > 0
-      ? readArchivedPlan(archivePlans[0].filename, options.customPlanPath ?? undefined) ?? ""
-      : "";
-    donePromise = new Promise<void>((resolve) => { resolveDone = resolve; });
-  }
+	if (options.mode === "archive") {
+		archivePlans = listArchivedPlans(options.customPlanPath ?? undefined);
+		initialArchivePlan =
+			archivePlans.length > 0
+				? (readArchivedPlan(
+						archivePlans[0].filename,
+						options.customPlanPath ?? undefined,
+					) ?? "")
+				: "";
+		donePromise = new Promise<void>((resolve) => {
+			resolveDone = resolve;
+		});
+	}
 
-  // --- Plan review mode setup (skip in archive mode) ---
-  const slug = options.mode !== "archive" ? generateSlug(options.plan) : "";
-  const project = options.mode !== "archive" ? detectProjectName() : "";
-  const historyResult = options.mode !== "archive"
-    ? saveToHistory(project, slug, options.plan)
-    : { version: 0, path: "", isNew: false };
-  const previousPlan = options.mode !== "archive" && historyResult.version > 1
-    ? getPlanVersion(project, slug, historyResult.version - 1)
-    : null;
-  const versionInfo = options.mode !== "archive"
-    ? { version: historyResult.version, totalVersions: getVersionCount(project, slug), project }
-    : null;
+	// --- Plan review mode setup (skip in archive mode) ---
+	const slug = options.mode !== "archive" ? generateSlug(options.plan) : "";
+	const project = options.mode !== "archive" ? detectProjectName() : "";
+	const historyResult =
+		options.mode !== "archive"
+			? saveToHistory(project, slug, options.plan)
+			: { version: 0, path: "", isNew: false };
+	const previousPlan =
+		options.mode !== "archive" && historyResult.version > 1
+			? getPlanVersion(project, slug, historyResult.version - 1)
+			: null;
+	const versionInfo =
+		options.mode !== "archive"
+			? {
+					version: historyResult.version,
+					totalVersions: getVersionCount(project, slug),
+					project,
+				}
+			: null;
 
-  let resolveDecision!: (result: { approved: boolean; feedback?: string; agentSwitch?: string; permissionMode?: string }) => void;
-  const decisionPromise = new Promise<{ approved: boolean; feedback?: string; agentSwitch?: string; permissionMode?: string }>((r) => {
-    resolveDecision = r;
-  });
+	let resolveDecision!: (result: {
+		approved: boolean;
+		feedback?: string;
+		agentSwitch?: string;
+		permissionMode?: string;
+	}) => void;
+	const decisionPromise = new Promise<{
+		approved: boolean;
+		feedback?: string;
+		agentSwitch?: string;
+		permissionMode?: string;
+	}>((r) => {
+		resolveDecision = r;
+	});
 
-  // Draft key for annotation persistence
-  const draftKey = options.mode !== "archive" ? contentHash(options.plan) : "";
+	// Draft key for annotation persistence
+	const draftKey = options.mode !== "archive" ? contentHash(options.plan) : "";
 
-  // Editor annotations (in-memory, VS Code integration)
-  const editorAnnotations = createEditorAnnotationHandler();
+	// Editor annotations (in-memory, VS Code integration)
+	const editorAnnotations = createEditorAnnotationHandler();
 
-  // Lazy cache for in-session archive tab
-  let cachedArchivePlans: ArchivedPlan[] | null = null;
+	// Lazy cache for in-session archive tab
+	let cachedArchivePlans: ArchivedPlan[] | null = null;
 
-  const server = createServer(async (req, res) => {
-    const url = new URL(req.url!, `http://localhost`);
+	const server = createServer(async (req, res) => {
+		const url = new URL(req.url!, `http://localhost`);
 
-    if (url.pathname === "/api/done" && req.method === "POST") {
-      resolveDone?.();
-      json(res, { ok: true });
-    } else if (url.pathname === "/api/archive/plans") {
-      const customPath = url.searchParams.get("customPath") || undefined;
-      if (!cachedArchivePlans) cachedArchivePlans = listArchivedPlans(customPath);
-      json(res, { plans: cachedArchivePlans });
-    } else if (url.pathname === "/api/archive/plan") {
-      const filename = url.searchParams.get("filename");
-      const customPath = url.searchParams.get("customPath") || undefined;
-      if (!filename) { json(res, { error: "Missing filename" }, 400); return; }
-      const markdown = readArchivedPlan(filename, customPath);
-      if (!markdown) { json(res, { error: "Not found" }, 404); return; }
-      json(res, { markdown, filepath: filename });
-    } else if (url.pathname === "/api/plan/version") {
-      const vParam = url.searchParams.get("v");
-      if (!vParam) {
-        json(res, { error: "Missing v parameter" }, 400);
-        return;
-      }
-      const v = parseInt(vParam, 10);
-      if (isNaN(v) || v < 1) {
-        json(res, { error: "Invalid version number" }, 400);
-        return;
-      }
-      const content = getPlanVersion(project, slug, v);
-      if (content === null) {
-        json(res, { error: "Version not found" }, 404);
-        return;
-      }
-      json(res, { plan: content, version: v });
-    } else if (url.pathname === "/api/plan/versions") {
-      json(res, { project, slug, versions: listVersions(project, slug) });
-    } else if (url.pathname === "/api/plan") {
-      if (options.mode === "archive") {
-        json(res, {
-          plan: initialArchivePlan, origin: options.origin ?? "pi",
-          mode: "archive", archivePlans, sharingEnabled, shareBaseUrl, pasteApiUrl,
-        });
-      } else {
-        json(res, { plan: options.plan, origin: options.origin ?? "pi", previousPlan, versionInfo, sharingEnabled, shareBaseUrl, pasteApiUrl, repoInfo: getRepoInfo(), projectRoot: process.cwd() });
-      }
-    } else if (url.pathname === "/api/image") {
-      handleImageRequest(res, url);
-    } else if (url.pathname === "/api/upload" && req.method === "POST") {
-      await handleUploadRequest(req, res);
-    } else if (url.pathname === "/api/draft") {
-      await handleDraftRequest(req, res, draftKey);
-    } else if (await editorAnnotations.handle(req, res, url)) {
-      return;
-    } else if (url.pathname === "/api/doc") {
-      handleDocRequest(res, url);
-    } else if (url.pathname === "/api/obsidian/vaults") {
-      handleObsidianVaultsRequest(res);
-    } else if (url.pathname === "/api/reference/obsidian/files") {
-      handleObsidianFilesRequest(res, url);
-    } else if (url.pathname === "/api/reference/obsidian/doc") {
-      handleObsidianDocRequest(res, url);
-    } else if (url.pathname === "/api/reference/files") {
-      handleFileBrowserRequest(res, url);
-    } else if (url.pathname === "/api/plan/vscode-diff" && req.method === "POST") {
-      try {
-        const body = await parseBody(req);
-        const baseVersion = body.baseVersion as number;
-        if (!baseVersion) { json(res, { error: "Missing baseVersion" }, 400); return; }
-        const basePath = getPlanVersionPath(project, slug, baseVersion);
-        if (!basePath) { json(res, { error: `Version ${baseVersion} not found` }, 404); return; }
-        const result = await openEditorDiff(basePath, historyResult.path);
-        if ("error" in result) { json(res, { error: result.error }, 500); return; }
-        json(res, { ok: true });
-      } catch (err) {
-        json(res, { error: err instanceof Error ? err.message : "Failed to open VS Code diff" }, 500);
-      }
-    } else if (url.pathname === "/api/agents" && req.method === "GET") {
-      json(res, { agents: [] });
-    } else if (url.pathname === "/favicon.svg") {
-      handleFavicon(res);
-    } else if (url.pathname === "/api/save-notes" && req.method === "POST") {
-      const results: { obsidian?: IntegrationResult; bear?: IntegrationResult; octarine?: IntegrationResult } = {};
-      try {
-        const body = await parseBody(req);
-        const promises: Promise<void>[] = [];
-        const obsConfig = body.obsidian as ObsidianConfig | undefined;
-        const bearConfig = body.bear as BearConfig | undefined;
-        const octConfig = body.octarine as OctarineConfig | undefined;
-        if (obsConfig?.vaultPath && obsConfig?.plan) {
-          promises.push(saveToObsidian(obsConfig).then((r) => { results.obsidian = r; }));
-        }
-        if (bearConfig?.plan) {
-          promises.push(saveToBear(bearConfig).then((r) => { results.bear = r; }));
-        }
-        if (octConfig?.plan && octConfig?.workspace) {
-          promises.push(saveToOctarine(octConfig).then((r) => { results.octarine = r; }));
-        }
-        await Promise.allSettled(promises);
-        for (const [name, result] of Object.entries(results)) {
-          if (!result?.success && result) console.error(`[${name}] Save failed: ${result.error}`);
-        }
-      } catch (err) {
-        console.error(`[Save Notes] Error:`, err);
-        json(res, { error: "Save failed" }, 500);
-        return;
-      }
-      json(res, { ok: true, results });
-    } else if (url.pathname === "/api/approve" && req.method === "POST") {
-      let feedback: string | undefined;
-      let agentSwitch: string | undefined;
-      let requestedPermissionMode: string | undefined;
-      let planSaveEnabled = true;
-      let planSaveCustomPath: string | undefined;
-      try {
-        const body = await parseBody(req);
-        if (body.feedback) feedback = body.feedback as string;
-        if (body.agentSwitch) agentSwitch = body.agentSwitch as string;
-        if (body.permissionMode) requestedPermissionMode = body.permissionMode as string;
-        if (body.planSave !== undefined) {
-          const ps = body.planSave as { enabled: boolean; customPath?: string };
-          planSaveEnabled = ps.enabled;
-          planSaveCustomPath = ps.customPath;
-        }
-        // Run note integrations in parallel
-        const integrationResults: Record<string, IntegrationResult> = {};
-        const integrationPromises: Promise<void>[] = [];
-        const obsConfig = body.obsidian as ObsidianConfig | undefined;
-        const bearConfig = body.bear as BearConfig | undefined;
-        const octConfig = body.octarine as OctarineConfig | undefined;
-        if (obsConfig?.vaultPath && obsConfig?.plan) {
-          integrationPromises.push(saveToObsidian(obsConfig).then((r) => { integrationResults.obsidian = r; }));
-        }
-        if (bearConfig?.plan) {
-          integrationPromises.push(saveToBear(bearConfig).then((r) => { integrationResults.bear = r; }));
-        }
-        if (octConfig?.plan && octConfig?.workspace) {
-          integrationPromises.push(saveToOctarine(octConfig).then((r) => { integrationResults.octarine = r; }));
-        }
-        await Promise.allSettled(integrationPromises);
-        for (const [name, result] of Object.entries(integrationResults)) {
-          if (!result?.success && result) console.error(`[${name}] Save failed: ${result.error}`);
-        }
-      } catch (err) {
-        console.error(`[Integration] Error:`, err);
-      }
-      // Save annotations and final snapshot
-      let savedPath: string | undefined;
-      if (planSaveEnabled) {
-        const annotations = feedback || "";
-        if (annotations) saveAnnotations(slug, annotations, planSaveCustomPath);
-        savedPath = saveFinalSnapshot(slug, "approved", options.plan, annotations, planSaveCustomPath);
-      }
-      deleteDraft(draftKey);
-      resolveDecision({ approved: true, feedback, agentSwitch, permissionMode: requestedPermissionMode });
-      json(res, { ok: true, savedPath });
-    } else if (url.pathname === "/api/deny" && req.method === "POST") {
-      let feedback = "Plan rejected by user";
-      let planSaveEnabled = true;
-      let planSaveCustomPath: string | undefined;
-      try {
-        const body = await parseBody(req);
-        feedback = (body.feedback as string) || feedback;
-        if (body.planSave !== undefined) {
-          const ps = body.planSave as { enabled: boolean; customPath?: string };
-          planSaveEnabled = ps.enabled;
-          planSaveCustomPath = ps.customPath;
-        }
-      } catch { /* use default feedback */ }
-      let savedPath: string | undefined;
-      if (planSaveEnabled) {
-        saveAnnotations(slug, feedback, planSaveCustomPath);
-        savedPath = saveFinalSnapshot(slug, "denied", options.plan, feedback, planSaveCustomPath);
-      }
-      deleteDraft(draftKey);
-      resolveDecision({ approved: false, feedback });
-      json(res, { ok: true, savedPath });
-    } else {
-      html(res, options.htmlContent);
-    }
-  });
+		if (url.pathname === "/api/done" && req.method === "POST") {
+			resolveDone?.();
+			json(res, { ok: true });
+		} else if (url.pathname === "/api/archive/plans") {
+			const customPath = url.searchParams.get("customPath") || undefined;
+			if (!cachedArchivePlans)
+				cachedArchivePlans = listArchivedPlans(customPath);
+			json(res, { plans: cachedArchivePlans });
+		} else if (url.pathname === "/api/archive/plan") {
+			const filename = url.searchParams.get("filename");
+			const customPath = url.searchParams.get("customPath") || undefined;
+			if (!filename) {
+				json(res, { error: "Missing filename" }, 400);
+				return;
+			}
+			const markdown = readArchivedPlan(filename, customPath);
+			if (!markdown) {
+				json(res, { error: "Not found" }, 404);
+				return;
+			}
+			json(res, { markdown, filepath: filename });
+		} else if (url.pathname === "/api/plan/version") {
+			const vParam = url.searchParams.get("v");
+			if (!vParam) {
+				json(res, { error: "Missing v parameter" }, 400);
+				return;
+			}
+			const v = parseInt(vParam, 10);
+			if (isNaN(v) || v < 1) {
+				json(res, { error: "Invalid version number" }, 400);
+				return;
+			}
+			const content = getPlanVersion(project, slug, v);
+			if (content === null) {
+				json(res, { error: "Version not found" }, 404);
+				return;
+			}
+			json(res, { plan: content, version: v });
+		} else if (url.pathname === "/api/plan/versions") {
+			json(res, { project, slug, versions: listVersions(project, slug) });
+		} else if (url.pathname === "/api/plan") {
+			if (options.mode === "archive") {
+				json(res, {
+					plan: initialArchivePlan,
+					origin: options.origin ?? "pi",
+					mode: "archive",
+					archivePlans,
+					sharingEnabled,
+					shareBaseUrl,
+					pasteApiUrl,
+				});
+			} else {
+				json(res, {
+					plan: options.plan,
+					origin: options.origin ?? "pi",
+					previousPlan,
+					versionInfo,
+					sharingEnabled,
+					shareBaseUrl,
+					pasteApiUrl,
+					repoInfo: getRepoInfo(),
+					projectRoot: process.cwd(),
+				});
+			}
+		} else if (url.pathname === "/api/image") {
+			handleImageRequest(res, url);
+		} else if (url.pathname === "/api/upload" && req.method === "POST") {
+			await handleUploadRequest(req, res);
+		} else if (url.pathname === "/api/draft") {
+			await handleDraftRequest(req, res, draftKey);
+		} else if (await editorAnnotations.handle(req, res, url)) {
+			return;
+		} else if (url.pathname === "/api/doc") {
+			handleDocRequest(res, url);
+		} else if (url.pathname === "/api/obsidian/vaults") {
+			handleObsidianVaultsRequest(res);
+		} else if (url.pathname === "/api/reference/obsidian/files") {
+			handleObsidianFilesRequest(res, url);
+		} else if (url.pathname === "/api/reference/obsidian/doc") {
+			handleObsidianDocRequest(res, url);
+		} else if (url.pathname === "/api/reference/files") {
+			handleFileBrowserRequest(res, url);
+		} else if (
+			url.pathname === "/api/plan/vscode-diff" &&
+			req.method === "POST"
+		) {
+			try {
+				const body = await parseBody(req);
+				const baseVersion = body.baseVersion as number;
+				if (!baseVersion) {
+					json(res, { error: "Missing baseVersion" }, 400);
+					return;
+				}
+				const basePath = getPlanVersionPath(project, slug, baseVersion);
+				if (!basePath) {
+					json(res, { error: `Version ${baseVersion} not found` }, 404);
+					return;
+				}
+				const result = await openEditorDiff(basePath, historyResult.path);
+				if ("error" in result) {
+					json(res, { error: result.error }, 500);
+					return;
+				}
+				json(res, { ok: true });
+			} catch (err) {
+				json(
+					res,
+					{
+						error:
+							err instanceof Error
+								? err.message
+								: "Failed to open VS Code diff",
+					},
+					500,
+				);
+			}
+		} else if (url.pathname === "/api/agents" && req.method === "GET") {
+			json(res, { agents: [] });
+		} else if (url.pathname === "/favicon.svg") {
+			handleFavicon(res);
+		} else if (url.pathname === "/api/save-notes" && req.method === "POST") {
+			const results: {
+				obsidian?: IntegrationResult;
+				bear?: IntegrationResult;
+				octarine?: IntegrationResult;
+			} = {};
+			try {
+				const body = await parseBody(req);
+				const promises: Promise<void>[] = [];
+				const obsConfig = body.obsidian as ObsidianConfig | undefined;
+				const bearConfig = body.bear as BearConfig | undefined;
+				const octConfig = body.octarine as OctarineConfig | undefined;
+				if (obsConfig?.vaultPath && obsConfig?.plan) {
+					promises.push(
+						saveToObsidian(obsConfig).then((r) => {
+							results.obsidian = r;
+						}),
+					);
+				}
+				if (bearConfig?.plan) {
+					promises.push(
+						saveToBear(bearConfig).then((r) => {
+							results.bear = r;
+						}),
+					);
+				}
+				if (octConfig?.plan && octConfig?.workspace) {
+					promises.push(
+						saveToOctarine(octConfig).then((r) => {
+							results.octarine = r;
+						}),
+					);
+				}
+				await Promise.allSettled(promises);
+				for (const [name, result] of Object.entries(results)) {
+					if (!result?.success && result)
+						console.error(`[${name}] Save failed: ${result.error}`);
+				}
+			} catch (err) {
+				console.error(`[Save Notes] Error:`, err);
+				json(res, { error: "Save failed" }, 500);
+				return;
+			}
+			json(res, { ok: true, results });
+		} else if (url.pathname === "/api/approve" && req.method === "POST") {
+			let feedback: string | undefined;
+			let agentSwitch: string | undefined;
+			let requestedPermissionMode: string | undefined;
+			let planSaveEnabled = true;
+			let planSaveCustomPath: string | undefined;
+			try {
+				const body = await parseBody(req);
+				if (body.feedback) feedback = body.feedback as string;
+				if (body.agentSwitch) agentSwitch = body.agentSwitch as string;
+				if (body.permissionMode)
+					requestedPermissionMode = body.permissionMode as string;
+				if (body.planSave !== undefined) {
+					const ps = body.planSave as { enabled: boolean; customPath?: string };
+					planSaveEnabled = ps.enabled;
+					planSaveCustomPath = ps.customPath;
+				}
+				// Run note integrations in parallel
+				const integrationResults: Record<string, IntegrationResult> = {};
+				const integrationPromises: Promise<void>[] = [];
+				const obsConfig = body.obsidian as ObsidianConfig | undefined;
+				const bearConfig = body.bear as BearConfig | undefined;
+				const octConfig = body.octarine as OctarineConfig | undefined;
+				if (obsConfig?.vaultPath && obsConfig?.plan) {
+					integrationPromises.push(
+						saveToObsidian(obsConfig).then((r) => {
+							integrationResults.obsidian = r;
+						}),
+					);
+				}
+				if (bearConfig?.plan) {
+					integrationPromises.push(
+						saveToBear(bearConfig).then((r) => {
+							integrationResults.bear = r;
+						}),
+					);
+				}
+				if (octConfig?.plan && octConfig?.workspace) {
+					integrationPromises.push(
+						saveToOctarine(octConfig).then((r) => {
+							integrationResults.octarine = r;
+						}),
+					);
+				}
+				await Promise.allSettled(integrationPromises);
+				for (const [name, result] of Object.entries(integrationResults)) {
+					if (!result?.success && result)
+						console.error(`[${name}] Save failed: ${result.error}`);
+				}
+			} catch (err) {
+				console.error(`[Integration] Error:`, err);
+			}
+			// Save annotations and final snapshot
+			let savedPath: string | undefined;
+			if (planSaveEnabled) {
+				const annotations = feedback || "";
+				if (annotations) saveAnnotations(slug, annotations, planSaveCustomPath);
+				savedPath = saveFinalSnapshot(
+					slug,
+					"approved",
+					options.plan,
+					annotations,
+					planSaveCustomPath,
+				);
+			}
+			deleteDraft(draftKey);
+			resolveDecision({
+				approved: true,
+				feedback,
+				agentSwitch,
+				permissionMode: requestedPermissionMode,
+			});
+			json(res, { ok: true, savedPath });
+		} else if (url.pathname === "/api/deny" && req.method === "POST") {
+			let feedback = "Plan rejected by user";
+			let planSaveEnabled = true;
+			let planSaveCustomPath: string | undefined;
+			try {
+				const body = await parseBody(req);
+				feedback = (body.feedback as string) || feedback;
+				if (body.planSave !== undefined) {
+					const ps = body.planSave as { enabled: boolean; customPath?: string };
+					planSaveEnabled = ps.enabled;
+					planSaveCustomPath = ps.customPath;
+				}
+			} catch {
+				/* use default feedback */
+			}
+			let savedPath: string | undefined;
+			if (planSaveEnabled) {
+				saveAnnotations(slug, feedback, planSaveCustomPath);
+				savedPath = saveFinalSnapshot(
+					slug,
+					"denied",
+					options.plan,
+					feedback,
+					planSaveCustomPath,
+				);
+			}
+			deleteDraft(draftKey);
+			resolveDecision({ approved: false, feedback });
+			json(res, { ok: true, savedPath });
+		} else {
+			html(res, options.htmlContent);
+		}
+	});
 
-  const { port, portSource } = await listenOnPort(server);
+	const { port, portSource } = await listenOnPort(server);
 
-  return {
-    port,
-    portSource,
-    url: `http://localhost:${port}`,
-    waitForDecision: () => decisionPromise,
-    ...(donePromise && { waitForDone: () => donePromise }),
-    stop: () => server.close(),
-  };
+	return {
+		port,
+		portSource,
+		url: `http://localhost:${port}`,
+		waitForDecision: () => decisionPromise,
+		...(donePromise && { waitForDone: () => donePromise }),
+		stop: () => server.close(),
+	};
 }
 
 export type { DiffType, DiffOption, GitContext } from "./review-core.js";
 
 export interface ReviewServerResult {
-  port: number;
-  portSource: "env" | "remote-default" | "random";
-  url: string;
-  waitForDecision: () => Promise<{
-    approved: boolean;
-    feedback: string;
-    annotations: unknown[];
-    agentSwitch?: string;
-  }>;
-  stop: () => void;
+	port: number;
+	portSource: "env" | "remote-default" | "random";
+	url: string;
+	waitForDecision: () => Promise<{
+		approved: boolean;
+		feedback: string;
+		annotations: unknown[];
+		agentSwitch?: string;
+	}>;
+	stop: () => void;
 }
 
 /** Run a git command and return stdout (empty string on error). */
 function git(cmd: string): string {
-  try {
-    return execSync(`git ${cmd}`, { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }).trim();
-  } catch {
-    return "";
-  }
+	try {
+		return execSync(`git ${cmd}`, {
+			encoding: "utf-8",
+			stdio: ["pipe", "pipe", "pipe"],
+		}).trim();
+	} catch {
+		return "";
+	}
 }
 
 const reviewRuntime: ReviewGitRuntime = {
-  async runGit(args: string[], options?: { cwd?: string }): Promise<GitCommandResult> {
-    const result = spawnSync("git", args, {
-      cwd: options?.cwd,
-      encoding: "utf-8",
-    });
-    return {
-      stdout: result.stdout ?? "",
-      stderr: result.stderr ?? "",
-      exitCode: result.status ?? (result.error ? 1 : 0),
-    };
-  },
+	async runGit(
+		args: string[],
+		options?: { cwd?: string },
+	): Promise<GitCommandResult> {
+		const result = spawnSync("git", args, {
+			cwd: options?.cwd,
+			encoding: "utf-8",
+		});
+		return {
+			stdout: result.stdout ?? "",
+			stderr: result.stderr ?? "",
+			exitCode: result.status ?? (result.error ? 1 : 0),
+		};
+	},
 
-  async readTextFile(path: string): Promise<string | null> {
-    try {
-      return readFileSync(path, "utf-8");
-    } catch {
-      return null;
-    }
-  },
+	async readTextFile(path: string): Promise<string | null> {
+		try {
+			return readFileSync(path, "utf-8");
+		} catch {
+			return null;
+		}
+	},
 };
 
 export function getGitContext(): Promise<GitContext> {
-  return getGitContextCore(reviewRuntime);
+	return getGitContextCore(reviewRuntime);
 }
 
 export function runGitDiff(
-  diffType: DiffType,
-  defaultBranch = "main",
-  cwd?: string,
+	diffType: DiffType,
+	defaultBranch = "main",
+	cwd?: string,
 ): Promise<{ patch: string; label: string; error?: string }> {
-  return runGitDiffCore(reviewRuntime, diffType, defaultBranch, cwd);
+	return runGitDiffCore(reviewRuntime, diffType, defaultBranch, cwd);
 }
 
 export async function startReviewServer(options: {
-  rawPatch: string;
-  gitRef: string;
-  htmlContent: string;
-  origin?: string;
-  diffType?: DiffType;
-  gitContext?: GitContext;
-  error?: string;
-  sharingEnabled?: boolean;
-  shareBaseUrl?: string;
-  pasteApiUrl?: string;
-  prMetadata?: PRMetadata;
+	rawPatch: string;
+	gitRef: string;
+	htmlContent: string;
+	origin?: string;
+	diffType?: DiffType;
+	gitContext?: GitContext;
+	error?: string;
+	sharingEnabled?: boolean;
+	shareBaseUrl?: string;
+	pasteApiUrl?: string;
+	prMetadata?: PRMetadata;
 }): Promise<ReviewServerResult> {
-  const draftKey = contentHash(options.rawPatch);
-  const isPRMode = !!options.prMetadata;
-  const prRef = isPRMode ? prRefFromMetadata(options.prMetadata!) : null;
-  const platformUser = prRef ? await getPRUser(prRef) : null;
-  const repoInfo = isPRMode
-    ? { display: getDisplayRepo(options.prMetadata!), branch: `${getMRLabel(options.prMetadata!)} ${getMRNumberLabel(options.prMetadata!)}` }
-    : getRepoInfo();
-  const editorAnnotations = createEditorAnnotationHandler();
-  let currentPatch = options.rawPatch;
-  let currentGitRef = options.gitRef;
-  let currentDiffType: DiffType = options.diffType || "uncommitted";
-  let currentError = options.error;
-  const sharingEnabled =
-    options.sharingEnabled ?? process.env.PLANNOTATOR_SHARE !== "disabled";
-  const shareBaseUrl =
-    (options.shareBaseUrl ?? process.env.PLANNOTATOR_SHARE_URL) || undefined;
-  const pasteApiUrl =
-    (options.pasteApiUrl ?? process.env.PLANNOTATOR_PASTE_URL) || undefined;
+	const draftKey = contentHash(options.rawPatch);
+	const isPRMode = !!options.prMetadata;
+	const prRef = isPRMode ? prRefFromMetadata(options.prMetadata!) : null;
+	const platformUser = prRef ? await getPRUser(prRef) : null;
+	const repoInfo = isPRMode
+		? {
+				display: getDisplayRepo(options.prMetadata!),
+				branch: `${getMRLabel(options.prMetadata!)} ${getMRNumberLabel(options.prMetadata!)}`,
+			}
+		: getRepoInfo();
+	const editorAnnotations = createEditorAnnotationHandler();
+	let currentPatch = options.rawPatch;
+	let currentGitRef = options.gitRef;
+	let currentDiffType: DiffType = options.diffType || "uncommitted";
+	let currentError = options.error;
+	const sharingEnabled =
+		options.sharingEnabled ?? process.env.PLANNOTATOR_SHARE !== "disabled";
+	const shareBaseUrl =
+		(options.shareBaseUrl ?? process.env.PLANNOTATOR_SHARE_URL) || undefined;
+	const pasteApiUrl =
+		(options.pasteApiUrl ?? process.env.PLANNOTATOR_PASTE_URL) || undefined;
 
-  let resolveDecision!: (result: {
-    approved: boolean;
-    feedback: string;
-    annotations: unknown[];
-    agentSwitch?: string;
-  }) => void;
-  const decisionPromise = new Promise<{
-    approved: boolean;
-    feedback: string;
-    annotations: unknown[];
-    agentSwitch?: string;
-  }>((r) => {
-    resolveDecision = r;
-  });
+	let resolveDecision!: (result: {
+		approved: boolean;
+		feedback: string;
+		annotations: unknown[];
+		agentSwitch?: string;
+	}) => void;
+	const decisionPromise = new Promise<{
+		approved: boolean;
+		feedback: string;
+		annotations: unknown[];
+		agentSwitch?: string;
+	}>((r) => {
+		resolveDecision = r;
+	});
 
-  // AI provider setup (graceful — AI features degrade if SDK unavailable)
-  // Types are `any` because @plannotator/ai is a dynamic import
-  let aiEndpoints: Record<string, (req: Request) => Promise<Response>> | null = null;
-  let aiSessionManager: { disposeAll: () => void } | null = null;
-  let aiRegistry: { disposeAll: () => void } | null = null;
-  try {
-    const ai = await import("@plannotator/ai");
-    const registry = new ai.ProviderRegistry();
-    const sessionManager = new ai.SessionManager();
+	// AI provider setup (graceful — AI features degrade if SDK unavailable)
+	// Types are `any` because @plannotator/ai is a dynamic import
+	let aiEndpoints: Record<string, (req: Request) => Promise<Response>> | null =
+		null;
+	let aiSessionManager: { disposeAll: () => void } | null = null;
+	let aiRegistry: { disposeAll: () => void } | null = null;
+	try {
+		const ai = await import("@plannotator/ai");
+		const registry = new ai.ProviderRegistry();
+		const sessionManager = new ai.SessionManager();
 
-    // which() helper for Node.js
-    const whichCmd = (cmd: string): string | null => {
-      try { return execSync(`which ${cmd}`, { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }).trim() || null; }
-      catch { return null; }
-    };
+		// which() helper for Node.js
+		const whichCmd = (cmd: string): string | null => {
+			try {
+				return (
+					execSync(`which ${cmd}`, {
+						encoding: "utf-8",
+						stdio: ["pipe", "pipe", "pipe"],
+					}).trim() || null
+				);
+			} catch {
+				return null;
+			}
+		};
 
-    // Claude Agent SDK
-    try {
-      await import("@plannotator/ai/providers/claude-agent-sdk");
-      const claudePath = whichCmd("claude");
-      const provider = await ai.createProvider({
-        type: "claude-agent-sdk",
-        cwd: process.cwd(),
-        ...(claudePath && { claudeExecutablePath: claudePath }),
-      });
-      registry.register(provider);
-    } catch { /* Claude SDK not available */ }
+		// Claude Agent SDK
+		try {
+			await import("@plannotator/ai/providers/claude-agent-sdk");
+			const claudePath = whichCmd("claude");
+			const provider = await ai.createProvider({
+				type: "claude-agent-sdk",
+				cwd: process.cwd(),
+				...(claudePath && { claudeExecutablePath: claudePath }),
+			});
+			registry.register(provider);
+		} catch {
+			/* Claude SDK not available */
+		}
 
-    // Codex SDK
-    try {
-      await import("@plannotator/ai/providers/codex-sdk");
-      await import("@openai/codex-sdk");
-      const codexPath = whichCmd("codex");
-      const provider = await ai.createProvider({
-        type: "codex-sdk",
-        cwd: process.cwd(),
-        ...(codexPath && { codexExecutablePath: codexPath }),
-      });
-      registry.register(provider);
-    } catch { /* Codex SDK not available */ }
+		// Codex SDK
+		try {
+			await import("@plannotator/ai/providers/codex-sdk");
+			await import("@openai/codex-sdk");
+			const codexPath = whichCmd("codex");
+			const provider = await ai.createProvider({
+				type: "codex-sdk",
+				cwd: process.cwd(),
+				...(codexPath && { codexExecutablePath: codexPath }),
+			});
+			registry.register(provider);
+		} catch {
+			/* Codex SDK not available */
+		}
 
-    // Pi SDK (Node.js variant)
-    try {
-      await import("@plannotator/ai/providers/pi-sdk-node");
-      const piPath = whichCmd("pi");
-      if (piPath) {
-        const provider = await ai.createProvider({
-          type: "pi-sdk",
-          cwd: process.cwd(),
-          piExecutablePath: piPath,
-        });
-        if (provider && "fetchModels" in provider) {
-          await (provider as { fetchModels: () => Promise<void> }).fetchModels();
-        }
-        registry.register(provider);
-      }
-    } catch { /* Pi not available */ }
+		// Pi SDK (Node.js variant)
+		try {
+			await import("@plannotator/ai/providers/pi-sdk-node");
+			const piPath = whichCmd("pi");
+			if (piPath) {
+				const provider = await ai.createProvider({
+					type: "pi-sdk",
+					cwd: process.cwd(),
+					piExecutablePath: piPath,
+				} as any);
+				if (provider && "fetchModels" in provider) {
+					await (
+						provider as { fetchModels: () => Promise<void> }
+					).fetchModels();
+				}
+				registry.register(provider);
+			}
+		} catch {
+			/* Pi not available */
+		}
 
-    // OpenCode SDK
-    try {
-      await import("@plannotator/ai/providers/opencode-sdk");
-      const opencodePath = whichCmd("opencode");
-      if (opencodePath) {
-        const provider = await ai.createProvider({
-          type: "opencode-sdk",
-          cwd: process.cwd(),
-        });
-        if (provider && "fetchModels" in provider) {
-          await (provider as { fetchModels: () => Promise<void> }).fetchModels();
-        }
-        registry.register(provider);
-      }
-    } catch { /* OpenCode not available */ }
+		// OpenCode SDK
+		try {
+			await import("@plannotator/ai/providers/opencode-sdk");
+			const opencodePath = whichCmd("opencode");
+			if (opencodePath) {
+				const provider = await ai.createProvider({
+					type: "opencode-sdk",
+					cwd: process.cwd(),
+				});
+				if (provider && "fetchModels" in provider) {
+					await (
+						provider as { fetchModels: () => Promise<void> }
+					).fetchModels();
+				}
+				registry.register(provider);
+			}
+		} catch {
+			/* OpenCode not available */
+		}
 
-    if (registry.size > 0) {
-      aiEndpoints = ai.createAIEndpoints({
-        registry,
-        sessionManager,
-        getCwd: () => options.gitContext?.cwd ?? process.cwd(),
-      });
-      aiSessionManager = sessionManager;
-      aiRegistry = registry;
-    }
-  } catch { /* AI backbone not available */ }
+		if (registry.size > 0) {
+			aiEndpoints = ai.createAIEndpoints({
+				registry,
+				sessionManager,
+				getCwd: () => options.gitContext?.cwd ?? process.cwd(),
+			});
+			aiSessionManager = sessionManager;
+			aiRegistry = registry;
+		}
+	} catch {
+		/* AI backbone not available */
+	}
 
-  const server = createServer(async (req, res) => {
-    const url = new URL(req.url!, `http://localhost`);
+	const server = createServer(async (req, res) => {
+		const url = new URL(req.url!, `http://localhost`);
 
-    if (url.pathname === "/api/diff" && req.method === "GET") {
-      json(res, {
-        rawPatch: currentPatch,
-        gitRef: currentGitRef,
-        origin: options.origin ?? "pi",
-        diffType: isPRMode ? undefined : currentDiffType,
-        gitContext: isPRMode ? undefined : options.gitContext,
-        sharingEnabled,
-        shareBaseUrl,
-        pasteApiUrl,
-        repoInfo,
-        ...(isPRMode && { prMetadata: options.prMetadata, platformUser }),
-        ...(currentError ? { error: currentError } : {}),
-      });
-    } else if (url.pathname === "/api/diff/switch" && req.method === "POST") {
-      if (isPRMode) {
-        json(res, { error: "Not available for PR reviews" }, 400);
-        return;
-      }
-      const body = await parseBody(req);
-      const newType = body.diffType as DiffType;
-      if (!newType) {
-        json(res, { error: "Missing diffType" }, 400);
-        return;
-      }
-      const defaultBranch = options.gitContext?.defaultBranch || "main";
-      const defaultCwd = options.gitContext?.cwd;
-      const result = await runGitDiff(newType, defaultBranch, defaultCwd);
-      currentPatch = result.patch;
-      currentGitRef = result.label;
-      currentDiffType = newType;
-      currentError = result.error;
-      json(res, {
-        rawPatch: currentPatch,
-        gitRef: currentGitRef,
-        diffType: currentDiffType,
-        ...(currentError ? { error: currentError } : {}),
-      });
-    } else if (url.pathname === "/api/pr-context" && req.method === "GET") {
-      if (!isPRMode || !prRef) {
-        json(res, { error: "Not in PR mode" }, 400);
-        return;
-      }
-      try {
-        const context = await fetchPRContext(prRef);
-        json(res, context);
-      } catch (err) {
-        json(res, { error: err instanceof Error ? err.message : "Failed to fetch PR context" }, 500);
-      }
-    } else if (url.pathname === "/api/pr-action" && req.method === "POST") {
-      if (!isPRMode || !options.prMetadata || !prRef) {
-        json(res, { error: "Not in PR mode" }, 400);
-        return;
-      }
-      try {
-        const body = await parseBody(req);
-        await submitPRReview(
-          prRef,
-          options.prMetadata.headSha,
-          body.action as "approve" | "comment",
-          body.body as string,
-          (body.fileComments as PRReviewFileComment[]) || [],
-        );
-        json(res, { ok: true, prUrl: options.prMetadata.url });
-      } catch (err) {
-        json(res, { error: err instanceof Error ? err.message : "Failed to submit PR review" }, 500);
-      }
-    } else if (url.pathname === "/api/file-content" && req.method === "GET") {
-      const filePath = url.searchParams.get("path");
-      if (!filePath) {
-        json(res, { error: "Missing path" }, 400);
-        return;
-      }
-      try {
-        validateFilePath(filePath);
-      } catch {
-        json(res, { error: "Invalid path" }, 400);
-        return;
-      }
-      const oldPath = url.searchParams.get("oldPath") || undefined;
-      if (oldPath) {
-        try {
-          validateFilePath(oldPath);
-        } catch {
-          json(res, { error: "Invalid path" }, 400);
-          return;
-        }
-      }
+		if (url.pathname === "/api/diff" && req.method === "GET") {
+			json(res, {
+				rawPatch: currentPatch,
+				gitRef: currentGitRef,
+				origin: options.origin ?? "pi",
+				diffType: isPRMode ? undefined : currentDiffType,
+				gitContext: isPRMode ? undefined : options.gitContext,
+				sharingEnabled,
+				shareBaseUrl,
+				pasteApiUrl,
+				repoInfo,
+				...(isPRMode && { prMetadata: options.prMetadata, platformUser }),
+				...(currentError ? { error: currentError } : {}),
+			});
+		} else if (url.pathname === "/api/diff/switch" && req.method === "POST") {
+			if (isPRMode) {
+				json(res, { error: "Not available for PR reviews" }, 400);
+				return;
+			}
+			const body = await parseBody(req);
+			const newType = body.diffType as DiffType;
+			if (!newType) {
+				json(res, { error: "Missing diffType" }, 400);
+				return;
+			}
+			const defaultBranch = options.gitContext?.defaultBranch || "main";
+			const defaultCwd = options.gitContext?.cwd;
+			const result = await runGitDiff(newType, defaultBranch, defaultCwd);
+			currentPatch = result.patch;
+			currentGitRef = result.label;
+			currentDiffType = newType;
+			currentError = result.error;
+			json(res, {
+				rawPatch: currentPatch,
+				gitRef: currentGitRef,
+				diffType: currentDiffType,
+				...(currentError ? { error: currentError } : {}),
+			});
+		} else if (url.pathname === "/api/pr-context" && req.method === "GET") {
+			if (!isPRMode || !prRef) {
+				json(res, { error: "Not in PR mode" }, 400);
+				return;
+			}
+			try {
+				const context = await fetchPRContext(prRef);
+				json(res, context);
+			} catch (err) {
+				json(
+					res,
+					{
+						error:
+							err instanceof Error ? err.message : "Failed to fetch PR context",
+					},
+					500,
+				);
+			}
+		} else if (url.pathname === "/api/pr-action" && req.method === "POST") {
+			if (!isPRMode || !options.prMetadata || !prRef) {
+				json(res, { error: "Not in PR mode" }, 400);
+				return;
+			}
+			try {
+				const body = await parseBody(req);
+				await submitPRReview(
+					prRef,
+					options.prMetadata.headSha,
+					body.action as "approve" | "comment",
+					body.body as string,
+					(body.fileComments as PRReviewFileComment[]) || [],
+				);
+				json(res, { ok: true, prUrl: options.prMetadata.url });
+			} catch (err) {
+				json(
+					res,
+					{
+						error:
+							err instanceof Error ? err.message : "Failed to submit PR review",
+					},
+					500,
+				);
+			}
+		} else if (url.pathname === "/api/file-content" && req.method === "GET") {
+			const filePath = url.searchParams.get("path");
+			if (!filePath) {
+				json(res, { error: "Missing path" }, 400);
+				return;
+			}
+			try {
+				validateFilePath(filePath);
+			} catch {
+				json(res, { error: "Invalid path" }, 400);
+				return;
+			}
+			const oldPath = url.searchParams.get("oldPath") || undefined;
+			if (oldPath) {
+				try {
+					validateFilePath(oldPath);
+				} catch {
+					json(res, { error: "Invalid path" }, 400);
+					return;
+				}
+			}
 
-      if (isPRMode && prRef && options.prMetadata) {
-        try {
-          const [oldContent, newContent] = await Promise.all([
-            fetchPRFileContent(prRef, options.prMetadata.baseSha, oldPath || filePath),
-            fetchPRFileContent(prRef, options.prMetadata.headSha, filePath),
-          ]);
-          json(res, { oldContent, newContent });
-        } catch (err) {
-          json(res, { error: err instanceof Error ? err.message : "Failed to fetch file content" }, 500);
-        }
-        return;
-      }
+			if (isPRMode && prRef && options.prMetadata) {
+				try {
+					const [oldContent, newContent] = await Promise.all([
+						fetchPRFileContent(
+							prRef,
+							options.prMetadata.baseSha,
+							oldPath || filePath,
+						),
+						fetchPRFileContent(prRef, options.prMetadata.headSha, filePath),
+					]);
+					json(res, { oldContent, newContent });
+				} catch (err) {
+					json(
+						res,
+						{
+							error:
+								err instanceof Error
+									? err.message
+									: "Failed to fetch file content",
+						},
+						500,
+					);
+				}
+				return;
+			}
 
-      const defaultBranch = options.gitContext?.defaultBranch || "main";
-      const defaultCwd = options.gitContext?.cwd;
-      const result = await getFileContentsForDiffCore(
-        reviewRuntime,
-        currentDiffType,
-        defaultBranch,
-        filePath,
-        oldPath,
-        defaultCwd,
-      );
-      json(res, result);
-    } else if (url.pathname === "/api/image") {
-      handleImageRequest(res, url);
-    } else if (url.pathname === "/api/upload" && req.method === "POST") {
-      await handleUploadRequest(req, res);
-    } else if (url.pathname === "/api/agents" && req.method === "GET") {
-      json(res, { agents: [] });
-    } else if (url.pathname === "/api/git-add" && req.method === "POST") {
-      if (isPRMode) {
-        json(res, { error: "Not available for PR reviews" }, 400);
-        return;
-      }
-      const body = await parseBody(req);
-      const filePath = body.filePath as string | undefined;
-      if (!filePath) {
-        json(res, { error: "Missing filePath" }, 400);
-        return;
-      }
-      try {
-        let cwd: string | undefined;
-        if (currentDiffType.startsWith("worktree:")) {
-          const parsed = parseWorktreeDiffType(currentDiffType);
-          if (parsed) cwd = parsed.path;
-        }
-        if (!cwd) {
-          cwd = options.gitContext?.cwd;
-        }
-        if (body.undo) {
-          await gitResetFileCore(reviewRuntime, filePath, cwd);
-        } else {
-          await gitAddFileCore(reviewRuntime, filePath, cwd);
-        }
-        json(res, { ok: true });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to git add";
-        json(res, { error: message }, 500);
-      }
-    } else if (url.pathname === "/api/draft") {
-      await handleDraftRequest(req, res, draftKey);
-    } else if (url.pathname === "/favicon.svg") {
-      handleFavicon(res);
-    } else if (await editorAnnotations.handle(req, res, url)) {
-      return;
-    } else if (aiEndpoints && url.pathname.startsWith("/api/ai/")) {
-      const handler = aiEndpoints[url.pathname];
-      if (handler) {
-        try {
-          const webReq = toWebRequest(req);
-          const webRes = await handler(webReq);
-          // Pipe Web Response → node:http response
-          res.writeHead(webRes.status, Object.fromEntries(webRes.headers.entries()));
-          if (webRes.body) {
-            const nodeStream = Readable.fromWeb(webRes.body as import("stream/web").ReadableStream);
-            nodeStream.pipe(res);
-          } else {
-            res.end();
-          }
-        } catch (err) {
-          json(res, { error: err instanceof Error ? err.message : "AI endpoint error" }, 500);
-        }
-        return;
-      }
-      json(res, { error: "Not found" }, 404);
-    } else if (url.pathname === "/api/feedback" && req.method === "POST") {
-      const body = await parseBody(req);
-      deleteDraft(draftKey);
-      resolveDecision({
-        approved: (body.approved as boolean) ?? false,
-        feedback: (body.feedback as string) || "",
-        annotations: (body.annotations as unknown[]) || [],
-        agentSwitch: body.agentSwitch as string | undefined,
-      });
-      json(res, { ok: true });
-    } else {
-      html(res, options.htmlContent);
-    }
-  });
+			const defaultBranch = options.gitContext?.defaultBranch || "main";
+			const defaultCwd = options.gitContext?.cwd;
+			const result = await getFileContentsForDiffCore(
+				reviewRuntime,
+				currentDiffType,
+				defaultBranch,
+				filePath,
+				oldPath,
+				defaultCwd,
+			);
+			json(res, result);
+		} else if (url.pathname === "/api/image") {
+			handleImageRequest(res, url);
+		} else if (url.pathname === "/api/upload" && req.method === "POST") {
+			await handleUploadRequest(req, res);
+		} else if (url.pathname === "/api/agents" && req.method === "GET") {
+			json(res, { agents: [] });
+		} else if (url.pathname === "/api/git-add" && req.method === "POST") {
+			if (isPRMode) {
+				json(res, { error: "Not available for PR reviews" }, 400);
+				return;
+			}
+			const body = await parseBody(req);
+			const filePath = body.filePath as string | undefined;
+			if (!filePath) {
+				json(res, { error: "Missing filePath" }, 400);
+				return;
+			}
+			try {
+				let cwd: string | undefined;
+				if (currentDiffType.startsWith("worktree:")) {
+					const parsed = parseWorktreeDiffType(currentDiffType);
+					if (parsed) cwd = parsed.path;
+				}
+				if (!cwd) {
+					cwd = options.gitContext?.cwd;
+				}
+				if (body.undo) {
+					await gitResetFileCore(reviewRuntime, filePath, cwd);
+				} else {
+					await gitAddFileCore(reviewRuntime, filePath, cwd);
+				}
+				json(res, { ok: true });
+			} catch (err) {
+				const message =
+					err instanceof Error ? err.message : "Failed to git add";
+				json(res, { error: message }, 500);
+			}
+		} else if (url.pathname === "/api/draft") {
+			await handleDraftRequest(req, res, draftKey);
+		} else if (url.pathname === "/favicon.svg") {
+			handleFavicon(res);
+		} else if (await editorAnnotations.handle(req, res, url)) {
+			return;
+		} else if (aiEndpoints && url.pathname.startsWith("/api/ai/")) {
+			const handler = aiEndpoints[url.pathname];
+			if (handler) {
+				try {
+					const webReq = toWebRequest(req);
+					const webRes = await handler(webReq);
+					// Pipe Web Response → node:http response
+					const headers: Record<string, string> = {};
+					webRes.headers.forEach((v, k) => { headers[k] = v; });
+					res.writeHead(webRes.status, headers);
+					if (webRes.body) {
+						const nodeStream = Readable.fromWeb(
+							webRes.body as any,
+						);
+						nodeStream.pipe(res);
+					} else {
+						res.end();
+					}
+				} catch (err) {
+					json(
+						res,
+						{ error: err instanceof Error ? err.message : "AI endpoint error" },
+						500,
+					);
+				}
+				return;
+			}
+			json(res, { error: "Not found" }, 404);
+		} else if (url.pathname === "/api/feedback" && req.method === "POST") {
+			const body = await parseBody(req);
+			deleteDraft(draftKey);
+			resolveDecision({
+				approved: (body.approved as boolean) ?? false,
+				feedback: (body.feedback as string) || "",
+				annotations: (body.annotations as unknown[]) || [],
+				agentSwitch: body.agentSwitch as string | undefined,
+			});
+			json(res, { ok: true });
+		} else {
+			html(res, options.htmlContent);
+		}
+	});
 
-  const { port, portSource } = await listenOnPort(server);
+	const { port, portSource } = await listenOnPort(server);
 
-  return {
-    port,
-    portSource,
-    url: `http://localhost:${port}`,
-    waitForDecision: () => decisionPromise,
-    stop: () => {
-      aiSessionManager?.disposeAll();
-      aiRegistry?.disposeAll();
-      server.close();
-    },
-  };
+	return {
+		port,
+		portSource,
+		url: `http://localhost:${port}`,
+		waitForDecision: () => decisionPromise,
+		stop: () => {
+			aiSessionManager?.disposeAll();
+			aiRegistry?.disposeAll();
+			server.close();
+		},
+	};
 }
 
 // ── Annotate Server ─────────────────────────────────────────────────────
 
 export interface AnnotateServerResult {
-  port: number;
-  portSource: "env" | "remote-default" | "random";
-  url: string;
-  waitForDecision: () => Promise<{ feedback: string; annotations: unknown[] }>;
-  stop: () => void;
+	port: number;
+	portSource: "env" | "remote-default" | "random";
+	url: string;
+	waitForDecision: () => Promise<{ feedback: string; annotations: unknown[] }>;
+	stop: () => void;
 }
 
 export async function startAnnotateServer(options: {
-  markdown: string;
-  filePath: string;
-  htmlContent: string;
-  origin?: string;
-  mode?: string;
-  sharingEnabled?: boolean;
-  shareBaseUrl?: string;
-  pasteApiUrl?: string;
+	markdown: string;
+	filePath: string;
+	htmlContent: string;
+	origin?: string;
+	mode?: string;
+	sharingEnabled?: boolean;
+	shareBaseUrl?: string;
+	pasteApiUrl?: string;
 }): Promise<AnnotateServerResult> {
-  const sharingEnabled =
-    options.sharingEnabled ?? process.env.PLANNOTATOR_SHARE !== "disabled";
-  const shareBaseUrl =
-    (options.shareBaseUrl ?? process.env.PLANNOTATOR_SHARE_URL) || undefined;
-  const pasteApiUrl =
-    (options.pasteApiUrl ?? process.env.PLANNOTATOR_PASTE_URL) || undefined;
+	const sharingEnabled =
+		options.sharingEnabled ?? process.env.PLANNOTATOR_SHARE !== "disabled";
+	const shareBaseUrl =
+		(options.shareBaseUrl ?? process.env.PLANNOTATOR_SHARE_URL) || undefined;
+	const pasteApiUrl =
+		(options.pasteApiUrl ?? process.env.PLANNOTATOR_PASTE_URL) || undefined;
 
-  let resolveDecision!: (result: { feedback: string; annotations: unknown[] }) => void;
-  const decisionPromise = new Promise<{ feedback: string; annotations: unknown[] }>((r) => {
-    resolveDecision = r;
-  });
+	let resolveDecision!: (result: {
+		feedback: string;
+		annotations: unknown[];
+	}) => void;
+	const decisionPromise = new Promise<{
+		feedback: string;
+		annotations: unknown[];
+	}>((r) => {
+		resolveDecision = r;
+	});
 
-  // Draft key for annotation persistence
-  const draftKey = contentHash(options.markdown);
+	// Draft key for annotation persistence
+	const draftKey = contentHash(options.markdown);
 
-  const server = createServer(async (req, res) => {
-    const url = new URL(req.url!, `http://localhost`);
+	const server = createServer(async (req, res) => {
+		const url = new URL(req.url!, `http://localhost`);
 
-    if (url.pathname === "/api/plan" && req.method === "GET") {
-      json(res, {
-        plan: options.markdown,
-        origin: options.origin ?? "pi",
-        mode: options.mode || "annotate",
-        filePath: options.filePath,
-        sharingEnabled,
-        shareBaseUrl,
-        pasteApiUrl,
-        repoInfo: getRepoInfo(),
-        projectRoot: process.cwd(),
-      });
-    } else if (url.pathname === "/api/image") {
-      handleImageRequest(res, url);
-    } else if (url.pathname === "/api/upload" && req.method === "POST") {
-      await handleUploadRequest(req, res);
-    } else if (url.pathname === "/api/draft") {
-      await handleDraftRequest(req, res, draftKey);
-    } else if (url.pathname === "/api/doc") {
-      // Inject source file's directory as base for relative path resolution
-      if (!url.searchParams.has("base") && options.filePath) {
-        url.searchParams.set("base", dirname(resolvePath(options.filePath)));
-      }
-      handleDocRequest(res, url);
-    } else if (url.pathname === "/api/reference/files") {
-      handleFileBrowserRequest(res, url);
-    } else if (url.pathname === "/favicon.svg") {
-      handleFavicon(res);
-    } else if (url.pathname === "/api/feedback" && req.method === "POST") {
-      const body = await parseBody(req);
-      deleteDraft(draftKey);
-      resolveDecision({
-        feedback: (body.feedback as string) || "",
-        annotations: (body.annotations as unknown[]) || [],
-      });
-      json(res, { ok: true });
-    } else {
-      html(res, options.htmlContent);
-    }
-  });
+		if (url.pathname === "/api/plan" && req.method === "GET") {
+			json(res, {
+				plan: options.markdown,
+				origin: options.origin ?? "pi",
+				mode: options.mode || "annotate",
+				filePath: options.filePath,
+				sharingEnabled,
+				shareBaseUrl,
+				pasteApiUrl,
+				repoInfo: getRepoInfo(),
+				projectRoot: process.cwd(),
+			});
+		} else if (url.pathname === "/api/image") {
+			handleImageRequest(res, url);
+		} else if (url.pathname === "/api/upload" && req.method === "POST") {
+			await handleUploadRequest(req, res);
+		} else if (url.pathname === "/api/draft") {
+			await handleDraftRequest(req, res, draftKey);
+		} else if (url.pathname === "/api/doc") {
+			// Inject source file's directory as base for relative path resolution
+			if (!url.searchParams.has("base") && options.filePath) {
+				url.searchParams.set("base", dirname(resolvePath(options.filePath)));
+			}
+			handleDocRequest(res, url);
+		} else if (url.pathname === "/api/reference/files") {
+			handleFileBrowserRequest(res, url);
+		} else if (url.pathname === "/favicon.svg") {
+			handleFavicon(res);
+		} else if (url.pathname === "/api/feedback" && req.method === "POST") {
+			const body = await parseBody(req);
+			deleteDraft(draftKey);
+			resolveDecision({
+				feedback: (body.feedback as string) || "",
+				annotations: (body.annotations as unknown[]) || [],
+			});
+			json(res, { ok: true });
+		} else {
+			html(res, options.htmlContent);
+		}
+	});
 
-  const { port, portSource } = await listenOnPort(server);
+	const { port, portSource } = await listenOnPort(server);
 
-  return {
-    port,
-    portSource,
-    url: `http://localhost:${port}`,
-    waitForDecision: () => decisionPromise,
-    stop: () => server.close(),
-  };
+	return {
+		port,
+		portSource,
+		url: `http://localhost:${port}`,
+		waitForDecision: () => decisionPromise,
+		stop: () => server.close(),
+	};
 }

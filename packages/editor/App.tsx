@@ -410,7 +410,7 @@ const App: React.FC = () => {
           setAnnotateSource(data.mode === 'annotate-last' ? 'message' : data.mode === 'annotate-folder' ? 'folder' : 'file');
         }
         if (data.filePath) {
-          setImageBaseDir(data.filePath.replace(/\/[^/]+$/, ''));
+          setImageBaseDir(data.mode === 'annotate-folder' ? data.filePath : data.filePath.replace(/\/[^/]+$/, ''));
         }
         if (data.sharingEnabled !== undefined) {
           setSharingEnabled(data.sharingEnabled);

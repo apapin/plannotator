@@ -359,7 +359,13 @@ export default function plannotator(pi: ExtensionAPI): void {
 			}
 
 			// Check if the argument is a directory (folder annotation mode)
-			const isFolder = statSync(absolutePath).isDirectory();
+			let isFolder = false;
+			try {
+				isFolder = statSync(absolutePath).isDirectory();
+			} catch {
+				ctx.ui.notify(`Cannot access: ${absolutePath}`, "error");
+				return;
+			}
 
 			let markdown: string;
 			let folderPath: string | undefined;

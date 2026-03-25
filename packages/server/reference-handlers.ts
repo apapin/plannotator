@@ -92,7 +92,7 @@ export async function handleObsidianFiles(req: Request): Promise<Response> {
 	}
 
 	try {
-		const glob = new Bun.Glob("**/*.md");
+		const glob = new Bun.Glob("**/*.{md,mdx}");
 		const files: string[] = [];
 		for await (const match of glob.scan({
 			cwd: resolvedVault,
@@ -203,7 +203,7 @@ export async function handleFileBrowserFiles(req: Request): Promise<Response> {
 	}
 
 	try {
-		const glob = new Bun.Glob("**/*.md");
+		const glob = new Bun.Glob("**/*.{md,mdx}");
 		const files: string[] = [];
 		for await (const match of glob.scan({
 			cwd: resolvedDir,

@@ -437,6 +437,7 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
                         {gitUser && (
                           <button
                             onClick={handleUseGitName}
+                            onMouseDown={(e) => e.preventDefault()}
                             className="p-2 rounded-lg bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-colors"
                             title={`Use git identity: ${gitUser}`}
                           >
@@ -445,6 +446,7 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
                         )}
                         <button
                           onClick={handleRegenerateIdentity}
+                          onMouseDown={(e) => e.preventDefault()}
                           className="p-2 rounded-lg bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-colors"
                           title="Regenerate random identity"
                         >

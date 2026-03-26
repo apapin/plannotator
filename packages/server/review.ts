@@ -15,6 +15,7 @@ import { getRepoInfo } from "./repo";
 import { handleImage, handleUpload, handleAgents, handleServerReady, handleDraftSave, handleDraftLoad, handleDraftDelete, handleFavicon, type OpencodeClient } from "./shared-handlers";
 import { contentHash, deleteDraft } from "./draft";
 import { createEditorAnnotationHandler } from "./editor-annotations";
+import { loadConfig, saveConfig, detectGitUser } from "./config";
 import { type PRMetadata, type PRReviewFileComment, fetchPRFileContent, fetchPRContext, submitPRReview, fetchPRViewedFiles, markPRFilesViewed, getPRUser, prRefFromMetadata, getDisplayRepo, getMRLabel, getMRNumberLabel } from "./pr";
 import { createAIEndpoints, ProviderRegistry, SessionManager, createProvider, type AIEndpoints, type PiSDKConfig } from "@plannotator/ai";
 import { isWSL } from "./browser";
@@ -191,6 +192,9 @@ export async function startReviewServer(
   const isRemote = isRemoteSession();
   const configuredPort = getServerPort();
   const wslFlag = await isWSL();
+  const userConfig = loadConfig();
+  const gitUser = detectGitUser();
+  const serverConfig = { displayName: userConfig.displayName, gitUser: gitUser ?? undefined };
 
   // Detect repo info (cached for this session)
   // In PR mode, derive from metadata instead of local git
@@ -261,6 +265,7 @@ export async function startReviewServer(
               ...(isPRMode && { prMetadata, platformUser }),
               ...(isPRMode && initialViewedFiles.length > 0 && { viewedFiles: initialViewedFiles }),
               ...(currentError && { error: currentError }),
+              serverConfig,
             });
           }
 
@@ -397,6 +402,19 @@ export async function startReviewServer(
             } catch (err) {
               const message = err instanceof Error ? err.message : "Failed to git add";
               return Response.json({ error: message }, { status: 500 });
+            }
+          }
+
+          // API: Update user config (write-back to ~/.plannotator/config.json)
+          if (url.pathname === "/api/config" && req.method === "POST") {
+            try {
+              const body = (await req.json()) as { displayName?: string };
+              if (body.displayName !== undefined) {
+                saveConfig({ displayName: body.displayName });
+              }
+              return Response.json({ ok: true });
+            } catch {
+              return Response.json({ error: "Invalid request" }, { status: 400 });
             }
           }
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { TaterSpritePullup } from './TaterSpritePullup';
 import { getIdentity, regenerateIdentity, setCustomIdentity } from '../utils/identity';
+import { GitUser } from '../icons/GitUser';
 import {
   getObsidianSettings,
   saveObsidianSettings,
@@ -439,9 +440,7 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
                             className="p-2 rounded-lg bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-colors"
                             title={`Use git identity: ${gitUser}`}
                           >
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                            </svg>
+                            <GitUser className="w-5 h-5" />
                           </button>
                         )}
                         <button

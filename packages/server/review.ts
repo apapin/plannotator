@@ -192,9 +192,7 @@ export async function startReviewServer(
   const isRemote = isRemoteSession();
   const configuredPort = getServerPort();
   const wslFlag = await isWSL();
-  const userConfig = loadConfig();
   const gitUser = detectGitUser();
-  const serverConfig = { displayName: userConfig.displayName, gitUser: gitUser ?? undefined };
 
   // Detect repo info (cached for this session)
   // In PR mode, derive from metadata instead of local git
@@ -265,7 +263,7 @@ export async function startReviewServer(
               ...(isPRMode && { prMetadata, platformUser }),
               ...(isPRMode && initialViewedFiles.length > 0 && { viewedFiles: initialViewedFiles }),
               ...(currentError && { error: currentError }),
-              serverConfig,
+              serverConfig: { displayName: loadConfig().displayName, gitUser: gitUser ?? undefined },
             });
           }
 

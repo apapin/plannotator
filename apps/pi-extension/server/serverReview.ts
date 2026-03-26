@@ -117,9 +117,7 @@ export async function startReviewServer(options: {
 	shareBaseUrl?: string;
 	prMetadata?: PRMetadata;
 }): Promise<ReviewServerResult> {
-	const userConfig = loadConfig();
 	const gitUser = detectGitUser();
-	const serverConfig = { displayName: userConfig.displayName, gitUser: gitUser ?? undefined };
 	const draftKey = contentHash(options.rawPatch);
 	const prMeta = options.prMetadata;
 	const isPRMode = !!prMeta;
@@ -301,7 +299,7 @@ export async function startReviewServer(options: {
 				...(isPRMode && { prMetadata: prMeta, platformUser }),
 				...(isPRMode && initialViewedFiles.length > 0 && { viewedFiles: initialViewedFiles }),
 				...(currentError ? { error: currentError } : {}),
-				serverConfig,
+				serverConfig: { displayName: loadConfig().displayName, gitUser: gitUser ?? undefined },
 			});
 		} else if (url.pathname === "/api/diff/switch" && req.method === "POST") {
 			if (isPRMode) {

@@ -98,9 +98,7 @@ export async function startAnnotateServer(
   const isRemote = isRemoteSession();
   const configuredPort = getServerPort();
   const wslFlag = await isWSL();
-  const userConfig = loadConfig();
   const gitUser = detectGitUser();
-  const serverConfig = { displayName: userConfig.displayName, gitUser: gitUser ?? undefined };
   const draftKey = contentHash(markdown);
 
   // Detect repo info (cached for this session)
@@ -142,7 +140,7 @@ export async function startAnnotateServer(
               repoInfo,
               projectRoot: folderPath || process.cwd(),
               isWSL: wslFlag,
-              serverConfig,
+              serverConfig: { displayName: loadConfig().displayName, gitUser: gitUser ?? undefined },
             });
           }
 

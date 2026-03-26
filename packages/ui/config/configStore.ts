@@ -27,28 +27,40 @@ class ConfigStore {
   private pendingServerWrites: Record<string, unknown> = {};
   private serverSyncTimer: ReturnType<typeof setTimeout> | null = null;
 
-  /**
-   * Initialize from server config payload.
-   * Call once after fetching /api/plan or /api/diff.
-   *
-   * For each registered setting, resolves:
-   *   server value > cookie value > default value
-   */
-  init(serverConfig?: Record<string, unknown>): void {
+  constructor() {
+    // Eagerly resolve all settings from synchronous sources (cookie > default).
+    // The store is safe to read from the moment it's created.
     for (const [name, def] of Object.entries(SETTINGS)) {
-      const fromServer = def.serverKey && def.fromServer && serverConfig
-        ? def.fromServer(serverConfig)
-        : undefined;
       const fromCookie = def.fromCookie();
       const defaultVal = typeof def.defaultValue === 'function'
         ? (def.defaultValue as () => unknown)()
         : def.defaultValue;
-      const resolved = fromServer ?? fromCookie ?? defaultVal;
+      const resolved = fromCookie ?? defaultVal;
       this.values.set(name, resolved);
-
-      // Sync server value to cookie so offline/portal fallback works
-      if (fromServer !== undefined) {
+      // Persist generated defaults to cookie so the value is stable across calls
+      if (fromCookie === undefined) {
         def.toCookie(resolved as never);
+      }
+    }
+  }
+
+  /**
+   * Apply server config overrides.
+   * Call once after fetching /api/plan or /api/diff.
+   *
+   * Server values take precedence over the cookie/default already resolved
+   * by the constructor. Settings without a server value are left untouched.
+   */
+  init(serverConfig?: Record<string, unknown>): void {
+    if (serverConfig) {
+      for (const [name, def] of Object.entries(SETTINGS)) {
+        if (def.serverKey && def.fromServer) {
+          const fromServer = def.fromServer(serverConfig);
+          if (fromServer !== undefined) {
+            this.values.set(name, fromServer);
+            def.toCookie(fromServer as never);
+          }
+        }
       }
     }
     this.notify();
@@ -56,18 +68,7 @@ class ConfigStore {
 
   /** Get a resolved config value. Works outside React. */
   get<K extends SettingName>(key: K): SettingValue<K> {
-    if (this.values.has(key)) {
-      return this.values.get(key) as SettingValue<K>;
-    }
-
-    // Before init or for lazy access: read directly from cookie/default
-    const def = SETTINGS[key];
-    const fromCookie = def.fromCookie();
-    if (fromCookie !== undefined) return fromCookie as SettingValue<K>;
-    const defaultVal = typeof def.defaultValue === 'function'
-      ? (def.defaultValue as () => unknown)()
-      : def.defaultValue;
-    return defaultVal as SettingValue<K>;
+    return this.values.get(key) as SettingValue<K>;
   }
 
   /** Set a config value. Writes cookie (sync), queues server write-back if applicable. */

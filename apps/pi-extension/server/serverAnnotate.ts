@@ -36,9 +36,7 @@ export async function startAnnotateServer(options: {
 	shareBaseUrl?: string;
 	pasteApiUrl?: string;
 }): Promise<AnnotateServerResult> {
-	const userConfig = loadConfig();
 	const gitUser = detectGitUser();
-	const serverConfig = { displayName: userConfig.displayName, gitUser: gitUser ?? undefined };
 	const sharingEnabled =
 		options.sharingEnabled ?? process.env.PLANNOTATOR_SHARE !== "disabled";
 	const shareBaseUrl =
@@ -77,7 +75,7 @@ export async function startAnnotateServer(options: {
 				pasteApiUrl,
 				repoInfo,
 				projectRoot: options.folderPath || process.cwd(),
-				serverConfig,
+				serverConfig: { displayName: loadConfig().displayName, gitUser: gitUser ?? undefined },
 			});
 		} else if (url.pathname === "/api/config" && req.method === "POST") {
 			try {

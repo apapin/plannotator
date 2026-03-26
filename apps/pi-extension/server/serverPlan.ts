@@ -64,9 +64,7 @@ export async function startPlanReviewServer(options: {
 	mode?: "archive";
 	customPlanPath?: string | null;
 }): Promise<PlanServerResult> {
-	const userConfig = loadConfig();
 	const gitUser = detectGitUser();
-	const serverConfig = { displayName: userConfig.displayName, gitUser: gitUser ?? undefined };
 	const sharingEnabled =
 		options.sharingEnabled ?? process.env.PLANNOTATOR_SHARE !== "disabled";
 	const shareBaseUrl =
@@ -193,7 +191,7 @@ export async function startPlanReviewServer(options: {
 					archivePlans,
 					sharingEnabled,
 					shareBaseUrl,
-					serverConfig,
+					serverConfig: { displayName: loadConfig().displayName, gitUser: gitUser ?? undefined },
 				});
 			} else {
 				json(res, {
@@ -207,7 +205,7 @@ export async function startPlanReviewServer(options: {
 					pasteApiUrl,
 					repoInfo,
 					projectRoot: process.cwd(),
-					serverConfig,
+					serverConfig: { displayName: loadConfig().displayName, gitUser: gitUser ?? undefined },
 				});
 			}
 		} else if (url.pathname === "/api/config" && req.method === "POST") {

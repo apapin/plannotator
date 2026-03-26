@@ -122,9 +122,7 @@ export async function startPlannotatorServer(
   const isRemote = isRemoteSession();
   const configuredPort = getServerPort();
   const wslFlag = await isWSL();
-  const userConfig = loadConfig();
   const gitUser = detectGitUser();
-  const serverConfig = { displayName: userConfig.displayName, gitUser: gitUser ?? undefined };
 
   // --- Archive mode setup ---
   let archivePlans: ArchivedPlan[] = [];
@@ -269,10 +267,10 @@ export async function startPlannotatorServer(
                 sharingEnabled,
                 shareBaseUrl,
                 isWSL: wslFlag,
-                serverConfig,
+                serverConfig: { displayName: loadConfig().displayName, gitUser: gitUser ?? undefined },
               });
             }
-            return Response.json({ plan, origin, permissionMode, sharingEnabled, shareBaseUrl, pasteApiUrl, repoInfo, previousPlan, versionInfo, projectRoot: process.cwd(), isWSL: wslFlag, serverConfig });
+            return Response.json({ plan, origin, permissionMode, sharingEnabled, shareBaseUrl, pasteApiUrl, repoInfo, previousPlan, versionInfo, projectRoot: process.cwd(), isWSL: wslFlag, serverConfig: { displayName: loadConfig().displayName, gitUser: gitUser ?? undefined } });
           }
 
           // API: Serve a linked markdown document

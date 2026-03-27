@@ -93,8 +93,6 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
 }) => {
   const { theme, colorTheme, resolvedMode } = useTheme();
   const containerRef = useRef<HTMLDivElement>(null);
-  const activeSearchMatchIdRef = useRef(activeSearchMatchId);
-  activeSearchMatchIdRef.current = activeSearchMatchId;
   const [fileCommentAnchor, setFileCommentAnchor] = useState<HTMLElement | null>(null);
 
   // Resizable split pane — only applies when Pierre renders a two-column grid
@@ -209,31 +207,25 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
   }, [selectedAnnotationId]);
 
   // Apply search highlights to diff lines (including inside shadow DOM).
-  // Debounced to collapse rapid keystrokes into a single DOM update.
+  // The query is already debounced upstream (useReviewSearch), so this runs synchronously.
+  // activeSearchMatchId is NOT in deps — the swap effect handles that with O(1) updates.
   useEffect(() => {
     if (!containerRef.current) return;
 
     const query = searchQuery;
     const matches = searchMatches;
 
-    // Clear immediately when search is empty (no debounce for clearing)
     if (!query.trim() || matches.length === 0) {
       const roots = getSearchRoots(containerRef.current);
       roots.forEach(root => clearSearchHighlights(root));
       return;
     }
 
-    // Debounce the full rebuild — 100ms collapses rapid keystrokes into one DOM update
-    const timeoutId = setTimeout(() => {
-      if (!containerRef.current) return;
-      const roots = getSearchRoots(containerRef.current);
-      roots.forEach(root =>
-        applySearchHighlights(root, query, matches, activeSearchMatchIdRef.current)
-      );
-    }, 100);
-
-    return () => clearTimeout(timeoutId);
-  }, [searchQuery, searchMatches, filePath, diffStyle]);
+    const roots = getSearchRoots(containerRef.current);
+    roots.forEach(root =>
+      applySearchHighlights(root, query, matches, activeSearchMatchId)
+    );
+  }, [searchQuery, searchMatches, filePath, diffStyle, augmentedDiff]);
 
   // Swap active search highlight instantly when stepping between matches.
   // This avoids a full rebuild just to change two elements' background color.

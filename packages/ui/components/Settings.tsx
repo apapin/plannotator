@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import type { Origin } from '@plannotator/shared/agents';
+import { configStore, useConfigValue } from '../config';
 import { TaterSpritePullup } from './TaterSpritePullup';
 import { getIdentity, regenerateIdentity, setCustomIdentity } from '../utils/identity';
 import { GitUser } from '../icons/GitUser';
@@ -85,6 +86,156 @@ interface SettingsProps {
   gitUser?: string;
 }
 
+// --- Review-mode Display tab (diff display options) ---
+
+const DIFF_STYLE_OPTIONS = [
+  { value: 'split' as const, label: 'Split' },
+  { value: 'unified' as const, label: 'Unified' },
+];
+const OVERFLOW_OPTIONS = [
+  { value: 'scroll' as const, label: 'Scroll' },
+  { value: 'wrap' as const, label: 'Wrap' },
+];
+const INDICATOR_OPTIONS = [
+  { value: 'bars' as const, label: 'Bars' },
+  { value: 'classic' as const, label: 'Classic' },
+  { value: 'none' as const, label: 'None' },
+];
+const LINE_DIFF_OPTIONS = [
+  { value: 'word-alt' as const, label: 'Word-Alt' },
+  { value: 'word' as const, label: 'Word' },
+  { value: 'char' as const, label: 'Char' },
+  { value: 'none' as const, label: 'None' },
+];
+
+function SegmentedControl<T extends string>({ options, value, onChange }: {
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1 bg-muted/50 rounded-lg p-0.5">
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          onClick={() => onChange(opt.value)}
+          className={`flex-1 px-3 py-1.5 text-xs rounded-md transition-colors ${
+            value === opt.value
+              ? 'bg-background text-foreground shadow-sm font-medium'
+              : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ToggleSwitch({ checked, onChange, label, description }: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+  description?: string;
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <div>
+        <div className="text-sm font-medium">{label}</div>
+        {description && <div className="text-xs text-muted-foreground">{description}</div>}
+      </div>
+      <button
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+          checked ? 'bg-primary' : 'bg-muted'
+        }`}
+      >
+        <span
+          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
+            checked ? 'translate-x-6' : 'translate-x-1'
+          }`}
+        />
+      </button>
+    </div>
+  );
+}
+
+const ReviewDisplayTab: React.FC = () => {
+  const diffStyle = useConfigValue('diffStyle');
+  const diffOverflow = useConfigValue('diffOverflow');
+  const diffIndicators = useConfigValue('diffIndicators');
+  const diffLineDiffType = useConfigValue('diffLineDiffType');
+  const diffShowLineNumbers = useConfigValue('diffShowLineNumbers');
+  const diffShowBackground = useConfigValue('diffShowBackground');
+
+  return (
+    <>
+      {/* Diff Style */}
+      <div className="space-y-2">
+        <div>
+          <div className="text-sm font-medium">Diff Style</div>
+          <div className="text-xs text-muted-foreground">Side-by-side or inline diff view</div>
+        </div>
+        <SegmentedControl options={DIFF_STYLE_OPTIONS} value={diffStyle} onChange={(v) => configStore.set('diffStyle', v)} />
+      </div>
+
+      <div className="border-t border-border" />
+
+      {/* Line Overflow */}
+      <div className="space-y-2">
+        <div>
+          <div className="text-sm font-medium">Line Overflow</div>
+          <div className="text-xs text-muted-foreground">How to handle long lines in diffs</div>
+        </div>
+        <SegmentedControl options={OVERFLOW_OPTIONS} value={diffOverflow} onChange={(v) => configStore.set('diffOverflow', v)} />
+      </div>
+
+      <div className="border-t border-border" />
+
+      {/* Change Indicators */}
+      <div className="space-y-2">
+        <div>
+          <div className="text-sm font-medium">Change Indicators</div>
+          <div className="text-xs text-muted-foreground">Style of +/- markers in the gutter</div>
+        </div>
+        <SegmentedControl options={INDICATOR_OPTIONS} value={diffIndicators} onChange={(v) => configStore.set('diffIndicators', v)} />
+      </div>
+
+      <div className="border-t border-border" />
+
+      {/* Inline Diff Granularity */}
+      <div className="space-y-2">
+        <div>
+          <div className="text-sm font-medium">Inline Diff Granularity</div>
+          <div className="text-xs text-muted-foreground">Highlight granularity for inline changes</div>
+        </div>
+        <SegmentedControl options={LINE_DIFF_OPTIONS} value={diffLineDiffType} onChange={(v) => configStore.set('diffLineDiffType', v)} />
+      </div>
+
+      <div className="border-t border-border" />
+
+      {/* Show Line Numbers */}
+      <ToggleSwitch
+        checked={diffShowLineNumbers}
+        onChange={(v) => configStore.set('diffShowLineNumbers', v)}
+        label="Show Line Numbers"
+      />
+
+      <div className="border-t border-border" />
+
+      {/* Show Diff Background */}
+      <ToggleSwitch
+        checked={diffShowBackground}
+        onChange={(v) => configStore.set('diffShowBackground', v)}
+        label="Show Diff Background"
+        description="Colored backgrounds on added/deleted lines"
+      />
+    </>
+  );
+};
+
 export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange, onIdentityChange, origin, mode = 'plan', onUIPreferencesChange, externalOpen, onExternalClose, aiProviders = [], gitUser }) => {
   const [showDialog, setShowDialog] = useState(false);
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
@@ -124,8 +275,11 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
       t.push({ id: 'saving', label: 'Saving' });
       t.push({ id: 'labels', label: 'Labels' });
     }
-    if (mode === 'review' && aiProviders.length > 0) {
-      t.push({ id: 'ai', label: 'AI' });
+    if (mode === 'review') {
+      t.push({ id: 'display', label: 'Display' });
+      if (aiProviders.length > 0) {
+        t.push({ id: 'ai', label: 'AI' });
+      }
     }
     t.push({ id: 'shortcuts', label: 'Shortcuts' });
     return t;
@@ -603,7 +757,11 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
                 {activeTab === 'theme' && <ThemeTab />}
 
                 {/* === DISPLAY TAB === */}
-                {activeTab === 'display' && (
+                {activeTab === 'display' && mode === 'review' && (
+                  <ReviewDisplayTab />
+                )}
+
+                {activeTab === 'display' && mode !== 'review' && (
                   <>
                     {/* Auto-open Sidebar */}
                     <div className="flex items-center justify-between">

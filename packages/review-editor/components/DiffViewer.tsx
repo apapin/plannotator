@@ -27,6 +27,11 @@ interface DiffViewerProps {
   filePath: string;
   oldPath?: string;
   diffStyle: 'split' | 'unified';
+  diffOverflow?: 'scroll' | 'wrap';
+  diffIndicators?: 'bars' | 'classic' | 'none';
+  lineDiffType?: 'word-alt' | 'word' | 'char' | 'none';
+  disableLineNumbers?: boolean;
+  disableBackground?: boolean;
   annotations: CodeAnnotation[];
   selectedAnnotationId: string | null;
   pendingSelection: SelectedLineRange | null;
@@ -63,6 +68,11 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
   filePath,
   oldPath,
   diffStyle,
+  diffOverflow,
+  diffIndicators = 'bars',
+  lineDiffType,
+  disableLineNumbers,
+  disableBackground,
   annotations,
   selectedAnnotationId,
   pendingSelection,
@@ -225,7 +235,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
     roots.forEach(root =>
       applySearchHighlights(root, query, matches, activeSearchMatchId)
     );
-  }, [searchQuery, searchMatches, filePath, diffStyle, augmentedDiff]);
+  }, [searchQuery, searchMatches, filePath, diffStyle, diffOverflow, diffIndicators, lineDiffType, disableLineNumbers, disableBackground, augmentedDiff]);
 
   // Swap active search highlight instantly when stepping between matches.
   // This avoids a full rebuild just to change two elements' background color.
@@ -238,7 +248,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
   useEffect(() => {
     if (!activeSearchMatch || !containerRef.current) return;
     return retryScrollToSearchMatch(containerRef.current, activeSearchMatch);
-  }, [activeSearchMatch, filePath, diffStyle]);
+  }, [activeSearchMatch, filePath, diffStyle, diffOverflow, diffIndicators, lineDiffType, disableLineNumbers, disableBackground]);
 
   // Map annotations to @pierre/diffs format
   const lineAnnotations = useMemo(() => {
@@ -365,8 +375,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
           [data-file-info] { background-color: ${muted} !important; }
           [data-column-number] { background-color: ${bg} !important; }
           [data-diffs-header] [data-title] { display: none !important; }
-          [data-diff-type='split'][data-overflow='scroll'],
-          [data-diff-type='split'][data-overflow='wrap'] {
+          [data-diff-type='split'][data-overflow='scroll'] {
             grid-template-columns: var(--split-left, 1fr) var(--split-right, 1fr) !important;
           }
         `,
@@ -390,7 +399,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
       />
 
       <div ref={containerRef} className={`flex-1 overflow-auto relative ${isDraggingSplit ? 'select-none' : ''}`} onMouseMove={toolbar.handleMouseMove}>
-      {isSplitLayout && (
+      {isSplitLayout && diffOverflow !== 'wrap' && (
         <div
           className="absolute top-0 bottom-0 z-10 cursor-col-resize group"
           style={{ left: `${splitRatio * 100}%`, width: 9, marginLeft: -4 }}
@@ -402,7 +411,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
       )}
       <div
         className="p-4"
-        style={isSplitLayout ? {
+        style={isSplitLayout && diffOverflow !== 'wrap' ? {
           '--split-left': `${splitRatio}fr`,
           '--split-right': `${1 - splitRatio}fr`,
         } as React.CSSProperties : undefined}
@@ -414,7 +423,11 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
             themeType: pierreTheme.type,
             unsafeCSS: pierreTheme.css,
             diffStyle,
-            diffIndicators: 'bars',
+            overflow: diffOverflow,
+            diffIndicators,
+            lineDiffType,
+            disableLineNumbers,
+            disableBackground,
             hunkSeparators: 'line-info',
             enableLineSelection: true,
             enableHoverUtility: true,

@@ -93,9 +93,12 @@ const ReviewApp: React.FC = () => {
   const [showExportModal, setShowExportModal] = useState(false);
   const [showNoAnnotationsDialog, setShowNoAnnotationsDialog] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [diffStyle, setDiffStyle] = useState<'split' | 'unified'>(() => {
-    return (storage.getItem('review-diff-style') as 'split' | 'unified') || 'split';
-  });
+  const diffStyle = useConfigValue('diffStyle');
+  const diffOverflow = useConfigValue('diffOverflow');
+  const diffIndicators = useConfigValue('diffIndicators');
+  const diffLineDiffType = useConfigValue('diffLineDiffType');
+  const diffShowLineNumbers = useConfigValue('diffShowLineNumbers');
+  const diffShowBackground = useConfigValue('diffShowBackground');
   const [isPanelOpen, setIsPanelOpen] = useState(true);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
   const [viewedFiles, setViewedFiles] = useState<Set<string>>(new Set());
@@ -438,10 +441,8 @@ const ReviewApp: React.FC = () => {
       .finally(() => setIsLoading(false));
   }, []);
 
-  // Handle diff style change
   const handleDiffStyleChange = useCallback((style: 'split' | 'unified') => {
-    setDiffStyle(style);
-    storage.setItem('review-diff-style', style);
+    configStore.set('diffStyle', style);
   }, []);
 
   // Handle line selection from diff viewer
@@ -1058,6 +1059,32 @@ const ReviewApp: React.FC = () => {
               </button>
             </div>
 
+            {/* Overflow toggle */}
+            <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
+              <button
+                onClick={() => configStore.set('diffOverflow', 'scroll')}
+                className={`px-2 py-1 text-xs rounded-md transition-colors ${
+                  diffOverflow === 'scroll'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                title="Scroll long lines horizontally"
+              >
+                Scroll
+              </button>
+              <button
+                onClick={() => configStore.set('diffOverflow', 'wrap')}
+                className={`px-2 py-1 text-xs rounded-md transition-colors ${
+                  diffOverflow === 'wrap'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                title="Wrap long lines"
+              >
+                Wrap
+              </button>
+            </div>
+
             {/* Primary actions */}
             <button
               onClick={handleCopyDiff}
@@ -1377,6 +1404,11 @@ const ReviewApp: React.FC = () => {
                 filePath={activeFile.path}
                 oldPath={activeFile.oldPath}
                 diffStyle={diffStyle}
+                diffOverflow={diffOverflow}
+                diffIndicators={diffIndicators}
+                lineDiffType={diffLineDiffType}
+                disableLineNumbers={!diffShowLineNumbers}
+                disableBackground={!diffShowBackground}
                 annotations={activeFileAnnotations}
                 selectedAnnotationId={selectedAnnotationId}
                 pendingSelection={pendingSelection}

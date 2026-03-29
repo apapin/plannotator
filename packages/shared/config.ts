@@ -10,8 +10,18 @@ import { join } from "path";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { execSync } from "child_process";
 
+export interface DiffOptions {
+  diffStyle?: 'split' | 'unified';
+  overflow?: 'scroll' | 'wrap';
+  diffIndicators?: 'bars' | 'classic' | 'none';
+  lineDiffType?: 'word-alt' | 'word' | 'char' | 'none';
+  showLineNumbers?: boolean;
+  showDiffBackground?: boolean;
+}
+
 export interface PlannotatorConfig {
   displayName?: string;
+  diffOptions?: DiffOptions;
 }
 
 const CONFIG_DIR = join(homedir(), ".plannotator");
@@ -40,7 +50,10 @@ export function loadConfig(): PlannotatorConfig {
 export function saveConfig(partial: Partial<PlannotatorConfig>): void {
   try {
     const current = loadConfig();
-    const merged = { ...current, ...partial };
+    const mergedDiffOptions = (current.diffOptions || partial.diffOptions)
+      ? { ...current.diffOptions, ...partial.diffOptions }
+      : undefined;
+    const merged = { ...current, ...partial, diffOptions: mergedDiffOptions };
     mkdirSync(CONFIG_DIR, { recursive: true });
     writeFileSync(CONFIG_PATH, JSON.stringify(merged, null, 2) + "\n", "utf-8");
   } catch (e) {
@@ -65,6 +78,7 @@ export function detectGitUser(): string | null {
  * Build the serverConfig payload for API responses.
  * Reads config.json fresh each call so the response reflects the latest file on disk.
  */
-export function getServerConfig(gitUser: string | null): { displayName?: string; gitUser?: string } {
-  return { displayName: loadConfig().displayName, gitUser: gitUser ?? undefined };
+export function getServerConfig(gitUser: string | null): { displayName?: string; diffOptions?: DiffOptions; gitUser?: string } {
+  const cfg = loadConfig();
+  return { displayName: cfg.displayName, diffOptions: cfg.diffOptions, gitUser: gitUser ?? undefined };
 }

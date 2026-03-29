@@ -32,6 +32,98 @@ export const SETTINGS = {
       typeof sc.displayName === 'string' && sc.displayName ? sc.displayName : undefined,
     toServer: (v: string) => ({ displayName: v }),
   },
+
+  // --- Diff display options (namespaced under diffOptions in config.json) ---
+
+  diffStyle: {
+    defaultValue: 'split' as 'split' | 'unified',
+    fromCookie: () => {
+      const v = storage.getItem('plannotator-diff-style') ?? storage.getItem('review-diff-style');
+      return v === 'split' || v === 'unified' ? v : undefined;
+    },
+    toCookie: (v: string) => storage.setItem('plannotator-diff-style', v),
+    serverKey: 'diffOptions',
+    fromServer: (sc: Record<string, unknown>) => {
+      const v = (sc.diffOptions as Record<string, unknown> | undefined)?.diffStyle;
+      return v === 'split' || v === 'unified' ? v : undefined;
+    },
+    toServer: (v: string) => ({ diffOptions: { diffStyle: v } }),
+  },
+
+  diffOverflow: {
+    defaultValue: 'scroll' as 'scroll' | 'wrap',
+    fromCookie: () => {
+      const v = storage.getItem('plannotator-diff-overflow');
+      return v === 'scroll' || v === 'wrap' ? v : undefined;
+    },
+    toCookie: (v: string) => storage.setItem('plannotator-diff-overflow', v),
+    serverKey: 'diffOptions',
+    fromServer: (sc: Record<string, unknown>) => {
+      const v = (sc.diffOptions as Record<string, unknown> | undefined)?.overflow;
+      return v === 'scroll' || v === 'wrap' ? v : undefined;
+    },
+    toServer: (v: string) => ({ diffOptions: { overflow: v } }),
+  },
+
+  diffIndicators: {
+    defaultValue: 'bars' as 'bars' | 'classic' | 'none',
+    fromCookie: () => {
+      const v = storage.getItem('plannotator-diff-indicators');
+      return v === 'bars' || v === 'classic' || v === 'none' ? v : undefined;
+    },
+    toCookie: (v: string) => storage.setItem('plannotator-diff-indicators', v),
+    serverKey: 'diffOptions',
+    fromServer: (sc: Record<string, unknown>) => {
+      const v = (sc.diffOptions as Record<string, unknown> | undefined)?.diffIndicators;
+      return v === 'bars' || v === 'classic' || v === 'none' ? v : undefined;
+    },
+    toServer: (v: string) => ({ diffOptions: { diffIndicators: v } }),
+  },
+
+  diffLineDiffType: {
+    defaultValue: 'word-alt' as 'word-alt' | 'word' | 'char' | 'none',
+    fromCookie: () => {
+      const v = storage.getItem('plannotator-diff-line-diff-type');
+      return v === 'word-alt' || v === 'word' || v === 'char' || v === 'none' ? v : undefined;
+    },
+    toCookie: (v: string) => storage.setItem('plannotator-diff-line-diff-type', v),
+    serverKey: 'diffOptions',
+    fromServer: (sc: Record<string, unknown>) => {
+      const v = (sc.diffOptions as Record<string, unknown> | undefined)?.lineDiffType;
+      return v === 'word-alt' || v === 'word' || v === 'char' || v === 'none' ? v : undefined;
+    },
+    toServer: (v: string) => ({ diffOptions: { lineDiffType: v } }),
+  },
+
+  diffShowLineNumbers: {
+    defaultValue: true as boolean,
+    fromCookie: () => {
+      const v = storage.getItem('plannotator-diff-show-line-numbers');
+      return v === 'true' ? true : v === 'false' ? false : undefined;
+    },
+    toCookie: (v: boolean) => storage.setItem('plannotator-diff-show-line-numbers', String(v)),
+    serverKey: 'diffOptions',
+    fromServer: (sc: Record<string, unknown>) => {
+      const v = (sc.diffOptions as Record<string, unknown> | undefined)?.showLineNumbers;
+      return typeof v === 'boolean' ? v : undefined;
+    },
+    toServer: (v: boolean) => ({ diffOptions: { showLineNumbers: v } }),
+  },
+
+  diffShowBackground: {
+    defaultValue: true as boolean,
+    fromCookie: () => {
+      const v = storage.getItem('plannotator-diff-show-background');
+      return v === 'true' ? true : v === 'false' ? false : undefined;
+    },
+    toCookie: (v: boolean) => storage.setItem('plannotator-diff-show-background', String(v)),
+    serverKey: 'diffOptions',
+    fromServer: (sc: Record<string, unknown>) => {
+      const v = (sc.diffOptions as Record<string, unknown> | undefined)?.showDiffBackground;
+      return typeof v === 'boolean' ? v : undefined;
+    },
+    toServer: (v: boolean) => ({ diffOptions: { showDiffBackground: v } }),
+  },
 } satisfies Record<string, SettingDef<unknown>>;
 
 export type SettingsMap = typeof SETTINGS;

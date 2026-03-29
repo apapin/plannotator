@@ -15,6 +15,20 @@ import { SETTINGS, type SettingName, type SettingsMap } from './settings';
 
 type Listener = () => void;
 
+/** Deep-merge source into target, recursing into plain objects. */
+function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): void {
+  for (const key of Object.keys(source)) {
+    if (
+      typeof target[key] === 'object' && target[key] !== null && !Array.isArray(target[key]) &&
+      typeof source[key] === 'object' && source[key] !== null && !Array.isArray(source[key])
+    ) {
+      deepMerge(target[key] as Record<string, unknown>, source[key] as Record<string, unknown>);
+    } else {
+      target[key] = source[key];
+    }
+  }
+}
+
 /** Infer the value type from a SettingDef */
 type SettingValue<K extends SettingName> = SettingsMap[K] extends { defaultValue: infer D }
   ? D extends (...args: unknown[]) => infer R ? R : D
@@ -78,7 +92,7 @@ class ConfigStore {
     def.toCookie(value as never);
 
     if (def.serverKey && def.toServer) {
-      Object.assign(this.pendingServerWrites, def.toServer(value as never));
+      deepMerge(this.pendingServerWrites, def.toServer(value as never) as Record<string, unknown>);
       this.scheduleServerSync();
     }
 

@@ -356,6 +356,11 @@
   filter: invert(1);
 }
 
+/* Copilot icon — white by default, invert in light mode */
+.light .icon-copilot {
+  filter: invert(1);
+}
+
 /* Hero agent selector buttons — glassy, interactive */
 .agent-btn {
   display: inline-flex;

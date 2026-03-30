@@ -55,6 +55,15 @@ import AnnoReplace from './AnnoReplace.astro';
         </button>
         <button
           class="agent-btn"
+          data-agent="copilot"
+          data-command="curl -fsSL https://plannotator.ai/install.sh | bash"
+          data-video=""
+        >
+          <img src="/assets/icon-copilot.svg" alt="" class="w-4 h-4 icon-copilot" />
+          <span>Copilot</span>
+        </button>
+        <button
+          class="agent-btn"
           data-agent="opencode"
           data-command="curl -fsSL https://plannotator.ai/install.sh | bash"
           data-video="https://youtu.be/_N7uo0EFI-U"
@@ -187,6 +196,14 @@ import AnnoReplace from './AnnoReplace.astro';
           'Restart OpenCode to load the plugin'
         ],
         detail: 'Then add to opencode.json:'
+      },
+      copilot: {
+        steps: [
+          '/plugin marketplace add backnotprop/plannotator',
+          '/plugin install plannotator-copilot@plannotator',
+          'Restart Copilot CLI to activate hooks'
+        ],
+        detail: 'Then run in Copilot CLI:'
       },
       pi: {
         detail: 'Or try without installing: pi -e npm:@plannotator/pi-extension'

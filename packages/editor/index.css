@@ -187,17 +187,3 @@ pre code.hljs .hljs-code {
   0%, 100% { opacity: 0; transform: scale(1); }
   50% { opacity: 0.5; transform: scale(2); }
 }
-
-/* Flash highlight for annotated files in sidebar */
-.file-annotation-flash {
-  animation: file-flash 1.2s ease-out;
-}
-
-@keyframes file-flash {
-  0% { background: transparent; }
-  10% { background: var(--muted); }
-  30% { background: transparent; }
-  45% { background: var(--muted); }
-  65% { background: transparent; }
-  100% { background: transparent; }
-}

@@ -116,3 +116,17 @@ body {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
+
+/* Flash highlight for annotated files in sidebar */
+.file-annotation-flash {
+  animation: file-flash 1.2s ease-out;
+}
+
+@keyframes file-flash {
+  0% { background: transparent; }
+  10% { background: var(--muted); }
+  30% { background: transparent; }
+  45% { background: var(--muted); }
+  65% { background: transparent; }
+  100% { background: transparent; }
+}

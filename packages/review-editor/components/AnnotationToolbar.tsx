@@ -106,6 +106,7 @@ export const AnnotationToolbar: React.FC<AnnotationToolbarProps> = ({
           aiHistory={aiHistoryMessages}
           onViewResponse={onViewAIResponse}
           onSwitchToComment={() => setAskAIMode(false)}
+          dragHandleProps={dragHandleProps}
         />
       ) : (
         <div className="w-80">

@@ -40,11 +40,9 @@ interface GitLabDiffEntry {
   renamed_file: boolean;
 }
 
-/** Parse potentially concatenated JSON arrays from glab api --paginate output */
+/** Parse JSON array from glab api --paginate output (already merged by glab) */
 function parsePaginatedArray<T>(stdout: string): T[] {
-  // glab --paginate concatenates pages: [...][...] → merge into one array
-  const fixed = stdout.replace(/\]\s*\[/g, ",");
-  return JSON.parse(fixed) as T[];
+  return JSON.parse(stdout) as T[];
 }
 
 /**

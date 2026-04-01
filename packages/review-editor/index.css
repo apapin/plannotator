@@ -1,10 +1,12 @@
 @import "tailwindcss";
+@import "dockview-react/dist/styles/dockview.css";
 
 /* Tell Tailwind where to scan for classes */
 @source "../ui/components/**/*.tsx";
 @source "../ui/hooks/**/*.ts";
 @source "./*.tsx";
 @source "./components/**/*.tsx";
+@source "./dock/**/*.tsx";
 
 @import "../ui/theme.css";
 
@@ -16,6 +18,80 @@
    search bar vertically aligned across all three columns. */
 :root {
   --panel-header-h: 37px;
+}
+
+/* =====================================================
+   Dockview Theme Bridge
+   Maps dockview CSS variables to Plannotator theme tokens
+   so tabs, separators, and drag overlays inherit our theme.
+   ===================================================== */
+
+.dockview-theme-dark,
+.dockview-theme-light,
+.dv-dockview {
+  --dv-group-view-background-color: var(--background);
+  --dv-tabs-and-actions-container-background-color: var(--card);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--background);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--muted);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--background);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--muted);
+  --dv-tab-divider-color: var(--border);
+  --dv-activegroup-visiblepanel-tab-color: var(--foreground);
+  --dv-activegroup-hiddenpanel-tab-color: var(--muted-foreground);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--foreground);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--muted-foreground);
+  --dv-separator-border: var(--border);
+  --dv-paneview-header-border-color: var(--border);
+  --dv-drag-over-background-color: oklch(from var(--primary) l c h / 0.1);
+  --dv-drag-over-border-color: var(--primary);
+  --dv-icon-hover-background-color: var(--muted);
+  --dv-tabs-and-actions-container-height: 30px;
+  --dv-tabs-and-actions-container-font-size: 0.6875rem;
+  --dv-tab-font-size: 0.6875rem;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+/* Dockview custom tab renderer */
+.dv-review-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0 0.5rem;
+  height: 100%;
+  font-size: 0.6875rem;
+  user-select: none;
+  min-width: 0;
+}
+
+.dv-review-tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.dv-review-tab-close {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 3px;
+  opacity: 0;
+  color: var(--muted-foreground);
+  transition: opacity 150ms, background 150ms, color 150ms;
+}
+
+.dv-review-tab:hover .dv-review-tab-close {
+  opacity: 1;
+}
+
+.dv-review-tab-close:hover {
+  opacity: 1;
+  background: var(--muted);
+  color: var(--foreground);
 }
 
 /* @pierre/diffs theme integration — pass plannotator theme colors into shadow DOM */

@@ -62,7 +62,8 @@ plannotator/
 │   ├── editor/                   # Plan review App.tsx
 │   └── review-editor/            # Code review UI
 │       ├── App.tsx               # Main review app
-│       ├── components/           # DiffViewer, FileTree, ReviewPanel
+│       ├── components/           # DiffViewer, FileTree, ReviewSidebar
+│       ├── dock/                 # Dockview center panel infrastructure
 │       ├── demoData.ts           # Demo diff for standalone mode
 │       └── index.css             # Review-specific styles
 ├── .claude-plugin/marketplace.json  # For marketplace install

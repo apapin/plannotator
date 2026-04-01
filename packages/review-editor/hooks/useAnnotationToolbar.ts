@@ -11,6 +11,7 @@ export interface ToolbarState {
 interface UseAnnotationToolbarArgs {
   patch: string;
   filePath: string;
+  isFocused: boolean;
   onLineSelection: (range: SelectedLineRange | null) => void;
   onAddAnnotation: (type: CodeAnnotationType, text?: string, suggestedCode?: string, originalCode?: string) => void;
   onEditAnnotation: (id: string, text?: string, suggestedCode?: string, originalCode?: string) => void;
@@ -21,9 +22,12 @@ interface Draft {
   commentText: string;
   suggestedCode: string;
   showSuggestedCode: boolean;
+  range: SelectedLineRange;
+  position: { top: number; left: number };
 }
 
 const draftStore = new Map<string, Draft>();
+const restoreDraftKeyByFilePath = new Map<string, string>();
 
 function draftKey(filePath: string, range: SelectedLineRange): string {
   const start = Math.min(range.start, range.end);
@@ -31,7 +35,7 @@ function draftKey(filePath: string, range: SelectedLineRange): string {
   return `${filePath}:${range.side}:${start}-${end}`;
 }
 
-export function useAnnotationToolbar({ patch, filePath, onLineSelection, onAddAnnotation, onEditAnnotation }: UseAnnotationToolbarArgs) {
+export function useAnnotationToolbar({ patch, filePath, isFocused, onLineSelection, onAddAnnotation, onEditAnnotation }: UseAnnotationToolbarArgs) {
   const toolbarRef = useRef<HTMLDivElement>(null);
   const lastMousePosition = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
@@ -51,6 +55,8 @@ export function useAnnotationToolbar({ patch, filePath, onLineSelection, onAddAn
   toolbarStateRef.current = toolbarState;
   const editingRef = useRef(editingAnnotationId);
   editingRef.current = editingAnnotationId;
+  const currentDraftKeyRef = useRef<string | null>(null);
+  const wasFocusedRef = useRef(isFocused);
 
   const saveDraft = useCallback(() => {
     const range = toolbarStateRef.current?.range;
@@ -58,16 +64,29 @@ export function useAnnotationToolbar({ patch, filePath, onLineSelection, onAddAn
     const form = formRef.current;
     const key = draftKey(filePath, range);
     if (form.commentText.trim() || form.suggestedCode.trim()) {
-      draftStore.set(key, { ...form });
+      draftStore.set(key, {
+        ...form,
+        range,
+        position: toolbarStateRef.current?.position ?? { top: 0, left: 0 },
+      });
+      currentDraftKeyRef.current = key;
     } else {
       draftStore.delete(key);
+      if (currentDraftKeyRef.current === key) {
+        currentDraftKeyRef.current = null;
+      }
     }
   }, [filePath]);
 
   const clearDraft = useCallback(() => {
     const range = toolbarStateRef.current?.range;
     if (!range) return;
-    draftStore.delete(draftKey(filePath, range));
+    const key = draftKey(filePath, range);
+    draftStore.delete(key);
+    restoreDraftKeyByFilePath.delete(filePath);
+    if (currentDraftKeyRef.current === key) {
+      currentDraftKeyRef.current = null;
+    }
   }, [filePath]);
 
   // Save draft on unmount (e.g. file switch)
@@ -122,6 +141,8 @@ export function useAnnotationToolbar({ patch, filePath, onLineSelection, onAddAn
       },
       range,
     });
+    currentDraftKeyRef.current = draftKey(filePath, range);
+    restoreDraftKeyByFilePath.delete(filePath);
 
     // Pre-extract original code from selected lines
     const side = range.side === 'additions' ? 'new' : 'old';
@@ -192,6 +213,43 @@ export function useAnnotationToolbar({ patch, filePath, onLineSelection, onAddAn
     ref: toolbarRef,
     onDismiss: handleDismiss,
   });
+
+  useEffect(() => {
+    const wasFocused = wasFocusedRef.current;
+    wasFocusedRef.current = isFocused;
+
+    if (wasFocused && !isFocused) {
+      const key = currentDraftKeyRef.current;
+      if (key && draftStore.has(key)) {
+        restoreDraftKeyByFilePath.set(filePath, key);
+      }
+      return;
+    }
+
+    if (!wasFocused && isFocused && !toolbarStateRef.current) {
+      const key = restoreDraftKeyByFilePath.get(filePath);
+      const draft = key ? draftStore.get(key) : undefined;
+      if (!draft) return;
+
+      setCommentText(draft.commentText);
+      setSuggestedCode(draft.suggestedCode);
+      setShowSuggestedCode(draft.showSuggestedCode);
+      setEditingAnnotationId(null);
+      setShowCodeModal(false);
+      setToolbarState({
+        position: draft.position,
+        range: draft.range,
+      });
+      currentDraftKeyRef.current = key;
+      restoreDraftKeyByFilePath.delete(filePath);
+
+      const side = draft.range.side === 'additions' ? 'new' : 'old';
+      const start = Math.min(draft.range.start, draft.range.end);
+      const end = Math.max(draft.range.start, draft.range.end);
+      setSelectedOriginalCode(extractLinesFromPatch(patch, start, end, side as 'old' | 'new'));
+      onLineSelection(draft.range);
+    }
+  }, [filePath, isFocused, onLineSelection, patch]);
 
   return {
     // State

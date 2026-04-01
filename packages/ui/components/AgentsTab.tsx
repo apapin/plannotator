@@ -9,6 +9,7 @@ interface AgentsTabProps {
   onKillJob: (id: string) => void;
   onKillAll: () => void;
   externalAnnotations: Array<{ source?: string }>;
+  onOpenJobDetail?: (jobId: string) => void;
 }
 
 // --- Duration display ---
@@ -98,12 +99,14 @@ function JobCard({
   onKill,
   expanded,
   onToggle,
+  onViewDetails,
 }: {
   job: AgentJobInfo;
   annotationCount: number;
   onKill: () => void;
   expanded: boolean;
   onToggle: () => void;
+  onViewDetails?: () => void;
 }) {
   const isTerminal = isTerminalStatus(job.status);
 
@@ -138,20 +141,36 @@ function JobCard({
 
       <div className="flex items-center justify-between mt-1.5">
         <StatusBadge status={job.status} />
-        {!isTerminal && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onKill();
-            }}
-            className="p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all"
-            title="Kill agent"
-          >
-            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        )}
+        <div className="flex items-center gap-1">
+          {onViewDetails && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onViewDetails();
+              }}
+              className="p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-primary/10 text-muted-foreground hover:text-primary transition-all"
+              title="View details"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+              </svg>
+            </button>
+          )}
+          {!isTerminal && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onKill();
+              }}
+              className="p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all"
+              title="Kill agent"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Error details */}
@@ -175,6 +194,7 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
   onKillJob,
   onKillAll,
   externalAnnotations,
+  onOpenJobDetail,
 }) => {
   const [selectedProvider, setSelectedProvider] = useState<string>('');
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
@@ -292,6 +312,7 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
               onKill={() => onKillJob(job.id)}
               expanded={expandedJobId === job.id}
               onToggle={() => setExpandedJobId(expandedJobId === job.id ? null : job.id)}
+              onViewDetails={onOpenJobDetail ? () => onOpenJobDetail(job.id) : undefined}
             />
           ))
         )}

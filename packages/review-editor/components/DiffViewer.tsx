@@ -26,6 +26,7 @@ interface DiffViewerProps {
   patch: string;
   filePath: string;
   oldPath?: string;
+  isFocused?: boolean;
   diffStyle: 'split' | 'unified';
   diffOverflow?: 'scroll' | 'wrap';
   diffIndicators?: 'bars' | 'classic' | 'none';
@@ -69,6 +70,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
   patch,
   filePath,
   oldPath,
+  isFocused = false,
   diffStyle,
   diffOverflow,
   diffIndicators = 'bars',
@@ -160,7 +162,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
     storage.setItem('review-split-ratio', '0.5');
   }, []);
 
-  const toolbar = useAnnotationToolbar({ patch, filePath, onLineSelection, onAddAnnotation, onEditAnnotation });
+  const toolbar = useAnnotationToolbar({ patch, filePath, isFocused, onLineSelection, onAddAnnotation, onEditAnnotation });
 
   // Parse patch into FileDiffMetadata for @pierre/diffs FileDiff component
   const fileDiff = useMemo(() => getSingularPatch(patch), [patch]);

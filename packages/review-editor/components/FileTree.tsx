@@ -10,6 +10,7 @@ interface FileTreeProps {
   files: DiffFile[];
   activeFileIndex: number;
   onSelectFile: (index: number) => void;
+  onDoubleClickFile?: (index: number) => void;
   annotations: CodeAnnotation[];
   viewedFiles: Set<string>;
   onToggleViewed?: (filePath: string) => void;
@@ -42,6 +43,7 @@ export const FileTree: React.FC<FileTreeProps> = ({
   files,
   activeFileIndex,
   onSelectFile,
+  onDoubleClickFile,
   annotations,
   viewedFiles,
   onToggleViewed,
@@ -363,6 +365,7 @@ export const FileTree: React.FC<FileTreeProps> = ({
               onToggleFolder={handleToggleFolder}
               activeFileIndex={activeFileIndex}
               onSelectFile={onSelectFile}
+              onDoubleClickFile={onDoubleClickFile}
               viewedFiles={viewedFiles}
               onToggleViewed={onToggleViewed}
               hideViewedFiles={hideViewedFiles}

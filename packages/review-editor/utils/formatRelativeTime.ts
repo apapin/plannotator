@@ -1,7 +1,7 @@
 /**
  * Human-readable relative timestamps for the review UI.
  *
- * Used by AITab (chat message timestamps) and ReviewPanel (annotation timestamps).
+ * Used by AITab (chat message timestamps) and ReviewSidebar (annotation timestamps).
  * Returns compact strings: "now", "3m", "2h", "5d", or "Mar 15" for older dates.
  */
 export function formatRelativeTime(ts: number): string {

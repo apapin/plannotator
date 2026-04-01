@@ -19,6 +19,7 @@ export function formatTopLevelHelp(): string {
     "  plannotator last",
     "  plannotator archive",
     "  plannotator sessions",
+    "  plannotator improve-context",
     "",
     "Note:",
     "  running 'plannotator' without arguments is for hook integration and expects JSON on stdin",

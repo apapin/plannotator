@@ -1,7 +1,7 @@
 /**
  * Plannotator CLI for Claude Code & Copilot CLI
  *
- * Supports seven modes:
+ * Supports eight modes:
  *
  * 1. Plan Review (default, no args):
  *    - Spawned by ExitPlanMode hook (Claude Code)
@@ -37,6 +37,11 @@
  *    - Annotate the last assistant message from a Copilot CLI session
  *    - Parses events.jsonl from session state
  *
+ * 8. Improve Context (`plannotator improve-context`):
+ *    - Spawned by PreToolUse hook on EnterPlanMode
+ *    - Reads improvement hook file from ~/.plannotator/hooks/
+ *    - Returns additionalContext or silently passes through
+ *
  * Global flags:
  *   --help             - Show top-level usage information
  *   --browser <name>   - Override which browser to open (e.g. "Google Chrome")
@@ -68,6 +73,7 @@ import { registerSession, unregisterSession, listSessions } from "@plannotator/s
 import { openBrowser } from "@plannotator/server/browser";
 import { detectProjectName } from "@plannotator/server/project";
 import { planDenyFeedback } from "@plannotator/shared/feedback-templates";
+import { readImprovementHook } from "@plannotator/shared/improvement-hooks";
 import type { Origin } from "@plannotator/shared/agents";
 import { findSessionLogsForCwd, resolveSessionLogByPpid, findSessionLogsByAncestorWalk, getLastRenderedMessage, type RenderedMessage } from "./session-log";
 import { findCodexRolloutByThreadId, getLastCodexMessage } from "./codex-session";
@@ -698,6 +704,37 @@ if (args[0] === "sessions") {
   server.stop();
 
   console.log(result.feedback || "No feedback provided.");
+  process.exit(0);
+
+} else if (args[0] === "improve-context") {
+  // ============================================
+  // IMPROVEMENT HOOK CONTEXT INJECTION MODE
+  // ============================================
+  //
+  // Called by PreToolUse hook on EnterPlanMode.
+  // Reads the improvement hook file and returns additionalContext.
+  // No file = exit 0 silently (passthrough).
+
+  // Must consume stdin (Claude Code hooks deliver event JSON on stdin)
+  await Bun.stdin.text();
+
+  const hook = readImprovementHook("enterplanmode-improve");
+  if (!hook) process.exit(0);
+
+  const context = [
+    "[Plannotator Improvement Hook]",
+    "The following corrective instructions were generated from analysis of previous plan denial patterns.",
+    "Apply these guidelines when writing your plan:\n",
+    hook.content,
+  ].join("\n");
+
+  console.log(JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      additionalContext: context,
+    },
+  }));
+
   process.exit(0);
 
 } else {

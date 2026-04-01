@@ -122,6 +122,10 @@ diffs-container {
 /* Review comment thread styling */
 .review-comment {
   position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   background: var(--popover);
   border: 1px solid var(--border);
   border-radius: 2px;
@@ -140,6 +144,7 @@ diffs-container {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  min-width: 0;
   margin-bottom: 0.25rem;
   font-size: 0.6875rem;
   color: var(--muted-foreground);
@@ -174,9 +179,13 @@ diffs-container {
   background: oklch(from var(--destructive) l c h / 0.1);
 }
 
-.review-comment-body {
+.review-comment > .review-comment-body {
+  min-width: 0;
   color: var(--foreground);
   line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* Inline markdown in review comments */

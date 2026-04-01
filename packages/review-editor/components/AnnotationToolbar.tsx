@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { ToolbarState } from '../hooks/useAnnotationToolbar';
 import { useTabIndent } from '../hooks/useTabIndent';
 import { formatLineRange } from '../utils/formatLineRange';
@@ -81,7 +82,7 @@ export const AnnotationToolbar: React.FC<AnnotationToolbarProps> = ({
     onCancel(); // close the whole toolbar
   };
 
-  return (
+  const content = (
     <div
       ref={toolbarRef}
       className="review-toolbar"
@@ -216,4 +217,10 @@ export const AnnotationToolbar: React.FC<AnnotationToolbarProps> = ({
       )}
     </div>
   );
+
+  if (typeof document === 'undefined') {
+    return content;
+  }
+
+  return createPortal(content, document.body);
 };

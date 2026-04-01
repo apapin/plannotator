@@ -196,6 +196,7 @@ const ReviewApp: React.FC = () => {
   const mrLabel = prMetadata ? getMRLabel(prMetadata) : 'PR';
   const mrNumberLabel = prMetadata ? getMRNumberLabel(prMetadata) : '';
   const displayRepo = prMetadata ? getDisplayRepo(prMetadata) : '';
+  const appVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
 
   const identity = useConfigValue('displayName');
 
@@ -297,6 +298,12 @@ const ReviewApp: React.FC = () => {
     activeFilePath: files[activeFileIndex]?.path ?? null,
     onRevealMatch: handleRevealSearchMatch,
   });
+
+  const hasSearchableFiles = files.length > 0;
+  const shouldShowFileTree =
+    hasSearchableFiles ||
+    !!gitContext?.diffOptions?.length ||
+    !!gitContext?.worktrees?.length;
 
   // Merge local + SSE annotations, deduping draft-restored externals against
   // live SSE versions. Prefer the SSE version when both exist (same source,
@@ -480,11 +487,15 @@ const ReviewApp: React.FC = () => {
       }
     });
 
-    // Hide Dockview chrome only for the true single-panel case.
-    // Once the user splits the layout, every group needs a visible header so
-    // panels can still be dragged, re-arranged, and closed.
+    // Hide Dockview chrome only for the dedicated single diff tab.
+    // Any lone non-diff panel still needs a visible header so it can be
+    // dragged, closed, and used as a way back out of the dock.
     const updateHeaders = () => {
-      const hideHeaders = event.api.totalPanels <= 1 && event.api.groups.length <= 1;
+      const lonePanel =
+        event.api.totalPanels === 1 && event.api.groups.length === 1
+          ? event.api.groups[0]?.panels[0]
+          : undefined;
+      const hideHeaders = lonePanel?.id === REVIEW_DIFF_PANEL_ID;
       for (const group of event.api.groups) {
         group.header.hidden = hideHeaders;
       }
@@ -548,9 +559,9 @@ const ReviewApp: React.FC = () => {
   // Global keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Cmd/Ctrl+F to focus search (only when sidebar is rendered)
+      // Cmd/Ctrl+F to focus file search when diff files are available.
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f' && !isTypingTarget(e.target)) {
-        if (files.length > 1 || gitContext?.diffOptions) {
+        if (hasSearchableFiles) {
           e.preventDefault();
           openSearch();
         }
@@ -590,7 +601,7 @@ const ReviewApp: React.FC = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showExportModal, showDestinationMenu, isSearchOpen, searchQuery, searchMatches, isSearchPending, openSearch, stepSearchMatch, clearSearch, closeSearch, files, gitContext?.diffOptions]);
+  }, [showExportModal, showDestinationMenu, isSearchOpen, searchQuery, searchMatches, isSearchPending, openSearch, stepSearchMatch, clearSearch, closeSearch, hasSearchableFiles]);
 
 
   // Load diff content - try API first, fall back to demo
@@ -1292,55 +1303,49 @@ const ReviewApp: React.FC = () => {
       <div className="h-screen flex flex-col bg-background overflow-hidden">
         {/* Header */}
         <header className="h-12 flex items-center justify-between px-2 md:px-4 border-b border-border/50 bg-card/50 backdrop-blur-xl z-50">
-          <div className="flex items-center gap-2 md:gap-3">
-            <a
-              href="https://github.com/backnotprop/plannotator"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 md:gap-2 hover:opacity-80 transition-opacity"
-            >
-              <span className="text-sm font-semibold tracking-tight">Plannotator</span>
-            </a>
-            <a
-              href="https://github.com/backnotprop/plannotator/releases"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-muted-foreground font-mono opacity-60 hidden md:inline hover:opacity-100 transition-opacity"
-            >
-              v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0'}
-            </a>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium hidden md:inline ${
-              prMetadata ? 'bg-violet-500/15 text-violet-400' : 'bg-secondary/15 text-secondary'
-            }`}>
-              {prMetadata ? `${mrLabel} Review` : 'Code Review'}
-            </span>
+          <div className="min-w-0 flex items-center gap-2 md:gap-3">
             {prMetadata ? (
-              <>
-                <span className="text-muted-foreground/40 hidden md:inline">|</span>
-                <span className="text-xs text-muted-foreground/60 hidden md:inline-flex items-center gap-1">
-                  <RepoIcon className="w-3 h-3" />
+              <div className="min-w-0 flex items-center gap-2 md:gap-3">
+                <span
+                  className="text-xs text-muted-foreground/60 inline-flex items-center gap-1 truncate max-w-[200px]"
+                  title={displayRepo}
+                >
+                  <RepoIcon className="w-3 h-3 flex-shrink-0" />
                   {displayRepo}
                 </span>
                 <a
                   href={prMetadata.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs text-accent/80 hover:text-accent hidden md:inline-flex items-center gap-1 truncate max-w-[300px] transition-colors"
+                  className="text-xs text-accent/80 hover:text-accent inline-flex items-center gap-1 truncate max-w-[340px] transition-colors"
                   title={prMetadata.title}
                 >
                   <PullRequestIcon className="w-3 h-3 flex-shrink-0" />
-                  {mrNumberLabel} {prMetadata.title}
+                  <span className="font-mono whitespace-nowrap">{mrNumberLabel}</span>
+                  <span className="truncate hidden md:inline">{prMetadata.title}</span>
                 </a>
-              </>
+              </div>
             ) : repoInfo ? (
-              <>
-                <span className="text-muted-foreground/40 hidden md:inline">|</span>
-                <span className="text-xs text-muted-foreground/60 hidden md:inline-flex items-center gap-1 truncate max-w-[200px]" title={repoInfo.display}>
+              <div className="min-w-0 flex items-center gap-2 md:gap-3">
+                {repoInfo.branch && (
+                  <span
+                    className="text-xs font-mono text-foreground truncate"
+                    title={repoInfo.branch}
+                  >
+                    {repoInfo.branch}
+                  </span>
+                )}
+                <span
+                  className="text-xs text-muted-foreground/60 inline-flex items-center gap-1 truncate max-w-[220px]"
+                  title={repoInfo.display}
+                >
                   <RepoIcon className="w-3 h-3 flex-shrink-0" />
                   {repoInfo.display}
                 </span>
-              </>
-            ) : null}
+              </div>
+            ) : (
+              <span className="text-xs text-muted-foreground/70">Review</span>
+            )}
           </div>
 
           <div className="flex items-center gap-1 md:gap-2">
@@ -1546,14 +1551,15 @@ const ReviewApp: React.FC = () => {
               onTogglePanel={() => setIsPanelOpen(!isPanelOpen)}
               onOpenSettings={() => setOpenSettingsMenu(true)}
               onOpenExport={() => setShowExportModal(true)}
+              appVersion={appVersion}
             />
           </div>
         </header>
 
         {/* Main content */}
         <div className={`flex-1 flex overflow-hidden ${isResizing ? 'select-none' : ''}`}>
-          {/* File tree sidebar - show when multiple files OR diff options available */}
-          {(files.length > 1 || gitContext?.diffOptions) && (
+          {/* Left sidebar stays mounted whenever it provides navigation or context. */}
+          {shouldShowFileTree && (
             <>
               <FileTree
                 files={files}
@@ -1565,7 +1571,7 @@ const ReviewApp: React.FC = () => {
                 onToggleViewed={handleToggleViewed}
                 hideViewedFiles={hideViewedFiles}
                 onToggleHideViewed={() => setHideViewedFiles(prev => !prev)}
-                enableKeyboardNav={!showExportModal}
+                enableKeyboardNav={!showExportModal && hasSearchableFiles}
                 diffOptions={gitContext?.diffOptions}
                 activeDiffType={activeDiffBase}
                 onSelectDiff={handleDiffSwitch}
@@ -1579,19 +1585,19 @@ const ReviewApp: React.FC = () => {
                 onCopyRawDiff={handleCopyDiff}
                 canCopyRawDiff={!!diffData?.rawPatch}
                 copyRawDiffStatus={copyRawDiffStatus}
-                searchQuery={searchQuery}
-                isSearchOpen={isSearchOpen}
+                searchQuery={hasSearchableFiles ? searchQuery : ''}
+                isSearchOpen={hasSearchableFiles ? isSearchOpen : false}
                 isSearchPending={isSearchPending}
-                searchInputRef={searchInputRef}
-                onOpenSearch={openSearch}
-                onSearchChange={handleSearchInputChange}
-                onSearchClear={clearSearch}
-                onSearchClose={closeSearch}
-                searchGroups={searchGroups}
-                searchMatches={searchMatches}
-                activeSearchMatchId={activeSearchMatchId}
-                onSelectSearchMatch={handleSelectSearchMatch}
-                onStepSearchMatch={stepSearchMatch}
+                searchInputRef={hasSearchableFiles ? searchInputRef : undefined}
+                onOpenSearch={hasSearchableFiles ? openSearch : undefined}
+                onSearchChange={hasSearchableFiles ? handleSearchInputChange : undefined}
+                onSearchClear={hasSearchableFiles ? clearSearch : undefined}
+                onSearchClose={hasSearchableFiles ? closeSearch : undefined}
+                searchGroups={hasSearchableFiles ? searchGroups : []}
+                searchMatches={hasSearchableFiles ? searchMatches : []}
+                activeSearchMatchId={hasSearchableFiles ? activeSearchMatchId : null}
+                onSelectSearchMatch={hasSearchableFiles ? handleSelectSearchMatch : undefined}
+                onStepSearchMatch={hasSearchableFiles ? stepSearchMatch : undefined}
               />
               <ResizeHandle {...fileTreeResize.handleProps} side="left" />
             </>

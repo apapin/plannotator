@@ -1,4 +1,10 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React from 'react';
+import {
+  ActionMenu,
+  ActionMenuDivider,
+  ActionMenuItem,
+  ActionMenuSectionLabel,
+} from './ActionMenu';
 import { useTheme } from './ThemeProvider';
 
 interface MobileMenuProps {
@@ -29,49 +35,36 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({
   sharingEnabled,
   className,
 }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
   const { theme, setTheme } = useTheme();
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleClickOutside = (e: PointerEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('pointerdown', handleClickOutside);
-    return () => document.removeEventListener('pointerdown', handleClickOutside);
-  }, [isOpen]);
-
-  const handleAction = (action: () => void) => {
-    setIsOpen(false);
-    action();
-  };
-
   return (
-    <div className={`relative ${className ?? ''}`} ref={menuRef}>
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-        title="Menu"
-      >
-        {isOpen ? (
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        ) : (
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-          </svg>
-        )}
-      </button>
-
-      {isOpen && (
-        <div className="absolute top-full right-0 mt-1 w-56 bg-popover border border-border rounded-lg shadow-xl z-[70] py-1">
-          {/* Theme toggle */}
+    <ActionMenu
+      className={className}
+      renderTrigger={({ isOpen, toggleMenu }) => (
+        <button
+          onClick={toggleMenu}
+          className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          title="Menu"
+        >
+          {isOpen ? (
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          ) : (
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          )}
+        </button>
+      )}
+      panelClassName="absolute top-full right-0 mt-1 w-56 bg-popover border border-border rounded-lg shadow-xl z-[70] py-1"
+    >
+      {({ closeMenu }) => (
+        <>
           <div className="px-3 py-2">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Theme</div>
+            <div className="mb-1.5">
+              <ActionMenuSectionLabel>Theme</ActionMenuSectionLabel>
+            </div>
             <div className="flex items-center gap-1 bg-muted/50 rounded-lg p-0.5">
               {(['light', 'dark', 'system'] as const).map((t) => (
                 <button
@@ -89,91 +82,89 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({
             </div>
           </div>
 
-          <div className="my-1 border-t border-border" />
+          <ActionMenuDivider />
 
-          {/* Settings */}
-          <MenuItem
-            onClick={() => handleAction(onOpenSettings)}
+          <ActionMenuItem
+            onClick={() => {
+              closeMenu();
+              onOpenSettings();
+            }}
             icon={<SettingsIcon />}
             label="Settings"
           />
 
-          {/* Annotations panel toggle */}
-          <MenuItem
-            onClick={() => handleAction(onTogglePanel)}
+          <ActionMenuItem
+            onClick={() => {
+              closeMenu();
+              onTogglePanel();
+            }}
             icon={<AnnotationsIcon />}
             label={isPanelOpen ? 'Hide Annotations' : 'Show Annotations'}
-            badge={annotationCount > 0 ? annotationCount : undefined}
+            badge={annotationCount > 0 ? (
+              <span className="text-[10px] font-mono bg-muted px-1.5 py-0.5 rounded text-muted-foreground">
+                {annotationCount}
+              </span>
+            ) : undefined}
           />
 
-          <div className="my-1 border-t border-border" />
+          <ActionMenuDivider />
 
-          {/* Export */}
-          <MenuItem
-            onClick={() => handleAction(onOpenExport)}
+          <ActionMenuItem
+            onClick={() => {
+              closeMenu();
+              onOpenExport();
+            }}
             icon={<ExportIcon />}
             label="Export"
           />
 
-          {/* Download */}
-          <MenuItem
-            onClick={() => handleAction(onDownloadAnnotations)}
+          <ActionMenuItem
+            onClick={() => {
+              closeMenu();
+              onDownloadAnnotations();
+            }}
             icon={<DownloadIcon />}
             label="Download Annotations"
           />
 
-          {/* Print */}
-          <MenuItem
-            onClick={() => handleAction(onPrint)}
+          <ActionMenuItem
+            onClick={() => {
+              closeMenu();
+              onPrint();
+            }}
             icon={<PrintIcon />}
             label="Print Plan"
           />
 
-          {/* Share link */}
           {sharingEnabled && (
-            <MenuItem
-              onClick={() => handleAction(onCopyShareLink)}
+            <ActionMenuItem
+              onClick={() => {
+                closeMenu();
+                onCopyShareLink();
+              }}
               icon={<LinkIcon />}
               label="Copy Share Link"
             />
           )}
 
-          {/* Import */}
           {sharingEnabled && (
             <>
-              <div className="my-1 border-t border-border" />
-              <MenuItem
-                onClick={() => handleAction(onOpenImport)}
+              <ActionMenuDivider />
+              <ActionMenuItem
+                onClick={() => {
+                  closeMenu();
+                  onOpenImport();
+                }}
                 icon={<ImportIcon />}
                 label="Import Review"
               />
             </>
           )}
-        </div>
+        </>
       )}
-    </div>
+    </ActionMenu>
   );
 };
-
-const MenuItem: React.FC<{
-  onClick: () => void;
-  icon: React.ReactNode;
-  label: string;
-  badge?: number;
-}> = ({ onClick, icon, label, badge }) => (
-  <button
-    onClick={onClick}
-    className="w-full text-left px-3 py-2 text-xs hover:bg-muted transition-colors flex items-center gap-2"
-  >
-    <span className="text-muted-foreground">{icon}</span>
-    <span className="flex-1">{label}</span>
-    {badge !== undefined && (
-      <span className="text-[10px] font-mono bg-muted px-1.5 py-0.5 rounded text-muted-foreground">
-        {badge}
-      </span>
-    )}
-  </button>
-);
 
 // Icons
 const SettingsIcon = () => (

@@ -1,4 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo } from 'react';
+import {
+  ActionMenu,
+  ActionMenuDivider,
+  ActionMenuItem,
+  ActionMenuSectionLabel,
+} from '@plannotator/ui/components/ActionMenu';
 import { useTheme } from '@plannotator/ui/components/ThemeProvider';
 
 interface ReviewHeaderMenuProps {
@@ -7,6 +13,7 @@ interface ReviewHeaderMenuProps {
   onTogglePanel: () => void;
   onOpenSettings: () => void;
   onOpenExport: () => void;
+  appVersion: string;
 }
 
 export const ReviewHeaderMenu: React.FC<ReviewHeaderMenuProps> = ({
@@ -15,79 +22,60 @@ export const ReviewHeaderMenu: React.FC<ReviewHeaderMenuProps> = ({
   onTogglePanel,
   onOpenSettings,
   onOpenExport,
+  appVersion,
 }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
   const { theme, resolvedMode, setTheme } = useTheme();
   const activeTheme = useMemo<'light' | 'dark'>(() => {
     return theme === 'system' ? resolvedMode : theme;
   }, [resolvedMode, theme]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setIsOpen(false);
-      }
-    };
-
-    document.addEventListener('pointerdown', handlePointerDown);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDown);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isOpen]);
-
-  const handleAction = (action: () => void) => {
-    setIsOpen(false);
-    action();
-  };
-
   return (
-    <div ref={menuRef} className="relative">
-      <button
-        onClick={() => setIsOpen(open => !open)}
-        className={`flex items-center gap-1.5 p-1.5 md:px-2.5 md:py-1 rounded-md text-xs font-medium transition-colors ${
-          isOpen
-            ? 'bg-muted text-foreground'
-            : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-        }`}
-        title="Options"
-        aria-label="Options"
-        aria-expanded={isOpen}
-      >
-        {isOpen ? <CloseIcon /> : <MenuIcon />}
-        <span className="hidden md:inline">Options</span>
-      </button>
-
-      {isOpen && (
-        <div className="absolute top-full right-0 mt-1 w-56 rounded-lg border border-border bg-popover py-1 shadow-xl z-[70]">
-          <MenuItem
-            onClick={() => handleAction(onTogglePanel)}
+    <ActionMenu
+      renderTrigger={({ isOpen, toggleMenu }) => (
+        <button
+          onClick={toggleMenu}
+          className={`flex items-center gap-1.5 p-1.5 md:px-2.5 md:py-1 rounded-md text-xs font-medium transition-colors ${
+            isOpen
+              ? 'bg-muted text-foreground'
+              : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+          }`}
+          title="Options"
+          aria-label="Options"
+          aria-expanded={isOpen}
+        >
+          {isOpen ? <CloseIcon /> : <MenuIcon />}
+          <span className="hidden md:inline">Options</span>
+        </button>
+      )}
+    >
+      {({ closeMenu }) => (
+        <>
+          <ActionMenuItem
+            onClick={() => {
+              closeMenu();
+              onTogglePanel();
+            }}
             icon={<AnnotationsIcon />}
             label={isPanelOpen ? 'Hide Annotations' : 'Show Annotations'}
-            badge={annotationCount > 0 ? annotationCount : undefined}
+            badge={annotationCount > 0 ? (
+              <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                {annotationCount}
+              </span>
+            ) : undefined}
           />
 
-          <div className="my-1 border-t border-border" />
+          <ActionMenuDivider />
 
           <div className="px-3 py-2 space-y-1.5">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Theme
-            </div>
+            <ActionMenuSectionLabel>Theme</ActionMenuSectionLabel>
             <div className="flex items-center gap-1 rounded-lg bg-muted/50 p-0.5">
               {(['light', 'dark'] as const).map((mode) => (
                 <button
                   key={mode}
-                  onClick={() => handleAction(() => setTheme(mode))}
+                  onClick={() => {
+                    closeMenu();
+                    setTheme(mode);
+                  }}
                   className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${
                     activeTheme === mode
                       ? 'bg-background text-foreground shadow-sm'
@@ -101,43 +89,60 @@ export const ReviewHeaderMenu: React.FC<ReviewHeaderMenuProps> = ({
             </div>
           </div>
 
-          <div className="my-1 border-t border-border" />
+          <ActionMenuDivider />
 
-          <MenuItem
-            onClick={() => handleAction(onOpenSettings)}
+          <ActionMenuItem
+            onClick={() => {
+              closeMenu();
+              onOpenSettings();
+            }}
             icon={<SettingsIcon />}
             label="Settings"
           />
-          <MenuItem
-            onClick={() => handleAction(onOpenExport)}
+          <ActionMenuItem
+            onClick={() => {
+              closeMenu();
+              onOpenExport();
+            }}
             icon={<ExportIcon />}
             label="Export"
           />
-        </div>
+
+          <ActionMenuDivider />
+
+          <div className="px-3 py-2 space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <ActionMenuSectionLabel>Plannotator</ActionMenuSectionLabel>
+              <span className="text-[10px] font-mono text-muted-foreground/70">
+                v{appVersion}
+              </span>
+            </div>
+            <div className="flex flex-col items-start gap-1 text-[11px]">
+              <a
+                href="https://github.com/backnotprop/plannotator/releases"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={closeMenu}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Release notes
+              </a>
+              <a
+                href="https://github.com/backnotprop/plannotator"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={closeMenu}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Project repo
+              </a>
+            </div>
+          </div>
+        </>
       )}
-    </div>
+    </ActionMenu>
   );
 };
-
-const MenuItem: React.FC<{
-  onClick: () => void;
-  icon: React.ReactNode;
-  label: string;
-  badge?: number;
-}> = ({ onClick, icon, label, badge }) => (
-  <button
-    onClick={onClick}
-    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-muted"
-  >
-    <span className="text-muted-foreground">{icon}</span>
-    <span className="flex-1">{label}</span>
-    {badge !== undefined && (
-      <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-        {badge}
-      </span>
-    )}
-  </button>
-);
 
 const MenuIcon = () => (
   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

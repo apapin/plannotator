@@ -271,15 +271,29 @@ priority = 100
     if (Test-Path $geminiSettings) {
         $content = Get-Content -Path $geminiSettings -Raw -ErrorAction SilentlyContinue
         if ($content -notmatch '"plannotator"') {
-            Write-Host ""
-            Write-Host "Add the following to your ~/.gemini/settings.json hooks:"
-            Write-Host ""
-            Write-Host '  "hooks": {'
-            Write-Host '    "BeforeTool": [{'
-            Write-Host '      "matcher": "exit_plan_mode",'
-            Write-Host '      "hooks": [{"type": "command", "command": "plannotator", "timeout": 345600}]'
-            Write-Host '    }]'
-            Write-Host '  }'
+            # Merge hook into existing settings.json using node (ships with Gemini CLI)
+            if (Get-Command node -ErrorAction SilentlyContinue) {
+                $mergeScript = @"
+const fs = require('fs');
+const settings = JSON.parse(fs.readFileSync('$($geminiSettings.Replace('\','/'))', 'utf8'));
+if (!settings.hooks) settings.hooks = {};
+if (!settings.hooks.BeforeTool) settings.hooks.BeforeTool = [];
+settings.hooks.BeforeTool.push({"matcher":"exit_plan_mode","hooks":[{"type":"command","command":"plannotator","timeout":345600}]});
+fs.writeFileSync('$($geminiSettings.Replace('\','/'))', JSON.stringify(settings, null, 2) + '\n');
+"@
+                node -e $mergeScript
+                Write-Host "Added plannotator hook to $geminiSettings"
+            } else {
+                Write-Host ""
+                Write-Host "Add the following to your ~/.gemini/settings.json hooks:"
+                Write-Host ""
+                Write-Host '  "hooks": {'
+                Write-Host '    "BeforeTool": [{'
+                Write-Host '      "matcher": "exit_plan_mode",'
+                Write-Host '      "hooks": [{"type": "command", "command": "plannotator", "timeout": 345600}]'
+                Write-Host '    }]'
+                Write-Host '  }'
+            }
         }
     } else {
         @'

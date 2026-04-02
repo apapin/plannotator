@@ -257,17 +257,32 @@ GEMINI_POLICY_EOF
 
     # Configure hook in settings.json
     GEMINI_SETTINGS="$HOME/.gemini/settings.json"
+    PLANNOTATOR_HOOK='{"matcher":"exit_plan_mode","hooks":[{"type":"command","command":"plannotator","timeout":345600}]}'
+
     if [ -f "$GEMINI_SETTINGS" ]; then
         if ! grep -q '"plannotator"' "$GEMINI_SETTINGS" 2>/dev/null; then
-            echo ""
-            echo "Add the following to your ~/.gemini/settings.json hooks:"
-            echo ""
-            echo '  "hooks": {'
-            echo '    "BeforeTool": [{'
-            echo '      "matcher": "exit_plan_mode",'
-            echo '      "hooks": [{"type": "command", "command": "plannotator", "timeout": 345600}]'
-            echo '    }]'
-            echo '  }'
+            # Merge hook into existing settings.json using node (ships with Gemini CLI)
+            if command -v node &>/dev/null; then
+                node -e "
+                  const fs = require('fs');
+                  const settings = JSON.parse(fs.readFileSync('$GEMINI_SETTINGS', 'utf8'));
+                  if (!settings.hooks) settings.hooks = {};
+                  if (!settings.hooks.BeforeTool) settings.hooks.BeforeTool = [];
+                  settings.hooks.BeforeTool.push($PLANNOTATOR_HOOK);
+                  fs.writeFileSync('$GEMINI_SETTINGS', JSON.stringify(settings, null, 2) + '\n');
+                "
+                echo "Added plannotator hook to ${GEMINI_SETTINGS}"
+            else
+                echo ""
+                echo "Add the following to your ~/.gemini/settings.json hooks:"
+                echo ""
+                echo '  "hooks": {'
+                echo '    "BeforeTool": [{'
+                echo '      "matcher": "exit_plan_mode",'
+                echo '      "hooks": [{"type": "command", "command": "plannotator", "timeout": 345600}]'
+                echo '    }]'
+                echo '  }'
+            fi
         fi
     else
         cat > "$GEMINI_SETTINGS" << 'GEMINI_SETTINGS_EOF'

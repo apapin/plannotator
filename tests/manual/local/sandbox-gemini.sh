@@ -118,16 +118,28 @@ print("Hello, World!")
 ```
 PLAN_EOF
 
-    echo "Plan file: $PLAN_FILE"
+    # Simulate the Gemini directory structure:
+    # <projectTempDir>/<session_id>/plans/<plan_filename>
+    # <projectTempDir>/chats/session-<timestamp>.json
+    SESSION_ID="sandbox-test-$(date +%s)"
+    SIMULATED_TEMP_DIR=$(mktemp -d)
+    mkdir -p "$SIMULATED_TEMP_DIR/$SESSION_ID/plans"
+    mkdir -p "$SIMULATED_TEMP_DIR/chats"
+    cp "$PLAN_FILE" "$SIMULATED_TEMP_DIR/$SESSION_ID/plans/test-plan.md"
+    TRANSCRIPT_PATH="$SIMULATED_TEMP_DIR/chats/session-simulate.json"
+    echo '[]' > "$TRANSCRIPT_PATH"
+
+    echo "Plan file: $SIMULATED_TEMP_DIR/$SESSION_ID/plans/test-plan.md"
     echo "Browser should open. Approve or deny the plan."
     echo ""
 
     HOOK_JSON=$(cat << EOF
 {
   "tool_name": "exit_plan_mode",
-  "tool_input": {"plan_path": "$PLAN_FILE"},
+  "tool_input": {"plan_filename": "test-plan.md"},
   "cwd": "/tmp",
-  "session_id": "sandbox-test-$(date +%s)",
+  "session_id": "$SESSION_ID",
+  "transcript_path": "$TRANSCRIPT_PATH",
   "hook_event_name": "BeforeTool",
   "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
@@ -135,6 +147,7 @@ EOF
     )
 
     echo "$HOOK_JSON" | bun run "$PROJECT_ROOT/apps/hook/server/index.ts"
+    rm -rf "$SIMULATED_TEMP_DIR"
 
     echo ""
     echo "=== Simulate Complete ==="

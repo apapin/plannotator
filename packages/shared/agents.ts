@@ -14,6 +14,7 @@ export const AGENT_CONFIG = {
   'copilot-cli': { name: 'GitHub Copilot', badge: 'bg-blue-500/15 text-blue-400' },
   'pi':          { name: 'Pi',          badge: 'bg-violet-500/15 text-violet-400' },
   'codex':       { name: 'Codex',       badge: 'bg-purple-500/15 text-purple-400' },
+  'gemini-cli':  { name: 'Gemini CLI', badge: 'bg-sky-500/15 text-sky-400' },
 } as const;
 
 /** All recognized origin values. */

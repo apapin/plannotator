@@ -293,6 +293,38 @@ GEMINI_POLICY_EOF
 GEMINI_SETTINGS_EOF
         echo "Created Gemini settings at ${GEMINI_SETTINGS}"
     fi
+
+    # Install slash commands
+    GEMINI_COMMANDS_DIR="$HOME/.gemini/commands"
+    mkdir -p "$GEMINI_COMMANDS_DIR"
+
+    cat > "$GEMINI_COMMANDS_DIR/plannotator-review.toml" << 'GEMINI_CMD_EOF'
+description = "Open interactive code review for current changes or a PR URL"
+prompt = """
+## Code Review Feedback
+
+!{plannotator review {{args}}}
+
+## Your task
+
+If the review above contains feedback or annotations, address them. If no changes were requested, acknowledge and continue.
+"""
+GEMINI_CMD_EOF
+
+    cat > "$GEMINI_COMMANDS_DIR/plannotator-annotate.toml" << 'GEMINI_CMD_EOF'
+description = "Open interactive annotation UI for a markdown file or folder"
+prompt = """
+## Markdown Annotations
+
+!{plannotator annotate {{args}}}
+
+## Your task
+
+Address the annotation feedback above. The user has reviewed the markdown file and provided specific annotations and comments.
+"""
+GEMINI_CMD_EOF
+
+    echo "Installed Gemini slash commands to ${GEMINI_COMMANDS_DIR}/"
 fi
 
 echo ""

@@ -64,6 +64,15 @@ import AnnoReplace from './AnnoReplace.astro';
         </button>
         <button
           class="agent-btn"
+          data-agent="gemini"
+          data-command="curl -fsSL https://plannotator.ai/install.sh | bash"
+          data-video=""
+        >
+          <img src="/assets/icon-gemini.png" alt="" class="w-4 h-4" />
+          <span>Gemini</span>
+        </button>
+        <button
+          class="agent-btn"
           data-agent="opencode"
           data-command="curl -fsSL https://plannotator.ai/install.sh | bash"
           data-video="https://youtu.be/_N7uo0EFI-U"
@@ -213,6 +222,14 @@ import AnnoReplace from './AnnoReplace.astro';
           'Restart Copilot CLI to activate hooks'
         ],
         detail: 'Then run in Copilot CLI:'
+      },
+      gemini: {
+        steps: [
+          '/plannotator-review',
+          '/plannotator-annotate <file.md>',
+          'Use /plan for plan review with browser approval'
+        ],
+        detail: 'Then use in Gemini CLI:'
       },
       pi: {
         detail: 'Or try without installing: pi -e npm:@plannotator/pi-extension'

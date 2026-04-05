@@ -107,6 +107,7 @@ export interface PRReview {
   state: string;
   body: string;
   submittedAt: string;
+  url?: string;
 }
 
 export interface PRCheck {

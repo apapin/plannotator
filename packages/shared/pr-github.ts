@@ -161,6 +161,7 @@ function parseGhPRContext(raw: Record<string, unknown>): PRContext {
       state: str(r?.state),
       body: str(r?.body),
       submittedAt: str(r?.submittedAt),
+      ...(r?.url ? { url: str(r.url) } : {}),
     })),
     checks: arr(raw.statusCheckRollup).map((c: any) => ({
       name: str(c?.name),

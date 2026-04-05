@@ -972,6 +972,7 @@ const ReviewApp: React.FC = () => {
     isPRContextLoading,
     prContextError,
     fetchPRContext,
+    platformUser,
     openDiffFile,
   }), [
     files, activeFileIndex, diffStyle, diffOverflow, diffIndicators,
@@ -986,7 +987,7 @@ const ReviewApp: React.FC = () => {
     aiAvailable, aiChat.messages, aiChat.isCreatingSession, aiChat.isStreaming,
     handleAskAI, handleViewAIResponse, handleClickAIMarker,
     aiHistoryForSelection, agentJobs.jobs, agentJobs.jobLogs, prMetadata, prContext,
-    isPRContextLoading, prContextError, fetchPRContext, openDiffFile,
+    isPRContextLoading, prContextError, fetchPRContext, platformUser, openDiffFile,
   ]);
 
   // Copy raw diff to clipboard

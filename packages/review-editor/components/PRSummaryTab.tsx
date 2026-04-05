@@ -133,11 +133,10 @@ export const PRSummaryTab: React.FC<PRSummaryTabProps> = ({ context, metadata })
           {context.labels.map((label) => (
             <span
               key={label.name}
-              className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+              className="text-[10px] px-1.5 py-0.5 rounded-full font-medium text-foreground"
               style={{
-                backgroundColor: `#${label.color}20`,
-                color: `#${label.color}`,
-                border: `1px solid #${label.color}40`,
+                backgroundColor: `#${label.color}18`,
+                border: `1px solid #${label.color}50`,
               }}
             >
               {label.name}
@@ -160,9 +159,8 @@ export const PRSummaryTab: React.FC<PRSummaryTabProps> = ({ context, metadata })
               rel="noopener noreferrer"
               className="flex items-center gap-1.5 text-xs text-primary hover:underline"
             >
-              <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <circle cx="12" cy="12" r="10" />
-                <path d="M12 8v4m0 4h.01" />
+              <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 896 1024" fill="currentColor">
+                <path d="M448 64C200.562 64 0 264.562 0 512c0 247.438 200.562 448 448 448 247.438 0 448-200.562 448-448C896 264.562 695.438 64 448 64zM448 832c-176.781 0-320-143.25-320-320 0-176.781 143.219-320 320-320 176.75 0 320 143.219 320 320C768 688.75 624.75 832 448 832zM384 768h128V640H384V768zM384 576h128V256H384V576z" />
               </svg>
               #{issue.number}
               {issue.repo && <span className="text-muted-foreground text-[10px]">({issue.repo})</span>}

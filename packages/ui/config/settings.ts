@@ -148,6 +148,29 @@ export const SETTINGS = {
     },
     toServer: (v: string) => ({ diffOptions: { fontSize: v } }),
   },
+  conventionalComments: {
+    defaultValue: false as boolean,
+    fromCookie: () => {
+      const v = storage.getItem('plannotator-conventional-comments');
+      return v === 'true' ? true : v === 'false' ? false : undefined;
+    },
+    toCookie: (v: boolean) => storage.setItem('plannotator-conventional-comments', String(v)),
+    serverKey: 'conventionalComments',
+    fromServer: (sc: Record<string, unknown>) => {
+      const v = sc.conventionalComments;
+      return typeof v === 'boolean' ? v : undefined;
+    },
+    toServer: (v: boolean) => ({ conventionalComments: v }),
+  },
+  /** JSON-serialized array of label configs, or null for defaults */
+  conventionalLabels: {
+    defaultValue: null as string | null,
+    fromCookie: () => storage.getItem('plannotator-cc-labels') || undefined,
+    toCookie: (v: string | null) => {
+      if (v) storage.setItem('plannotator-cc-labels', v);
+      else storage.removeItem('plannotator-cc-labels');
+    },
+  },
 } satisfies Record<string, SettingDef<unknown>>;
 
 export type SettingsMap = typeof SETTINGS;

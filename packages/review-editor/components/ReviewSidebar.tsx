@@ -3,6 +3,7 @@ import { CodeAnnotation, type EditorAnnotation } from '@plannotator/ui/types';
 import { isCurrentUser } from '@plannotator/ui/utils/identity';
 import { EditorAnnotationCard } from '@plannotator/ui/components/EditorAnnotationCard';
 import { CopyButton } from './CopyButton';
+import { ConventionalLabelBadge } from './ConventionalLabelPicker';
 import { HighlightedCode } from './HighlightedCode';
 import { detectLanguage } from '../utils/detectLanguage';
 import { renderInlineMarkdown } from '../utils/renderInlineMarkdown';
@@ -332,6 +333,9 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = /* React.memo */({
                                         <span className="ml-1 text-primary/70">{`\`${annotation.tokenText.length > 30 ? annotation.tokenText.slice(0, 27) + '...' : annotation.tokenText}\``}</span>
                                       )}
                                     </span>
+                                  )}
+                                  {annotation.conventionalLabel && (
+                                    <ConventionalLabelBadge label={annotation.conventionalLabel} decorations={annotation.decorations} />
                                   )}
                                   {annotation.author && (
                                     <span className={`text-[10px] truncate max-w-[100px] ${isCurrentUser(annotation.author) ? 'text-muted-foreground/50' : 'text-muted-foreground/70'}`}>

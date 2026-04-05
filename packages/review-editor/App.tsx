@@ -18,7 +18,7 @@ import { getAgentSwitchSettings, getEffectiveAgentName } from '@plannotator/ui/u
 import { getAIProviderSettings, saveAIProviderSettings, getPreferredModel } from '@plannotator/ui/utils/aiProvider';
 import { AISetupDialog } from '@plannotator/ui/components/AISetupDialog';
 import { needsAISetup } from '@plannotator/ui/utils/aiSetup';
-import { CodeAnnotation, CodeAnnotationType, SelectedLineRange, TokenAnnotationMeta } from '@plannotator/ui/types';
+import { CodeAnnotation, CodeAnnotationType, SelectedLineRange, TokenAnnotationMeta, ConventionalLabel, ConventionalDecoration } from '@plannotator/ui/types';
 import { useResizablePanel } from '@plannotator/ui/hooks/useResizablePanel';
 import { useCodeAnnotationDraft } from '@plannotator/ui/hooks/useCodeAnnotationDraft';
 import { useGitAdd } from './hooks/useGitAdd';
@@ -688,6 +688,8 @@ const ReviewApp: React.FC = () => {
     text?: string,
     suggestedCode?: string,
     originalCode?: string,
+    conventionalLabel?: ConventionalLabel,
+    decorations?: ConventionalDecoration[],
     tokenMeta?: TokenAnnotationMeta
   ) => {
     if (!pendingSelection || !files[activeFileIndex]) return;
@@ -714,6 +716,8 @@ const ReviewApp: React.FC = () => {
       }),
       createdAt: Date.now(),
       author: identity,
+      conventionalLabel,
+      decorations,
     };
 
     setAnnotations(prev => [...prev, newAnnotation]);
@@ -746,13 +750,17 @@ const ReviewApp: React.FC = () => {
     id: string,
     text?: string,
     suggestedCode?: string,
-    originalCode?: string
+    originalCode?: string,
+    conventionalLabel?: ConventionalLabel,
+    decorations?: ConventionalDecoration[],
   ) => {
     const ann = allAnnotationsRef.current.find(a => a.id === id);
     const updates = {
       ...(text !== undefined && { text }),
       ...(suggestedCode !== undefined && { suggestedCode }),
       ...(originalCode !== undefined && { originalCode }),
+      ...(conventionalLabel !== undefined && { conventionalLabel }),
+      ...(decorations !== undefined && { decorations }),
     };
     if (ann?.source && externalAnnotations.some(e => e.id === id)) {
       updateExternalAnnotation(id, updates);

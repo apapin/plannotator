@@ -1,13 +1,15 @@
 import React, { useMemo, useRef, useEffect, useLayoutEffect, useCallback, useState } from 'react';
 import { FileDiff, type DiffLineAnnotation } from '@pierre/diffs/react';
 import { getSingularPatch, processFile } from '@pierre/diffs';
-import { CodeAnnotation, CodeAnnotationType, SelectedLineRange, DiffAnnotationMetadata, TokenAnnotationMeta } from '@plannotator/ui/types';
+import { CodeAnnotation, CodeAnnotationType, SelectedLineRange, DiffAnnotationMetadata, TokenAnnotationMeta, ConventionalLabel, ConventionalDecoration } from '@plannotator/ui/types';
 import type { DiffTokenEventBaseProps } from '@pierre/diffs';
 import { useTheme } from '@plannotator/ui/components/ThemeProvider';
 import { CommentPopover } from '@plannotator/ui/components/CommentPopover';
 import { storage } from '@plannotator/ui/utils/storage';
 import { detectLanguage } from '../utils/detectLanguage';
 import { useAnnotationToolbar } from '../hooks/useAnnotationToolbar';
+import { useConfigValue } from '@plannotator/ui/config';
+import { getEnabledLabels } from './ConventionalLabelPicker';
 import { FileHeader } from './FileHeader';
 import { InlineAnnotation } from './InlineAnnotation';
 import { InlineAIMarker } from './InlineAIMarker';
@@ -127,9 +129,9 @@ interface DiffViewerProps {
   selectedAnnotationId: string | null;
   pendingSelection: SelectedLineRange | null;
   onLineSelection: (range: SelectedLineRange | null) => void;
-  onAddAnnotation: (type: CodeAnnotationType, text?: string, suggestedCode?: string, originalCode?: string, tokenMeta?: TokenAnnotationMeta) => void;
+  onAddAnnotation: (type: CodeAnnotationType, text?: string, suggestedCode?: string, originalCode?: string, conventionalLabel?: ConventionalLabel, decorations?: ConventionalDecoration[], tokenMeta?: TokenAnnotationMeta) => void;
   onAddFileComment: (text: string) => void;
-  onEditAnnotation: (id: string, text?: string, suggestedCode?: string, originalCode?: string) => void;
+  onEditAnnotation: (id: string, text?: string, suggestedCode?: string, originalCode?: string, conventionalLabel?: ConventionalLabel, decorations?: ConventionalDecoration[]) => void;
   onSelectAnnotation: (id: string | null) => void;
   onDeleteAnnotation: (id: string) => void;
   isViewed?: boolean;
@@ -252,6 +254,9 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
   }, []);
 
   const toolbar = useAnnotationToolbar({ patch, filePath, isFocused, onLineSelection, onAddAnnotation, onEditAnnotation });
+  const conventionalCommentsEnabled = useConfigValue('conventionalComments');
+  const conventionalLabelsJson = useConfigValue('conventionalLabels');
+  const enabledLabels = useMemo(() => getEnabledLabels(conventionalLabelsJson), [conventionalLabelsJson]);
 
   // Parse patch into FileDiffMetadata for @pierre/diffs FileDiff component
   const fileDiff = useMemo(() => getSingularPatch(patch), [patch]);
@@ -375,6 +380,8 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
           author: ann.author,
           severity: ann.severity,
           reasoning: ann.reasoning,
+          conventionalLabel: ann.conventionalLabel,
+          decorations: ann.decorations,
         } as DiffAnnotationMetadata,
       }));
   }, [annotations]);
@@ -605,6 +612,12 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
           onSubmit={toolbar.handleSubmitAnnotation}
           onDismiss={toolbar.handleDismiss}
           onCancel={toolbar.handleCancel}
+          conventionalCommentsEnabled={conventionalCommentsEnabled}
+          conventionalLabel={toolbar.conventionalLabel}
+          onConventionalLabelChange={toolbar.setConventionalLabel}
+          decorations={toolbar.decorations}
+          onDecorationsChange={toolbar.setDecorations}
+          enabledLabels={enabledLabels}
           aiAvailable={aiAvailable}
           onAskAI={onAskAI}
           isAILoading={isAILoading}

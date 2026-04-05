@@ -62,6 +62,24 @@ export interface DiffResult {
 export type CodeAnnotationType = 'comment' | 'suggestion' | 'concern';
 export type CodeAnnotationScope = 'line' | 'file';
 
+/** Conventional Comments label — see https://conventionalcomments.org */
+export type ConventionalLabel =
+  | 'praise'
+  | 'nitpick'
+  | 'suggestion'
+  | 'issue'
+  | 'todo'
+  | 'question'
+  | 'thought'
+  | 'chore'
+  | 'note'
+  | 'typo'
+  | 'polish'
+  | (string & {}); // Allow custom labels while preserving autocomplete for built-ins
+
+/** Conventional Comments decoration (parenthesized modifier) */
+export type ConventionalDecoration = 'blocking' | 'non-blocking' | 'if-minor';
+
 export interface CodeAnnotation {
   id: string;
   type: CodeAnnotationType;
@@ -81,6 +99,8 @@ export interface CodeAnnotation {
   source?: string; // External tool identifier (e.g., "eslint") — set when annotation comes from external API
   severity?: 'important' | 'nit' | 'pre_existing'; // Agent review severity (Claude)
   reasoning?: string; // Validation chain — how the issue was confirmed (Claude)
+  conventionalLabel?: ConventionalLabel;
+  decorations?: ConventionalDecoration[];
 }
 
 /** Token-level metadata passed from selection to annotation creation. */
@@ -107,6 +127,8 @@ export interface DiffAnnotationMetadata {
   author?: string;
   severity?: 'important' | 'nit' | 'pre_existing';
   reasoning?: string;
+  conventionalLabel?: ConventionalLabel;
+  decorations?: ConventionalDecoration[];
   // AI marker fields (set when kind === 'ai-marker')
   kind?: 'annotation' | 'ai-marker';
   questionId?: string;

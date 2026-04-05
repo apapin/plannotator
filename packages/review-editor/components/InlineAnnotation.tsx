@@ -1,6 +1,7 @@
 import React from 'react';
 import { SEVERITY_STYLES, DiffAnnotationMetadata } from '@plannotator/ui/types';
 import { SuggestionBlock } from './SuggestionBlock';
+import { ConventionalLabelBadge } from './ConventionalLabelPicker';
 import { renderInlineMarkdown } from '../utils/renderInlineMarkdown';
 
 interface InlineAnnotationProps {
@@ -31,6 +32,9 @@ export const InlineAnnotation: React.FC<InlineAnnotationProps> = ({
         <div className="flex items-center gap-1.5">
           {severity && (
             <span className={`w-2 h-2 rounded-full flex-shrink-0 ${severity.dot}`} title={severity.label} />
+          )}
+          {metadata.conventionalLabel && (
+            <ConventionalLabelBadge label={metadata.conventionalLabel} decorations={metadata.decorations} />
           )}
           {metadata.author && <span className="text-xs text-muted-foreground">{metadata.author}</span>}
         </div>

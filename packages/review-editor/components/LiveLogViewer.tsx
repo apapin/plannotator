@@ -59,14 +59,14 @@ export const LiveLogViewer: React.FC<LiveLogViewerProps> = ({
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className="h-full overflow-y-auto rounded-md bg-muted/30 p-3"
+        className="h-full overflow-y-auto rounded bg-muted/30 p-3"
       >
         {!content && isLive ? (
           <span className="text-xs text-muted-foreground/50 animate-pulse">
             Waiting for output...
           </span>
         ) : (
-          <pre className="text-[11px] leading-relaxed font-mono whitespace-pre-wrap break-words text-foreground/80">
+          <pre className="text-xs leading-relaxed font-mono whitespace-pre-wrap break-words text-foreground/80">
             {displayText}
             {isLive && content && (
               <span className="inline-block w-1.5 h-3.5 bg-primary/60 ml-0.5 animate-pulse rounded-sm" />

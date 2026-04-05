@@ -45,7 +45,7 @@ export const FileTreeNodeItem: React.FC<FileTreeNodeProps> = ({
   getAnnotationCount,
   stagedFiles,
 }) => {
-  const paddingLeft = 8 + node.depth * 12;
+  const paddingLeft = 4 + node.depth * 10;
 
   if (node.type === 'folder') {
     if (!hasVisibleChildren(node, viewedFiles, activeFileIndex, hideViewedFiles)) {

@@ -45,7 +45,7 @@ export function MarkdownBody({ markdown }: { markdown: string }) {
   const blocks = useMemo(() => parseMarkdownToBlocks(markdown), [markdown]);
 
   return (
-    <div className="space-y-2 text-xs text-foreground/90">
+    <div className="space-y-2.5 text-xs text-foreground/90 leading-relaxed">
       {blocks.map((block) => {
         switch (block.type) {
           case 'heading': {
@@ -97,7 +97,7 @@ export function MarkdownBody({ markdown }: { markdown: string }) {
 
 export const PRSummaryTab: React.FC<PRSummaryTabProps> = ({ context, metadata }) => {
   return (
-    <div className="p-3 space-y-4">
+    <div className="px-6 py-4 space-y-4 max-w-2xl">
       {/* PR title + state */}
       <div className="space-y-2">
         <div className="flex items-start gap-2">

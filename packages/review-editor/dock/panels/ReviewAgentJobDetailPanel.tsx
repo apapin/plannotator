@@ -5,6 +5,7 @@ import { isTerminalStatus } from '@plannotator/shared/agent-jobs';
 import { useReviewState } from '../ReviewStateContext';
 import { CopyButton } from '../../components/CopyButton';
 import { LiveLogViewer } from '../../components/LiveLogViewer';
+import { ScrollFade } from '../../components/ScrollFade';
 import { exportReviewFeedback } from '../../utils/exportFeedback';
 
 // ---------------------------------------------------------------------------
@@ -25,7 +26,6 @@ export const ReviewAgentJobDetailPanel: React.FC<IDockviewPanelProps> = (props) 
   const terminal = job ? isTerminalStatus(job.status) : false;
   const [activeTab, setActiveTab] = useState<DetailTab>('findings');
 
-  // --- Prompt extraction ---
   const { fullCommand, userMessage, systemPrompt } = useMemo(() => {
     const cmd = job?.command ?? [];
     const full = cmd.join(' ');
@@ -39,7 +39,6 @@ export const ReviewAgentJobDetailPanel: React.FC<IDockviewPanelProps> = (props) 
     };
   }, [job]);
 
-  // --- Annotation snapshot ---
   const [annotationSnapshot, setAnnotationSnapshot] = useState<
     Map<string, { annotation: CodeAnnotation; dismissed: boolean }>
   >(new Map());
@@ -98,7 +97,7 @@ export const ReviewAgentJobDetailPanel: React.FC<IDockviewPanelProps> = (props) 
         <div className="flex items-center gap-2">
           <StatusDot status={job.status} />
           <ProviderPill provider={job.provider} />
-          <span className="text-[13px] font-medium text-foreground truncate">{job.label}</span>
+          <span className="text-sm font-medium text-foreground truncate">{job.label}</span>
           <span className="ml-auto text-[10px] font-mono text-muted-foreground">
             {terminal && job.endedAt ? formatDuration(job.endedAt - job.startedAt) : <ElapsedTime startedAt={job.startedAt} />}
           </span>
@@ -106,11 +105,6 @@ export const ReviewAgentJobDetailPanel: React.FC<IDockviewPanelProps> = (props) 
         {job.cwd && (
           <p className="text-[10px] font-mono text-muted-foreground/50 mt-1 truncate" title={job.cwd}>{job.cwd}</p>
         )}
-      </div>
-
-      {/* ── Verdict ── */}
-      <div className="flex-shrink-0 px-4 py-3">
-        <VerdictCard summary={job.summary} isCorrect={isCorrect} terminal={terminal} />
       </div>
 
       {/* ── Tabs ── */}
@@ -126,10 +120,14 @@ export const ReviewAgentJobDetailPanel: React.FC<IDockviewPanelProps> = (props) 
 
       {/* ── Content ── */}
       {activeTab === 'findings' ? (
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-          {/* Annotations */}
+        <ScrollFade>
+        <div className="px-6 py-3 space-y-4 max-w-2xl">
+          {/* Verdict — scrolls with content */}
+          <VerdictCard summary={job.summary} isCorrect={isCorrect} terminal={terminal} />
+
+          {/* Findings list */}
           {displayAnnotations.length > 0 && (
-            <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center justify-between">
               <span className="text-[10px] text-muted-foreground">
                 {activeAnnotations.length} finding{activeAnnotations.length !== 1 ? 's' : ''}
                 {dismissedCount > 0 && ` · ${dismissedCount} dismissed`}
@@ -148,9 +146,9 @@ export const ReviewAgentJobDetailPanel: React.FC<IDockviewPanelProps> = (props) 
             </div>
           )}
 
-          {/* Debug context — collapsed by default */}
+          {/* Debug context */}
           <Disclosure title="Details">
-            <div className="space-y-2 text-[11px] text-muted-foreground">
+            <div className="space-y-2 text-xs text-muted-foreground">
               <div className="flex items-center justify-between">
                 <span>Started {new Date(job.startedAt).toLocaleTimeString()}</span>
                 {job.exitCode !== undefined && (
@@ -159,12 +157,12 @@ export const ReviewAgentJobDetailPanel: React.FC<IDockviewPanelProps> = (props) 
               </div>
               {userMessage && (
                 <Disclosure title="Prompt" copyText={userMessage} nested>
-                  <pre className="text-[11px] font-mono text-foreground/80 whitespace-pre-wrap break-words">{userMessage}</pre>
+                  <pre className="text-xs font-mono text-foreground/80 whitespace-pre-wrap break-words">{userMessage}</pre>
                 </Disclosure>
               )}
               {systemPrompt && (
                 <Disclosure title="System Prompt" copyText={systemPrompt} nested>
-                  <pre className="text-[11px] font-mono text-foreground/80 whitespace-pre-wrap break-words">{systemPrompt}</pre>
+                  <pre className="text-xs font-mono text-foreground/80 whitespace-pre-wrap break-words">{systemPrompt}</pre>
                 </Disclosure>
               )}
               {fullCommand && (
@@ -176,12 +174,13 @@ export const ReviewAgentJobDetailPanel: React.FC<IDockviewPanelProps> = (props) 
             </div>
           </Disclosure>
         </div>
+        </ScrollFade>
       ) : (
         <div className="flex-1 flex flex-col min-h-0 px-4 py-3">
           <LiveLogViewer content={logContent} isLive={!terminal} />
           {!logContent && job.error && terminal && (
             <div className="mt-2 flex-shrink-0">
-              <pre className="text-[11px] font-mono text-destructive bg-destructive/5 rounded-md p-3 whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
+              <pre className="text-xs font-mono text-destructive bg-destructive/5 rounded p-3 whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
                 {job.error}
               </pre>
             </div>
@@ -203,8 +202,8 @@ function VerdictCard({ summary, isCorrect, terminal }: {
 }) {
   if (summary) {
     return (
-      <div className={`rounded-lg border px-3 py-2.5 ${
-        isCorrect ? 'border-success/20 bg-success/5' : 'border-destructive/20 bg-destructive/5'
+      <div className={`rounded px-3 py-2.5 ${
+        isCorrect ? 'bg-success/5' : 'bg-destructive/5'
       }`}>
         <div className="flex items-baseline gap-2">
           <span className={`text-xs font-semibold ${isCorrect ? 'text-success' : 'text-destructive'}`}>
@@ -214,13 +213,13 @@ function VerdictCard({ summary, isCorrect, terminal }: {
             Confidence {Math.round(summary.confidence * 100)}%
           </span>
         </div>
-        <p className="text-[11px] text-foreground/80 leading-relaxed mt-1">{summary.explanation}</p>
+        <p className="text-xs text-foreground/80 leading-relaxed mt-1.5">{summary.explanation}</p>
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border border-border/30 bg-muted/10 px-3 py-2.5">
+    <div className="rounded bg-muted/10 px-3 py-2.5">
       <div className="flex items-center gap-2">
         <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
           Review Verdict
@@ -230,9 +229,9 @@ function VerdictCard({ summary, isCorrect, terminal }: {
         )}
       </div>
       {terminal ? (
-        <p className="text-[11px] text-muted-foreground/50 mt-1">No verdict available.</p>
+        <p className="text-xs text-muted-foreground/50 mt-1">No verdict available.</p>
       ) : (
-        <p className="text-[11px] text-muted-foreground/50 mt-1">Will appear when the review completes.</p>
+        <p className="text-xs text-muted-foreground/50 mt-1">Will appear when the review completes.</p>
       )}
     </div>
   );
@@ -253,14 +252,14 @@ function StatusDot({ status }: { status: AgentJobInfo['status'] }) {
 
 function ProviderPill({ provider }: { provider: string }) {
   const label = provider === 'claude' ? 'Claude' : provider === 'codex' ? 'Codex' : 'Shell';
-  return <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{label}</span>;
+  return <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{label}</span>;
 }
 
 function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-1 px-3 py-2 text-xs font-medium border-b-2 transition-colors -mb-px ${
+      className={`flex items-center gap-1 px-3 py-2 text-xs font-medium border-b-2 transition-all duration-150 -mb-px ${
         active
           ? 'border-primary text-foreground'
           : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -279,13 +278,13 @@ function Disclosure({ title, copyText, nested, children }: {
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className={nested ? '' : 'border-t border-border/30 pt-3'}>
+    <div className={nested ? '' : 'pt-4 mt-2'}>
       <div className="flex items-center justify-between">
         <button
           onClick={() => setOpen(!open)}
-          className="flex items-center gap-1.5 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+          className="flex items-center gap-1.5 text-[10px] text-muted-foreground hover:text-foreground transition-colors duration-150"
         >
-          <svg className={`w-2.5 h-2.5 transition-transform ${open ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+          <svg className={`w-2.5 h-2.5 transition-transform duration-150 ${open ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
           </svg>
           <span className="font-medium uppercase tracking-wider">{title}</span>
@@ -304,8 +303,8 @@ function AnnotationRow({ annotation: ann, dismissed, onClick }: {
 }) {
   return (
     <button
-      className={`w-full text-left px-2.5 py-2 rounded-md transition-colors ${
-        dismissed ? 'opacity-30 cursor-default' : 'hover:bg-muted/30 cursor-pointer'
+      className={`w-full text-left px-2.5 py-2 rounded transition-all duration-150 ${
+        dismissed ? 'opacity-30 cursor-default' : 'hover:bg-muted/20 hover:translate-x-0.5 cursor-pointer'
       }`}
       onClick={() => !dismissed && onClick(ann)}
       disabled={dismissed}
@@ -318,11 +317,11 @@ function AnnotationRow({ annotation: ann, dismissed, onClick }: {
           L{ann.lineStart}{ann.lineEnd !== ann.lineStart ? `–${ann.lineEnd}` : ''}
         </span>
         {dismissed && (
-          <span className="px-1 py-0.5 rounded text-[8px] uppercase tracking-wider bg-muted text-muted-foreground/60">dismissed</span>
+          <span className="px-1 py-0.5 rounded text-[10px] uppercase tracking-wider bg-muted text-muted-foreground/60">dismissed</span>
         )}
       </div>
       {ann.text && (
-        <p className={`text-[11px] mt-1 line-clamp-2 leading-relaxed ${dismissed ? 'text-muted-foreground/40' : 'text-foreground/80'}`}>
+        <p className={`text-xs mt-1 line-clamp-2 leading-relaxed ${dismissed ? 'text-muted-foreground/40' : 'text-foreground/80'}`}>
           {ann.text}
         </p>
       )}
@@ -333,7 +332,7 @@ function AnnotationRow({ annotation: ann, dismissed, onClick }: {
 function EmptyState({ terminal }: { terminal: boolean }) {
   return (
     <div className="text-center py-8">
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         {terminal ? 'No findings were produced.' : 'Findings will appear as the agent works.'}
       </p>
     </div>

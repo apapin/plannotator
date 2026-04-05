@@ -68,29 +68,29 @@ export const PRCommentsTab: React.FC<PRCommentsTabProps> = ({ context }) => {
   }
 
   return (
-    <div className="p-2 space-y-2">
+    <div className="px-6 py-4 space-y-3 max-w-2xl">
       {timeline.map((entry) => {
         if (entry.kind === 'review') {
           const review = entry.data;
           const style = REVIEW_STATE_STYLES[review.state] ?? REVIEW_STATE_STYLES.COMMENTED;
 
           return (
-            <div key={review.id} className="rounded-lg border border-border/50 p-2.5">
-              <div className="flex items-center justify-between mb-1">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[11px] font-medium text-foreground">
+            <div key={review.id} className="rounded bg-muted/10 border border-border/30 p-3 transition-colors hover:bg-muted/20">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-foreground">
                     {review.author || 'unknown'}
                   </span>
-                  <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded ${style.bg} ${style.text}`}>
+                  <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${style.bg} ${style.text}`}>
                     {style.label}
                   </span>
                 </div>
-                <span className="text-[10px] text-muted-foreground/50">
+                <span className="text-[10px] text-muted-foreground">
                   {formatRelativeTime(review.submittedAt)}
                 </span>
               </div>
               {review.body && (
-                <div className="text-xs text-foreground/80 mt-1 review-comment-markdown">
+                <div className="text-xs text-foreground/80 leading-relaxed review-comment-markdown">
                   <MarkdownBody markdown={review.body} />
                 </div>
               )}
@@ -100,16 +100,16 @@ export const PRCommentsTab: React.FC<PRCommentsTabProps> = ({ context }) => {
 
         const comment = entry.data;
         return (
-          <div key={comment.id} className="rounded-lg border border-border/50 p-2.5">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-[11px] font-medium text-foreground">
+          <div key={comment.id} className="rounded bg-muted/10 border border-border/30 p-3 transition-colors hover:bg-muted/20">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-foreground">
                 {comment.author || 'unknown'}
               </span>
-              <span className="text-[10px] text-muted-foreground/50">
+              <span className="text-[10px] text-muted-foreground">
                 {formatRelativeTime(comment.createdAt)}
               </span>
             </div>
-            <div className="text-xs text-foreground/80 review-comment-markdown">
+            <div className="text-xs text-foreground/80 leading-relaxed review-comment-markdown">
               <MarkdownBody markdown={comment.body} />
             </div>
           </div>

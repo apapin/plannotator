@@ -85,7 +85,7 @@ function ProviderBadge({ provider }: { provider: string }) {
     provider === 'codex' ? 'Codex' :
     'Shell';
   return (
-    <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+    <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
       {label}
     </span>
   );
@@ -112,7 +112,7 @@ function JobCard({
 
   return (
     <div
-      className={`group relative p-2.5 rounded-lg border transition-all cursor-pointer ${
+      className={`group relative p-2.5 rounded border transition-all cursor-pointer ${
         expanded
           ? 'bg-muted/30 border-border/50'
           : 'border-transparent hover:bg-muted/30 hover:border-border/50'
@@ -148,7 +148,7 @@ function JobCard({
                 e.stopPropagation();
                 onKill();
               }}
-              className="p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all"
+              className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all"
               title="Kill agent"
             >
               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -247,7 +247,7 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
               <select
                 value={selectedProvider}
                 onChange={(e) => setSelectedProvider(e.target.value)}
-                className="flex-1 text-[11px] px-2 py-1.5 rounded-md bg-muted/50 border border-border/50 text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
+                className="flex-1 text-xs px-2 py-1.5 rounded bg-muted/50 border border-border/50 text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
               >
                 {availableProviders.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -256,14 +256,14 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
                 ))}
               </select>
             ) : (
-              <span className="flex-1 text-[11px] px-2 py-1.5 text-muted-foreground">
+              <span className="flex-1 text-xs px-2 py-1.5 text-muted-foreground">
                 {availableProviders[0]?.name}
               </span>
             )}
             <button
               onClick={handleLaunch}
               disabled={!selectedProvider}
-              className="px-3 py-1.5 rounded-md text-[11px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-3 py-1.5 rounded text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               Run Agent
             </button>
@@ -307,7 +307,7 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
         <div className="p-2 border-t border-border/50">
           <button
             onClick={onKillAll}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-destructive hover:bg-destructive/10 transition-all"
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded text-xs font-medium text-destructive hover:bg-destructive/10 transition-all"
           >
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />

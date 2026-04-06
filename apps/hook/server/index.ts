@@ -248,6 +248,8 @@ if (args[0] === "sessions") {
 
     // --local: create a local checkout with the PR head for full file access
     if (useLocal && prMetadata) {
+      // Hoisted so catch block can clean up partially-created directories
+      let localPath: string | undefined;
       try {
         const repoDir = process.cwd();
         const identifier = prMetadata.platform === "github"
@@ -256,13 +258,14 @@ if (args[0] === "sessions") {
         const suffix = Math.random().toString(36).slice(2, 8);
         // Resolve tmpdir to its real path — on macOS, tmpdir() returns /var/folders/...
         // but processes report /private/var/folders/... which breaks path stripping.
-        const localPath = path.join(realpathSync(tmpdir()), `plannotator-pr-${identifier}-${suffix}`);
+        localPath = path.join(realpathSync(tmpdir()), `plannotator-pr-${identifier}-${suffix}`);
         const fetchRefStr = prMetadata.platform === "github"
           ? `refs/pull/${prMetadata.number}/head`
           : `refs/merge-requests/${prMetadata.iid}/head`;
 
-        // Validate baseBranch to prevent path traversal in git ref operations
-        if (prMetadata.baseBranch.includes('..')) throw new Error(`Invalid base branch: ${prMetadata.baseBranch}`);
+        // Validate inputs from platform API to prevent git flag/path injection
+        if (prMetadata.baseBranch.includes('..') || prMetadata.baseBranch.startsWith('-')) throw new Error(`Invalid base branch: ${prMetadata.baseBranch}`);
+        if (!/^[0-9a-f]{40,64}$/i.test(prMetadata.baseSha)) throw new Error(`Invalid base SHA: ${prMetadata.baseSha}`);
 
         // Detect same-repo vs cross-repo (must match both owner/repo AND host)
         let isSameRepo = false;
@@ -362,8 +365,8 @@ if (args[0] === "sessions") {
       } catch (err) {
         console.error(`Warning: --local failed, falling back to remote diff`);
         console.error(err instanceof Error ? err.message : String(err));
-        // Clean up partially-created clone directory (clone may have succeeded before fetch/checkout failed)
-        try { rmSync(localPath, { recursive: true, force: true }); } catch {}
+        // Clean up partially-created directory (clone may have succeeded before fetch/checkout failed)
+        if (localPath) try { rmSync(localPath, { recursive: true, force: true }); } catch {}
         agentCwd = undefined;
         worktreeCleanup = undefined;
       }

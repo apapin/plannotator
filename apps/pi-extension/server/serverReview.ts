@@ -158,7 +158,7 @@ export async function startReviewServer(options: {
 	const draftKey = contentHash(options.rawPatch);
 	const prMeta = options.prMetadata;
 	const isPRMode = !!prMeta;
-	const hasLocalAccess = !!options.agentCwd || !!options.gitContext;
+	const hasLocalAccess = !!options.gitContext;
 	const isRemote = isRemoteSession();
 	const wslFlag = detectWSL();
 	const prRef = prMeta ? prRefFromMetadata(prMeta) : null;
@@ -208,11 +208,11 @@ export async function startReviewServer(options: {
 
 		async buildCommand(provider) {
 			const cwd = resolveAgentCwd();
-			const hasLocalAccess = !!options.agentCwd || !!options.gitContext;
+			const hasAgentLocalAccess = !!options.agentCwd || !!options.gitContext;
 			const userMessage = buildCodexReviewUserMessage(
 				currentPatch,
 				currentDiffType,
-				{ defaultBranch: options.gitContext?.defaultBranch, hasLocalAccess },
+				{ defaultBranch: options.gitContext?.defaultBranch, hasLocalAccess: hasAgentLocalAccess },
 				options.prMetadata,
 			);
 
@@ -613,7 +613,7 @@ export async function startReviewServer(options: {
 			json(res, { agents: [] });
 		} else if (url.pathname === "/api/git-add" && req.method === "POST") {
 			// Staging only available for local diff types that support it (not PR mode, not branch diffs)
-			const canStage = !isPRMode && (currentDiffType === "uncommitted" || currentDiffType === "unstaged");
+			const canStage = currentDiffType === "uncommitted" || currentDiffType === "unstaged";
 			if (isPRMode || !canStage) {
 				json(res, { error: "Staging not available" }, 400);
 				return;

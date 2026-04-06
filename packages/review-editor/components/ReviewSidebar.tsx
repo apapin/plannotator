@@ -353,7 +353,7 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
                               {/* Actions — visible on hover */}
                               <div className="flex items-center justify-end gap-1 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                                 {annotation.text && (
-                                  <CopyButton text={`${annotation.filePath}:${annotation.lineStart}${annotation.lineEnd !== annotation.lineStart ? `-${annotation.lineEnd}` : ''}\n${annotation.text}`} variant="inline" />
+                                  <CopyButton text={`${annotation.filePath}:${annotation.lineStart}${annotation.lineEnd !== annotation.lineStart ? `-${annotation.lineEnd}` : ''}\n${annotation.text}${annotation.reasoning ? `\n\nReasoning: ${annotation.reasoning}` : ''}`} variant="inline" />
                                 )}
                                 <button
                                   onClick={(e) => {

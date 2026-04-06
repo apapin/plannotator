@@ -322,7 +322,7 @@ function AnnotationRow({ annotation: ann, dismissed, onClick }: {
   dismissed: boolean;
   onClick: (ann: CodeAnnotation) => void;
 }) {
-  const copyText = ann.text ? `${ann.filePath}:${ann.lineStart}${ann.lineEnd !== ann.lineStart ? `-${ann.lineEnd}` : ''}\n${ann.text}` : '';
+  const copyText = ann.text ? `${ann.filePath}:${ann.lineStart}${ann.lineEnd !== ann.lineStart ? `-${ann.lineEnd}` : ''}\n${ann.text}${ann.reasoning ? `\n\nReasoning: ${ann.reasoning}` : ''}` : '';
   const severity = ann.severity ? SEVERITY_STYLES[ann.severity] : null;
   return (
     <div

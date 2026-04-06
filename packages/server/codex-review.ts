@@ -8,7 +8,7 @@
 import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { appendFile, mkdir, unlink } from "node:fs/promises";
-import type { DiffType, GitContext } from "./vcs";
+import type { DiffType } from "./vcs";
 import type { PRMetadata } from "./pr";
 
 // ---------------------------------------------------------------------------
@@ -164,13 +164,19 @@ The finding description should be one paragraph.`;
 export function buildCodexReviewUserMessage(
   patch: string,
   diffType: DiffType,
-  gitContext?: GitContext,
+  options?: { defaultBranch?: string; hasLocalAccess?: boolean },
   prMetadata?: PRMetadata,
 ): string {
-  // PR/MR mode — just pass the link, Codex knows what to do
+  // PR/MR mode — pass the link, with local context if --local
   if (prMetadata) {
-    if (gitContext) {
-      return `${prMetadata.url}\n\nYou are in a local worktree checked out from the PR branch. The code is available locally.`;
+    if (options?.hasLocalAccess) {
+      return [
+        prMetadata.url,
+        "",
+        "You are in a local worktree checked out at the PR head. The code is available locally.",
+        `To see the PR changes, diff against the remote base branch: git diff origin/${prMetadata.baseBranch}...HEAD`,
+        "Do NOT diff against the local `main` branch — it may be stale. Always use origin/.",
+      ].join("\n");
     }
     return prMetadata.url;
   }
@@ -194,7 +200,7 @@ export function buildCodexReviewUserMessage(
       return "Review the code changes introduced in the last commit (`git diff HEAD~1..HEAD`) and provide prioritized findings.";
 
     case "branch": {
-      const base = gitContext?.defaultBranch || "main";
+      const base = options?.defaultBranch || "main";
       return `Review the code changes against the base branch '${base}'. Run \`git diff ${base}...HEAD\` to inspect the changes. Provide prioritized, actionable findings.`;
     }
 

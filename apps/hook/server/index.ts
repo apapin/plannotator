@@ -69,7 +69,7 @@ import { parsePRUrl, checkPRAuth, fetchPR, getCliName, getCliInstallUrl, getMRLa
 import { writeRemoteShareLink } from "@plannotator/server/share-url";
 import { resolveMarkdownFile, hasMarkdownFiles } from "@plannotator/shared/resolve-file";
 import { FILE_BROWSER_EXCLUDED } from "@plannotator/shared/reference-common";
-import { statSync, rmSync } from "fs";
+import { statSync, rmSync, realpathSync } from "fs";
 import { parseRemoteUrl } from "@plannotator/shared/repo";
 import { registerSession, unregisterSession, listSessions } from "@plannotator/server/sessions";
 import { openBrowser } from "@plannotator/server/browser";
@@ -187,18 +187,17 @@ if (args[0] === "sessions") {
   // CODE REVIEW MODE
   // ============================================
 
-  // Parse --local flag (strip before URL detection)
+  // Parse local flags (strip before URL detection)
+  // --local is now the default for PR/MR reviews; --no-local opts out.
+  // --local kept for backwards compat (no-op).
   const localIdx = args.indexOf("--local");
-  const useLocal = localIdx !== -1;
   if (localIdx !== -1) args.splice(localIdx, 1);
+  const noLocalIdx = args.indexOf("--no-local");
+  if (noLocalIdx !== -1) args.splice(noLocalIdx, 1);
 
   const urlArg = args[1];
   const isPRMode = urlArg?.startsWith("http://") || urlArg?.startsWith("https://");
-
-  if (useLocal && !isPRMode) {
-    console.error("--local requires a PR/MR URL");
-    process.exit(1);
-  }
+  const useLocal = isPRMode && noLocalIdx === -1;
 
   let rawPatch: string;
   let gitRef: string;
@@ -206,6 +205,7 @@ if (args[0] === "sessions") {
   let gitContext: Awaited<ReturnType<typeof getVcsContext>> | undefined;
   let prMetadata: Awaited<ReturnType<typeof fetchPR>>["metadata"] | undefined;
   let initialDiffType: DiffType | undefined;
+  let agentCwd: string | undefined;
   let worktreeCleanup: (() => void | Promise<void>) | undefined;
 
   if (isPRMode) {
@@ -254,7 +254,9 @@ if (args[0] === "sessions") {
           ? `${prMetadata.owner}-${prMetadata.repo}-${prMetadata.number}`
           : `${prMetadata.projectPath.replace(/\//g, "-")}-${prMetadata.iid}`;
         const suffix = Math.random().toString(36).slice(2, 8);
-        const localPath = path.join(tmpdir(), `plannotator-pr-${identifier}-${suffix}`);
+        // Resolve tmpdir to its real path — on macOS, tmpdir() returns /var/folders/...
+        // but processes report /private/var/folders/... which breaks path stripping.
+        const localPath = path.join(realpathSync(tmpdir()), `plannotator-pr-${identifier}-${suffix}`);
         const fetchRefStr = prMetadata.platform === "github"
           ? `refs/pull/${prMetadata.number}/head`
           : `refs/merge-requests/${prMetadata.iid}/head`;
@@ -275,6 +277,12 @@ if (args[0] === "sessions") {
         if (isSameRepo) {
           // ── Same-repo: fast worktree path ──
           console.error("Fetching PR branch and creating local worktree...");
+          // Fetch base branch FIRST so origin/<baseBranch> is current — without this,
+          // `git diff origin/main...HEAD` in the worktree uses stale refs and shows
+          // changes from other PRs that were merged since the last fetch.
+          await fetchRef(gitRuntime, prMetadata.baseBranch, { cwd: repoDir });
+          // Fetch PR head SECOND — this sets FETCH_HEAD to the PR tip, which
+          // createWorktree needs. Order matters: fetchRef overwrites FETCH_HEAD.
           await fetchRef(gitRuntime, fetchRefStr, { cwd: repoDir });
           await ensureObjectAvailable(gitRuntime, prMetadata.baseSha, { cwd: repoDir });
 
@@ -319,9 +327,10 @@ if (args[0] === "sessions") {
           // Step 3: Checkout and ensure base is available
           Bun.spawnSync(["git", "checkout", "FETCH_HEAD"], { cwd: localPath, stderr: "pipe" });
 
-          // Fetch the exact base SHA (the merge-base GitHub computed for this PR)
-          // Using baseSha instead of baseBranch avoids diff explosion from branch divergence
+          // Fetch the exact base SHA and create a local branch for it so
+          // `git diff main...HEAD` shows only the PR changes.
           Bun.spawnSync(["git", "fetch", "--depth=50", "origin", prMetadata.baseSha], { cwd: localPath, stderr: "pipe" });
+          Bun.spawnSync(["git", "branch", prMetadata.baseBranch, prMetadata.baseSha], { cwd: localPath, stderr: "pipe" });
 
           worktreeCleanup = () => { try { rmSync(localPath, { recursive: true, force: true }); } catch {} };
           process.on("exit", () => {
@@ -329,24 +338,15 @@ if (args[0] === "sessions") {
           });
         }
 
-        // ── Common path: build context + diff ──
-        gitContext = await getVcsContext(localPath);
-        gitContext.defaultBranch = prMetadata.baseBranch;
-        initialDiffType = "branch";
-
-        if (isSameRepo) {
-          // Same-repo: compute diff locally (full history available, accurate)
-          const localDiff = await runVcsDiff("branch", prMetadata.baseBranch, localPath);
-          rawPatch = localDiff.patch;
-          gitRef = localDiff.label || gitRef;
-        }
-        // Cross-repo: keep the rawPatch from gh pr diff (already set above).
-        // Local git diff in shallow clones produces malformed hunks that break the diff viewer.
+        // --local only provides a sandbox path for agent processes.
+        // Do NOT set gitContext — that would contaminate the diff pipeline.
+        agentCwd = localPath;
 
         console.error(`Local checkout ready at ${localPath}`);
       } catch (err) {
         console.error(`Warning: --local failed, falling back to remote diff`);
         console.error(err instanceof Error ? err.message : String(err));
+        agentCwd = undefined;
         worktreeCleanup = undefined;
       }
     }
@@ -371,6 +371,7 @@ if (args[0] === "sessions") {
     diffType: gitContext ? (initialDiffType ?? "uncommitted") : undefined,
     gitContext,
     prMetadata,
+    agentCwd,
     sharingEnabled,
     shareBaseUrl,
     htmlContent: reviewHtmlContent,

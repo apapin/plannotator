@@ -70,6 +70,8 @@ export interface ReviewServerOptions {
   opencodeClient?: OpencodeClient;
   /** PR metadata when reviewing a pull request (PR mode) */
   prMetadata?: PRMetadata;
+  /** Working directory for agent processes (e.g., --local worktree). Independent of diff pipeline. */
+  agentCwd?: string;
   /** Cleanup callback invoked when server stops (e.g., remove temp worktree) */
   onCleanup?: () => void | Promise<void>;
 }
@@ -128,12 +130,19 @@ export async function startReviewServer(
     mode: "review",
     getServerUrl: () => serverUrl,
     getCwd: () => {
+      if (options.agentCwd) return options.agentCwd;
       return resolveVcsCwd(currentDiffType, gitContext?.cwd) ?? process.cwd();
     },
 
     async buildCommand(provider) {
-      const cwd = resolveVcsCwd(currentDiffType, gitContext?.cwd) ?? process.cwd();
-      const userMessage = buildCodexReviewUserMessage(currentPatch, currentDiffType, gitContext, prMetadata);
+      const cwd = options.agentCwd ?? resolveVcsCwd(currentDiffType, gitContext?.cwd) ?? process.cwd();
+      const hasAgentLocalAccess = !!options.agentCwd || !!gitContext;
+      const userMessage = buildCodexReviewUserMessage(
+        currentPatch,
+        currentDiffType,
+        { defaultBranch: gitContext?.defaultBranch, hasLocalAccess: hasAgentLocalAccess },
+        prMetadata,
+      );
 
       if (provider === "codex") {
         const outputPath = generateOutputPath();
@@ -170,7 +179,7 @@ export async function startReviewServer(
       };
 
       if (output.findings.length > 0) {
-        const cwd = resolveVcsCwd(currentDiffType, gitContext?.cwd) ?? process.cwd();
+        const cwd = options.agentCwd ?? resolveVcsCwd(currentDiffType, gitContext?.cwd) ?? process.cwd();
         const authorName = job.provider === "codex" ? "Codex" : job.provider === "claude" ? "Claude Code" : "Review Agent";
         const annotations = transformReviewFindings(output.findings, job.source, cwd, authorName);
         const result = externalAnnotations.addAnnotations({ annotations });
@@ -260,6 +269,7 @@ export async function startReviewServer(
       registry: aiRegistry,
       sessionManager: aiSessionManager,
       getCwd: () => {
+        if (options.agentCwd) return options.agentCwd;
         return resolveVcsCwd(currentDiffType, gitContext?.cwd) ?? process.cwd();
       },
     });
@@ -332,6 +342,7 @@ export async function startReviewServer(
               shareBaseUrl,
               repoInfo,
               isWSL: wslFlag,
+              ...(options.agentCwd && { agentCwd: options.agentCwd }),
               ...(isPRMode && { prMetadata, platformUser }),
               ...(isPRMode && initialViewedFiles.length > 0 && { viewedFiles: initialViewedFiles }),
               ...(currentError && { error: currentError }),
@@ -417,7 +428,7 @@ export async function startReviewServer(
               }
             }
 
-            // Prefer local file access (works for both local mode and hybrid --local mode)
+            // Local review: read file contents from local git
             if (hasLocalAccess) {
               const defaultBranch = gitContext?.defaultBranch || "main";
               const defaultCwd = gitContext?.cwd;
@@ -431,8 +442,8 @@ export async function startReviewServer(
               return Response.json(result);
             }
 
+            // PR mode: fetch from platform API using base/head SHAs
             if (isPRMode) {
-              // Pure PR mode: fetch from platform API using base/head SHAs
               const [oldContent, newContent] = await Promise.all([
                 fetchPRFileContent(prRef!, prMetadata.baseSha, oldPath || filePath),
                 fetchPRFileContent(prRef!, prMetadata.headSha, filePath),

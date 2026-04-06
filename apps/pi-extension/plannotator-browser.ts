@@ -1,5 +1,7 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import {
@@ -11,6 +13,17 @@ import {
 	type DiffType,
 } from "./server.js";
 import { openBrowser } from "./server/network.js";
+import { parsePRUrl, checkPRAuth, fetchPR } from "./server/pr.js";
+import {
+	getMRLabel,
+	getMRNumberLabel,
+	getDisplayRepo,
+	getCliName,
+	getCliInstallUrl,
+} from "./generated/pr-provider.js";
+import { parseRemoteUrl } from "./generated/repo.js";
+import { fetchRef, createWorktree, removeWorktree, ensureObjectAvailable } from "./generated/worktree.js";
+import type { ReviewGitRuntime, GitCommandResult } from "./generated/review-core.js";
 
 export type AnnotateMode = "annotate" | "annotate-folder" | "annotate-last";
 export interface PlanReviewDecision {
@@ -149,29 +162,209 @@ export async function openPlanReviewBrowser(
 	return session.waitForDecision();
 }
 
+// Lightweight git runtime for worktree operations (Node.js child_process)
+const nodeGitRuntime: ReviewGitRuntime = {
+	async runGit(args: string[], options?: { cwd?: string }): Promise<GitCommandResult> {
+		const result = spawnSync("git", args, { cwd: options?.cwd, encoding: "utf-8" });
+		return {
+			stdout: result.stdout ?? "",
+			stderr: result.stderr ?? "",
+			exitCode: result.status ?? (result.error ? 1 : 0),
+		};
+	},
+	async readTextFile(path: string): Promise<string | null> {
+		try { return readFileSync(path, "utf-8"); } catch { return null; }
+	},
+};
+
+/** Run a command synchronously, returning { stdout, stderr, exitCode }. */
+function runSync(cmd: string, args: string[], options?: { cwd?: string }): { stdout: string; stderr: string; exitCode: number } {
+	const result = spawnSync(cmd, args, { cwd: options?.cwd, encoding: "utf-8" });
+	return {
+		stdout: result.stdout ?? "",
+		stderr: result.stderr ?? "",
+		exitCode: result.status ?? (result.error ? 1 : 0),
+	};
+}
+
 export async function openCodeReview(
 	ctx: ExtensionContext,
-	options: { cwd?: string; defaultBranch?: string; diffType?: DiffType } = {},
+	options: { cwd?: string; defaultBranch?: string; diffType?: DiffType; prUrl?: string } = {},
 ): Promise<{ approved: boolean; feedback?: string; annotations?: unknown[]; agentSwitch?: string }> {
 	if (!ctx.hasUI || !reviewHtmlContent) {
 		throw new Error("Plannotator code review browser is unavailable in this session.");
 	}
 
-	const cwd = options.cwd ?? ctx.cwd;
-	const gitCtx = await getGitContext(cwd);
-	const defaultBranch = options.defaultBranch ?? gitCtx.defaultBranch;
-	const diffType: DiffType = options.diffType ?? "uncommitted";
-	const { patch: rawPatch, label: gitRef, error } = await runGitDiff(diffType, defaultBranch, cwd);
+	const urlArg = options.prUrl;
+	const isPRMode = urlArg?.startsWith("http://") || urlArg?.startsWith("https://");
+
+	let rawPatch: string;
+	let gitRef: string;
+	let diffError: string | undefined;
+	let gitCtx: Awaited<ReturnType<typeof getGitContext>> | undefined;
+	let prMetadata: Awaited<ReturnType<typeof fetchPR>>["metadata"] | undefined;
+	let diffType: DiffType | undefined;
+	let agentCwd: string | undefined;
+	let worktreeCleanup: (() => void | Promise<void>) | undefined;
+
+	if (isPRMode && urlArg) {
+		// --- PR Review Mode ---
+		const prRef = parsePRUrl(urlArg);
+		if (!prRef) {
+			throw new Error(
+				`Invalid PR/MR URL: ${urlArg}\n` +
+				"Supported formats:\n" +
+				"  GitHub: https://github.com/owner/repo/pull/123\n" +
+				"  GitLab: https://gitlab.com/group/project/-/merge_requests/42",
+			);
+		}
+
+		const cliName = getCliName(prRef);
+		const cliUrl = getCliInstallUrl(prRef);
+
+		try {
+			await checkPRAuth(prRef);
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			if (msg.includes("not found") || msg.includes("ENOENT")) {
+				throw new Error(`${cliName === "gh" ? "GitHub" : "GitLab"} CLI (${cliName}) is not installed. Install it from ${cliUrl}`);
+			}
+			throw err;
+		}
+
+		console.error(`Fetching ${getMRLabel(prRef)} ${getMRNumberLabel(prRef)} from ${getDisplayRepo(prRef)}...`);
+		const pr = await fetchPR(prRef);
+		rawPatch = pr.rawPatch;
+		gitRef = `${getMRLabel(prRef)} ${getMRNumberLabel(prRef)}`;
+		prMetadata = pr.metadata;
+
+		// Create local worktree for agent file access (--local is the default for PR reviews)
+		let localPath: string | undefined;
+		try {
+			const repoDir = options.cwd ?? ctx.cwd;
+			const identifier = prMetadata.platform === "github"
+				? `${prMetadata.owner}-${prMetadata.repo}-${prMetadata.number}`
+				: `${prMetadata.projectPath.replace(/\//g, "-")}-${prMetadata.iid}`;
+			const suffix = Math.random().toString(36).slice(2, 8);
+			localPath = join(realpathSync(tmpdir()), `plannotator-pr-${identifier}-${suffix}`);
+			const fetchRefStr = prMetadata.platform === "github"
+				? `refs/pull/${prMetadata.number}/head`
+				: `refs/merge-requests/${prMetadata.iid}/head`;
+
+			// Validate inputs from platform API to prevent git flag/path injection
+			if (prMetadata.baseBranch.includes('..') || prMetadata.baseBranch.startsWith('-')) throw new Error(`Invalid base branch: ${prMetadata.baseBranch}`);
+			if (!/^[0-9a-f]{40,64}$/i.test(prMetadata.baseSha)) throw new Error(`Invalid base SHA: ${prMetadata.baseSha}`);
+
+			// Detect same-repo vs cross-repo (must match both owner/repo AND host)
+			let isSameRepo = false;
+			try {
+				const remoteResult = await nodeGitRuntime.runGit(["remote", "get-url", "origin"], { cwd: repoDir });
+				if (remoteResult.exitCode === 0) {
+					const remoteUrl = remoteResult.stdout.trim();
+					const currentRepo = parseRemoteUrl(remoteUrl);
+					const prRepo = prMetadata.platform === "github"
+						? `${prMetadata.owner}/${prMetadata.repo}`
+						: prMetadata.projectPath;
+					const repoMatches = !!currentRepo && currentRepo.toLowerCase() === prRepo.toLowerCase();
+					const sshHost = remoteUrl.match(/^[^@]+@([^:]+):/)?.[1];
+					const httpsHost = (() => { try { return new URL(remoteUrl).hostname; } catch { return null; } })();
+					const remoteHost = (sshHost || httpsHost || "").toLowerCase();
+					const prHost = prMetadata.host.toLowerCase();
+					isSameRepo = repoMatches && remoteHost === prHost;
+				}
+			} catch { /* not in a git repo — cross-repo path */ }
+
+			if (isSameRepo) {
+				// ── Same-repo: fast worktree path ──
+				console.error("Fetching PR branch and creating local worktree...");
+				await fetchRef(nodeGitRuntime, prMetadata.baseBranch, { cwd: repoDir });
+				await ensureObjectAvailable(nodeGitRuntime, prMetadata.baseSha, { cwd: repoDir });
+				await fetchRef(nodeGitRuntime, fetchRefStr, { cwd: repoDir });
+
+				await createWorktree(nodeGitRuntime, {
+					ref: "FETCH_HEAD",
+					path: localPath,
+					detach: true,
+					cwd: repoDir,
+				});
+
+				const worktreePath = localPath;
+				worktreeCleanup = () => removeWorktree(nodeGitRuntime, worktreePath, { force: true, cwd: repoDir });
+				process.once("exit", () => {
+					try { spawnSync("git", ["worktree", "remove", "--force", worktreePath]); } catch {}
+				});
+			} else {
+				// ── Cross-repo: shallow clone + fetch PR head ──
+				const prRepo = prMetadata.platform === "github"
+					? `${prMetadata.owner}/${prMetadata.repo}`
+					: prMetadata.projectPath;
+				if (/^-/.test(prRepo)) throw new Error(`Invalid repository identifier: ${prRepo}`);
+				const cli = prMetadata.platform === "github" ? "gh" : "glab";
+				const host = prMetadata.host;
+				const hostnameArgs = (host === "github.com" || host === "gitlab.com") ? [] : ["--hostname", host];
+
+				console.error(`Cloning ${prRepo} (shallow)...`);
+				const cloneResult = runSync(cli, ["repo", "clone", prRepo, localPath, ...hostnameArgs, "--", "--depth=1", "--no-checkout"]);
+				if (cloneResult.exitCode !== 0) {
+					throw new Error(`${cli} repo clone failed: ${cloneResult.stderr.trim()}`);
+				}
+
+				console.error("Fetching PR branch...");
+				const fetchResult = runSync("git", ["fetch", "--depth=50", "origin", fetchRefStr], { cwd: localPath });
+				if (fetchResult.exitCode !== 0) throw new Error(`Failed to fetch PR head ref: ${fetchResult.stderr.trim()}`);
+
+				const checkoutResult = runSync("git", ["checkout", "FETCH_HEAD"], { cwd: localPath });
+				if (checkoutResult.exitCode !== 0) {
+					throw new Error(`git checkout FETCH_HEAD failed: ${checkoutResult.stderr.trim()}`);
+				}
+
+				// Best-effort: create base refs so agent diffs work
+				const baseFetch = runSync("git", ["fetch", "--depth=50", "origin", prMetadata.baseSha], { cwd: localPath });
+				if (baseFetch.exitCode !== 0) console.error("Warning: failed to fetch baseSha, agent diffs may be inaccurate");
+				runSync("git", ["branch", "--", prMetadata.baseBranch, prMetadata.baseSha], { cwd: localPath });
+				runSync("git", ["update-ref", `refs/remotes/origin/${prMetadata.baseBranch}`, prMetadata.baseSha], { cwd: localPath });
+
+				const clonePath = localPath;
+				worktreeCleanup = () => { try { rmSync(clonePath, { recursive: true, force: true }); } catch {} };
+				process.once("exit", () => {
+					try { rmSync(clonePath, { recursive: true, force: true }); } catch {}
+				});
+			}
+
+			agentCwd = localPath;
+			console.error(`Local checkout ready at ${localPath}`);
+		} catch (err) {
+			console.error("Warning: local worktree creation failed, falling back to remote diff");
+			console.error(err instanceof Error ? err.message : String(err));
+			if (localPath) try { rmSync(localPath, { recursive: true, force: true }); } catch {}
+			agentCwd = undefined;
+			worktreeCleanup = undefined;
+		}
+	} else {
+		// --- Local Review Mode ---
+		const cwd = options.cwd ?? ctx.cwd;
+		gitCtx = await getGitContext(cwd);
+		const defaultBranch = options.defaultBranch ?? gitCtx.defaultBranch;
+		diffType = options.diffType ?? "uncommitted";
+		const result = await runGitDiff(diffType, defaultBranch, cwd);
+		rawPatch = result.patch;
+		gitRef = result.label;
+		diffError = result.error;
+	}
+
 	const server = await startReviewServer({
 		rawPatch,
 		gitRef,
-		error,
+		error: diffError,
 		origin: "pi",
 		diffType,
 		gitContext: gitCtx,
+		prMetadata,
+		agentCwd,
 		htmlContent: reviewHtmlContent,
 		sharingEnabled: process.env.PLANNOTATOR_SHARE !== "disabled",
 		shareBaseUrl: process.env.PLANNOTATOR_SHARE_URL || undefined,
+		onCleanup: worktreeCleanup,
 	});
 
 	return openBrowserAndWait(server, ctx, server.waitForDecision);

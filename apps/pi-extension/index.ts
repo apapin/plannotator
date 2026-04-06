@@ -333,8 +333,8 @@ export default function plannotator(pi: ExtensionAPI): void {
 	});
 
 	pi.registerCommand("plannotator-review", {
-		description: "Open interactive code review for current changes",
-		handler: async (_args, ctx) => {
+		description: "Open interactive code review for current changes or a PR URL",
+		handler: async (args, ctx) => {
 			if (!hasReviewBrowserHtml()) {
 				ctx.ui.notify(
 					"Code review UI not available. Run 'bun run build' in the pi-extension directory.",
@@ -344,7 +344,8 @@ export default function plannotator(pi: ExtensionAPI): void {
 			}
 
 			try {
-				const result = await openCodeReview(ctx);
+				const prUrl = args?.trim() || undefined;
+				const result = await openCodeReview(ctx, { prUrl });
 				if (result.feedback) {
 					if (result.approved) {
 						pi.sendUserMessage(

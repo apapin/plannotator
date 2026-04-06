@@ -178,7 +178,7 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions): AgentJob
       if (proc.stderr && typeof proc.stderr !== "number") {
         (async () => {
           try {
-            const reader = proc!.stderr as ReadableStream;
+            const reader = proc!.stderr as unknown as AsyncIterable<Uint8Array>;
             for await (const chunk of reader) {
               const text = typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk);
               stderrBuf = (stderrBuf + text).slice(-500);
@@ -211,7 +211,7 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions): AgentJob
       const stdoutDone = (captureStdout && proc.stdout && typeof proc.stdout !== "number")
         ? (async () => {
             try {
-              const reader = proc!.stdout as ReadableStream;
+              const reader = proc!.stdout as unknown as AsyncIterable<Uint8Array>;
               for await (const chunk of reader) {
                 const text = typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk);
                 stdoutBuf += text;

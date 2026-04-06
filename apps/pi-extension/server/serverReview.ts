@@ -168,19 +168,21 @@ export async function startReviewServer(options: {
 
 	// Agent jobs — background process manager (late-binds serverUrl via getter)
 	let serverUrl = "";
+	// Worktree-aware cwd resolver — shared by getCwd, buildCommand, and onJobComplete
+	function resolveAgentCwd(): string {
+		if (currentDiffType.startsWith("worktree:")) {
+			const parsed = parseWorktreeDiffType(currentDiffType);
+			if (parsed) return parsed.path;
+		}
+		return options.gitContext?.cwd ?? process.cwd();
+	}
 	const agentJobs = createAgentJobHandler({
 		mode: "review",
 		getServerUrl: () => serverUrl,
-		getCwd: () => {
-			if (currentDiffType.startsWith("worktree:")) {
-				const parsed = parseWorktreeDiffType(currentDiffType);
-				if (parsed) return parsed.path;
-			}
-			return options.gitContext?.cwd ?? process.cwd();
-		},
+		getCwd: resolveAgentCwd,
 
 		async buildCommand(provider) {
-			const cwd = options.gitContext?.cwd ?? process.cwd();
+			const cwd = resolveAgentCwd();
 			const hasLocalAccess = !!options.gitContext;
 			const userMessage = buildCodexReviewUserMessage(
 				currentPatch,
@@ -206,7 +208,7 @@ export async function startReviewServer(options: {
 		},
 
 		async onJobComplete(job, meta) {
-			const cwd = options.gitContext?.cwd ?? process.cwd();
+			const cwd = resolveAgentCwd();
 
 			if (job.provider === "codex" && meta.outputPath) {
 				const output = await parseCodexOutput(meta.outputPath);

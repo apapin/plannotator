@@ -15,6 +15,8 @@ import { exportReviewFeedback } from '../../utils/exportFeedback';
 
 type DetailTab = 'findings' | 'logs';
 
+const SEVERITY_ORDER: Record<string, number> = { important: 0, nit: 1, pre_existing: 2 };
+
 export const ReviewAgentJobDetailPanel: React.FC<IDockviewPanelProps> = (props) => {
   const jobId: string = props.params?.jobId ?? '';
   const state = useReviewState();
@@ -65,7 +67,6 @@ export const ReviewAgentJobDetailPanel: React.FC<IDockviewPanelProps> = (props) 
     });
   }, [state.externalAnnotations, job]);
 
-  const SEVERITY_ORDER: Record<string, number> = { important: 0, nit: 1, pre_existing: 2 };
   const displayAnnotations = useMemo(() =>
     Array.from(annotationSnapshot.values()).sort((a, b) => {
       if (a.dismissed !== b.dismissed) return a.dismissed ? 1 : -1;

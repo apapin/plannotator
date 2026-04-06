@@ -287,14 +287,14 @@ if (args[0] === "sessions") {
         if (isSameRepo) {
           // ── Same-repo: fast worktree path ──
           console.error("Fetching PR branch and creating local worktree...");
-          // Fetch base branch FIRST so origin/<baseBranch> is current — without this,
-          // `git diff origin/main...HEAD` in the worktree uses stale refs and shows
-          // changes from other PRs that were merged since the last fetch.
+          // Fetch base branch so origin/<baseBranch> is current for agent diffs.
+          // Ensure baseSha is available (may fetch, which overwrites FETCH_HEAD).
+          // Both MUST happen before the PR head fetch since FETCH_HEAD is what
+          // createWorktree uses — the PR head fetch must be last.
           await fetchRef(gitRuntime, prMetadata.baseBranch, { cwd: repoDir });
-          // Fetch PR head SECOND — this sets FETCH_HEAD to the PR tip, which
-          // createWorktree needs. Order matters: fetchRef overwrites FETCH_HEAD.
-          await fetchRef(gitRuntime, fetchRefStr, { cwd: repoDir });
           await ensureObjectAvailable(gitRuntime, prMetadata.baseSha, { cwd: repoDir });
+          // Fetch PR head LAST — sets FETCH_HEAD to the PR tip for createWorktree.
+          await fetchRef(gitRuntime, fetchRefStr, { cwd: repoDir });
 
           await createWorktree(gitRuntime, {
             ref: "FETCH_HEAD",

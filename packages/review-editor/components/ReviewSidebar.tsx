@@ -107,7 +107,7 @@ function compareCodeAnnotations(a: CodeAnnotation, b: CodeAnnotation): number {
 }
 
 
-export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
+export const ReviewSidebar: React.FC<ReviewSidebarProps> = React.memo(({
   isOpen,
   onToggle,
   annotations,
@@ -461,4 +461,4 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
         )}
     </aside>
   );
-};
+});

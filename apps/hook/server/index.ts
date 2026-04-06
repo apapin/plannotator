@@ -302,6 +302,8 @@ if (args[0] === "sessions") {
           const prRepo = prMetadata.platform === "github"
             ? `${prMetadata.owner}/${prMetadata.repo}`
             : prMetadata.projectPath;
+          // Validate repo identifier to prevent flag injection via crafted URLs
+          if (/^-/.test(prRepo)) throw new Error(`Invalid repository identifier: ${prRepo}`);
           const cli = prMetadata.platform === "github" ? "gh" : "glab";
           const host = prMetadata.host;
           const hostnameArgs = (host === "github.com" || host === "gitlab.com") ? [] : ["--hostname", host];
@@ -309,7 +311,7 @@ if (args[0] === "sessions") {
           // Step 1: Fast skeleton clone (no checkout, depth 1 — minimal data transfer)
           console.error(`Cloning ${prRepo} (shallow)...`);
           const cloneResult = Bun.spawnSync(
-            [cli, "repo", "clone", ...hostnameArgs, "--", prRepo, localPath, "--depth=1", "--no-checkout"],
+            [cli, "repo", "clone", prRepo, localPath, ...hostnameArgs, "--", "--depth=1", "--no-checkout"],
             { stderr: "pipe" },
           );
           if (cloneResult.exitCode !== 0) {

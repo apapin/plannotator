@@ -8,7 +8,7 @@ import { renderInlineMarkdown } from '../utils/renderInlineMarkdown';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
 import { AITab } from './AITab';
 import { SparklesIcon } from './SparklesIcon';
-import { ReviewAgentsIcon } from './ReviewAgentsIcon';
+import { ReviewAgentsIcon } from '@plannotator/ui/components/ReviewAgentsIcon';
 import { AgentsTab } from '@plannotator/ui/components/AgentsTab';
 import type { PRMetadata } from '@plannotator/shared/pr-provider';
 import type { AIChatEntry } from '../hooks/useAIChat';
@@ -202,8 +202,8 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
     <aside className="border-l border-border/50 bg-card/30 backdrop-blur-sm flex flex-col flex-shrink-0" style={{ width: width ?? 288 }}>
         {/* Header */}
         <div className="px-3 flex items-center border-b border-border/50" style={{ height: 'var(--panel-header-h)' }}>
-          <div className="flex items-center gap-2 w-full">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <div className="flex items-center gap-2 w-full min-w-0">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground truncate shrink">
               {activeTab === 'annotations' ? 'Annotations' : activeTab === 'ai' ? 'AI' : activeTab === 'agents' ? 'Review Agents' : activeTab === 'summary' ? 'Summary' : activeTab === 'comments' ? 'Comments' : 'Checks'}
             </h2>
             {activeTab === 'annotations' && totalCount > 0 && (
@@ -222,7 +222,7 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
               </span>
             )}
 
-            <div className="flex items-center gap-0.5 ml-auto">
+            <div className="flex items-center gap-0.5 ml-auto shrink-0">
               {/* Annotations tab (always visible) */}
               <button
                 onClick={() => handleTabChange('annotations')}

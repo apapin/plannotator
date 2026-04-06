@@ -1,21 +1,8 @@
-import React, { useMemo, useRef, useEffect } from 'react';
+import React, { useMemo } from 'react';
 import DOMPurify from 'dompurify';
 import { parseMarkdownToBlocks } from '@plannotator/ui/utils/parser';
 import { renderInlineMarkdown } from '../utils/renderInlineMarkdown';
-import type { PRContext } from '@plannotator/shared/pr-provider';
-
-/** Renders sanitized HTML with onerror handlers on images to prevent 404 flicker loops. */
-function SafeHtmlBlock({ html, tag: Tag = 'div', ...props }: { html: string; tag?: 'div' | 'span'; [key: string]: any }) {
-  const ref = useRef<HTMLElement>(null);
-  useEffect(() => {
-    if (!ref.current) return;
-    ref.current.querySelectorAll('img').forEach((img) => {
-      img.onerror = () => { img.style.display = 'none'; img.onerror = null; };
-    });
-  }, [html]);
-  return <Tag ref={ref as any} dangerouslySetInnerHTML={{ __html: html }} {...props} />;
-}
-import type { PRMetadata } from '@plannotator/shared/pr-provider';
+import type { PRContext, PRMetadata } from '@plannotator/shared/pr-provider';
 
 interface PRSummaryTabProps {
   context: PRContext;
@@ -28,7 +15,7 @@ const containsHtml = (text: string) => HTML_TAG_RE.test(text);
 
 /** Sanitize HTML using DOMPurify — defense-in-depth for GitHub API content. */
 function sanitizeHtml(html: string): string {
-  return DOMPurify.sanitize(html, {
+  const clean = DOMPurify.sanitize(html, {
     ALLOWED_TAGS: [
       'sub', 'sup', 'b', 'i', 'em', 'strong', 'br', 'hr', 'p', 'span',
       'del', 'ins', 'mark', 'small', 'abbr', 'kbd', 'var', 'samp',
@@ -37,8 +24,11 @@ function sanitizeHtml(html: string): string {
       'table', 'thead', 'tbody', 'tr', 'th', 'td',
       'a', 'img', 'div',
     ],
-    ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'rel', 'target', 'width', 'height', 'align'],
+    ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'rel', 'target', 'width', 'height', 'align', 'onerror'],
   });
+  // Inject inline onerror on img tags — hides broken images on first 404 synchronously
+  // (useEffect-based approaches are too late — the browser loads the image before effects fire)
+  return clean.replace(/<img /g, `<img onerror="this.style.display='none';this.onerror=null;" `);
 }
 
 /**
@@ -47,7 +37,7 @@ function sanitizeHtml(html: string): string {
  */
 function renderContent(content: string): React.ReactNode {
   if (containsHtml(content)) {
-    return <SafeHtmlBlock html={sanitizeHtml(content)} tag="span" />;
+    return <span dangerouslySetInnerHTML={{ __html: sanitizeHtml(content) }} />;
   }
   return renderInlineMarkdown(content);
 }
@@ -98,7 +88,7 @@ export function MarkdownBody({ markdown }: { markdown: string }) {
             if (!block.content) return null;
             // If the entire paragraph is HTML, sanitize and render
             if (containsHtml(block.content)) {
-              return <SafeHtmlBlock key={block.id} html={sanitizeHtml(block.content)} />;
+              return <div key={block.id} dangerouslySetInnerHTML={{ __html: sanitizeHtml(block.content) }} />;
             }
             return <p key={block.id}>{renderInlineMarkdown(block.content)}</p>;
         }
@@ -107,7 +97,7 @@ export function MarkdownBody({ markdown }: { markdown: string }) {
   );
 }
 
-export const PRSummaryTab: React.FC<PRSummaryTabProps> = ({ context, metadata }) => {
+export const PRSummaryTab: React.FC<PRSummaryTabProps> = React.memo(({ context, metadata }) => {
   return (
     <div className="px-8 py-4 space-y-4 max-w-2xl">
       {/* PR title + state */}
@@ -194,4 +184,4 @@ export const PRSummaryTab: React.FC<PRSummaryTabProps> = ({ context, metadata })
       )}
     </div>
   );
-};
+});

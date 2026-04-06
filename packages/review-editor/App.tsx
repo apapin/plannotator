@@ -153,6 +153,7 @@ const ReviewApp: React.FC = () => {
   const [isWSL, setIsWSL] = useState(false);
   const [diffType, setDiffType] = useState<string>('uncommitted');
   const [gitContext, setGitContext] = useState<GitContext | null>(null);
+  const [agentCwd, setAgentCwd] = useState<string | null>(null);
   const [isLoadingDiff, setIsLoadingDiff] = useState(false);
   const [diffError, setDiffError] = useState<string | null>(null);
   const [isSendingFeedback, setIsSendingFeedback] = useState(false);
@@ -619,6 +620,7 @@ const ReviewApp: React.FC = () => {
         origin?: Origin;
         diffType?: string;
         gitContext?: GitContext;
+        agentCwd?: string;
         sharingEnabled?: boolean;
         repoInfo?: { display: string; branch?: string };
         prMetadata?: PRMetadata;
@@ -646,6 +648,7 @@ const ReviewApp: React.FC = () => {
         if (data.origin) setOrigin(data.origin);
         if (data.diffType) setDiffType(data.diffType);
         if (data.gitContext) setGitContext(data.gitContext);
+        if (data.agentCwd) setAgentCwd(data.agentCwd);
         if (data.sharingEnabled !== undefined) setSharingEnabled(data.sharingEnabled);
         if (data.repoInfo) setRepoInfo(data.repoInfo);
         if (data.prMetadata) setPrMetadata(data.prMetadata);
@@ -1309,11 +1312,11 @@ const ReviewApp: React.FC = () => {
       <JobLogsProvider value={jobLogsValue}>
       <div className="h-screen flex flex-col bg-background overflow-hidden">
         {/* Header */}
-        <header className="h-12 flex items-center justify-between px-2 md:px-4 border-b border-border/50 bg-card/50 backdrop-blur-xl z-50">
+        <header className="py-1 flex items-center justify-between px-2 md:px-4 border-b border-border/50 bg-card/50 backdrop-blur-xl z-50">
           <div className="min-w-0 flex items-center gap-2 md:gap-3">
             {prMetadata ? (
               <div className="min-w-0 flex items-center gap-2 md:gap-3">
-                {prMetadata && gitContext && (
+                {prMetadata && (gitContext || agentCwd) && (
                   <button
                     onClick={() => setShowWorktreeDialog(true)}
                     className="text-[10px] font-medium text-primary/80 bg-primary/10 hover:bg-primary/20 px-1.5 py-0.5 rounded transition-colors cursor-pointer"
@@ -1495,7 +1498,9 @@ const ReviewApp: React.FC = () => {
                   isLoading={isSendingFeedback || isPlatformActioning}
                   muted={!platformMode && totalAnnotationCount === 0 && !isSendingFeedback && !isApproving && !isPlatformActioning}
                   label={platformMode ? 'Post Comments' : 'Send Feedback'}
+                  shortLabel={platformMode ? 'Post' : 'Send'}
                   loadingLabel={platformMode ? 'Posting...' : 'Sending...'}
+                  shortLoadingLabel={platformMode ? 'Posting...' : 'Sending...'}
                   title={!platformMode && totalAnnotationCount === 0 ? "Add annotations to send feedback" : "Send feedback"}
                 />
 
@@ -1793,7 +1798,7 @@ const ReviewApp: React.FC = () => {
         </div>
 
         {/* Worktree info dialog */}
-        {gitContext?.cwd && prMetadata && (
+        {(gitContext?.cwd || agentCwd) && prMetadata && (
           <ConfirmDialog
             isOpen={showWorktreeDialog}
             onClose={() => setShowWorktreeDialog(false)}
@@ -1801,15 +1806,15 @@ const ReviewApp: React.FC = () => {
             wide
             message={
               <div className="space-y-3">
-                <p>This PR is checked out in a temporary local worktree for full file access.</p>
+                <p>This PR is checked out locally so review agents have full file access.</p>
                 <div>
                   <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-semibold">Path</span>
                   <button
-                    onClick={() => navigator.clipboard.writeText(gitContext!.cwd!)}
+                    onClick={() => navigator.clipboard.writeText((agentCwd || gitContext?.cwd)!)}
                     className="mt-1 w-full text-left font-mono text-xs bg-muted/50 border border-border/50 rounded-md px-3 py-2 text-foreground hover:bg-muted transition-colors cursor-pointer break-all"
                     title="Click to copy"
                   >
-                    {gitContext.cwd}
+                    {agentCwd || gitContext?.cwd}
                   </button>
                 </div>
                 <p className="text-xs text-muted-foreground/60">Automatically removed when this review session ends.</p>

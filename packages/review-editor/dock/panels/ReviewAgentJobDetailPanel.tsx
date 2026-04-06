@@ -110,6 +110,27 @@ export const ReviewAgentJobDetailPanel: React.FC<IDockviewPanelProps> = (props) 
         {job.cwd && (
           <p className="text-[10px] font-mono text-muted-foreground/50 mt-1 truncate" title={job.cwd}>{job.cwd}</p>
         )}
+        {/* Inline details */}
+        <div className="flex items-center gap-3 mt-1.5 text-[10px] text-muted-foreground">
+          <span>Started {new Date(job.startedAt).toLocaleTimeString()}</span>
+          {job.exitCode !== undefined && (
+            <span>Exit <span className={`font-mono ${job.exitCode === 0 ? 'text-success' : 'text-destructive'}`}>{job.exitCode}</span></span>
+          )}
+          <CopyButton text={fullCommand} variant="inline" label="Command" />
+        </div>
+        {/* Prompt disclosures in header */}
+        {userMessage && (
+          <div className="mt-3 space-y-1.5">
+            <Disclosure title="Prompt" copyText={userMessage} nested>
+              <pre className="text-xs font-mono text-foreground/80 whitespace-pre-wrap break-words max-h-48 overflow-y-auto">{userMessage}</pre>
+            </Disclosure>
+            {systemPrompt && (
+              <Disclosure title="System Prompt" copyText={systemPrompt} nested>
+                <pre className="text-xs font-mono text-foreground/80 whitespace-pre-wrap break-words max-h-48 overflow-y-auto">{systemPrompt}</pre>
+              </Disclosure>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── Tabs ── */}
@@ -144,40 +165,13 @@ export const ReviewAgentJobDetailPanel: React.FC<IDockviewPanelProps> = (props) 
           {displayAnnotations.length === 0 ? (
             <EmptyState terminal={terminal} />
           ) : (
-            <div className="space-y-0.5">
+            <div className="space-y-2">
               {displayAnnotations.map(({ annotation: ann, dismissed }) => (
                 <AnnotationRow key={ann.id} annotation={ann} dismissed={dismissed} onClick={handleAnnotationClick} />
               ))}
             </div>
           )}
 
-          {/* Debug context */}
-          <Disclosure title="Details">
-            <div className="space-y-2 text-xs text-muted-foreground">
-              <div className="flex items-center justify-between">
-                <span>Started {new Date(job.startedAt).toLocaleTimeString()}</span>
-                {job.exitCode !== undefined && (
-                  <span>Exit <span className={`font-mono ${job.exitCode === 0 ? 'text-success' : 'text-destructive'}`}>{job.exitCode}</span></span>
-                )}
-              </div>
-              {userMessage && (
-                <Disclosure title="Prompt" copyText={userMessage} nested>
-                  <pre className="text-xs font-mono text-foreground/80 whitespace-pre-wrap break-words">{userMessage}</pre>
-                </Disclosure>
-              )}
-              {systemPrompt && (
-                <Disclosure title="System Prompt" copyText={systemPrompt} nested>
-                  <pre className="text-xs font-mono text-foreground/80 whitespace-pre-wrap break-words">{systemPrompt}</pre>
-                </Disclosure>
-              )}
-              {fullCommand && (
-                <div className="flex items-center gap-2">
-                  <span className="truncate font-mono text-muted-foreground/60">{fullCommand.slice(0, 60)}...</span>
-                  <CopyButton text={fullCommand} variant="inline" />
-                </div>
-              )}
-            </div>
-          </Disclosure>
         </div>
         </ScrollFade>
       ) : (
@@ -308,8 +302,8 @@ function AnnotationRow({ annotation: ann, dismissed, onClick }: {
 }) {
   return (
     <button
-      className={`w-full text-left px-2.5 py-2 rounded transition-all duration-150 ${
-        dismissed ? 'opacity-30 cursor-default' : 'hover:bg-muted/20 hover:translate-x-0.5 cursor-pointer'
+      className={`w-full text-left px-3 py-2.5 rounded bg-card border transition-all duration-150 shadow-[0_1px_3px_rgba(0,0,0,0.06)] ${
+        dismissed ? 'opacity-30 cursor-default border-border/20' : 'border-border/40 hover:shadow-[0_2px_6px_rgba(0,0,0,0.08)] hover:translate-x-0.5 cursor-pointer'
       }`}
       onClick={() => !dismissed && onClick(ann)}
       disabled={dismissed}

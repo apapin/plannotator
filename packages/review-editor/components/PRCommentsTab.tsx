@@ -79,7 +79,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
 // Component
 // ---------------------------------------------------------------------------
 
-export const PRCommentsTab: React.FC<PRCommentsTabProps> = ({ context, platformUser }) => {
+export const PRCommentsTab: React.FC<PRCommentsTabProps> = React.memo(({ context, platformUser }) => {
   // --- State ---
   const [searchQuery, setSearchQuery] = useState('');
   const [sortNewestFirst, setSortNewestFirst] = useState(false);
@@ -401,7 +401,7 @@ export const PRCommentsTab: React.FC<PRCommentsTabProps> = ({ context, platformU
       </div>
     </div>
   );
-};
+});
 
 // ---------------------------------------------------------------------------
 // Subcomponents

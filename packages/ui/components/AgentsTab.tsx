@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import type { AgentJobInfo, AgentCapabilities } from '../types';
 import { isTerminalStatus } from '@plannotator/shared/agent-jobs';
+import { ReviewAgentsIcon } from './ReviewAgentsIcon';
 
 interface AgentsTabProps {
   jobs: AgentJobInfo[];
@@ -276,9 +277,7 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
         {sortedJobs.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-40 text-center px-4">
             <div className="w-10 h-10 rounded-full bg-muted/50 flex items-center justify-center mb-3">
-              <svg className="w-5 h-5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
+              <ReviewAgentsIcon className="w-5 h-5 text-muted-foreground" />
             </div>
             <p className="text-xs text-muted-foreground">
               No agent jobs yet

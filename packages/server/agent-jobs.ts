@@ -402,7 +402,7 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions): AgentJob
       if (url.pathname === JOBS && req.method === "POST") {
         try {
           const body = await req.json();
-          const provider = typeof body.provider === "string" ? body.provider : "shell";
+          const provider = typeof body.provider === "string" ? body.provider : "";
           let rawCommand = Array.isArray(body.command) ? body.command : [];
           let command = rawCommand.filter((c: unknown): c is string => typeof c === "string");
           let label = typeof body.label === "string" ? body.label : `${provider} agent`;

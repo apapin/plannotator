@@ -222,7 +222,8 @@ export async function startReviewServer(options: {
 
 				if (output.findings.length > 0) {
 					const annotations = transformReviewFindings(output.findings, job.source, cwd, "Codex");
-					externalAnnotations.addAnnotations({ annotations });
+					const result = externalAnnotations.addAnnotations({ annotations });
+					if ("error" in result) console.error(`[codex-review] addAnnotations error:`, result.error);
 				}
 				return;
 			}
@@ -240,7 +241,8 @@ export async function startReviewServer(options: {
 
 				if (output.findings.length > 0) {
 					const annotations = transformClaudeFindings(output.findings, job.source, cwd);
-					externalAnnotations.addAnnotations({ annotations });
+					const result = externalAnnotations.addAnnotations({ annotations });
+					if ("error" in result) console.error(`[claude-review] addAnnotations error:`, result.error);
 				}
 				return;
 			}

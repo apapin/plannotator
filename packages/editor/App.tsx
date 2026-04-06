@@ -1307,9 +1307,9 @@ const App: React.FC = () => {
                     }}
                     disabled={isSubmitting}
                     isLoading={isSubmitting}
-                    dimmed={origin === 'claude-code' && allAnnotations.length > 0}
+                    dimmed={(origin === 'claude-code' || origin === 'gemini-cli') && allAnnotations.length > 0}
                   />
-                  {origin === 'claude-code' && allAnnotations.length > 0 && (
+                  {(origin === 'claude-code' || origin === 'gemini-cli') && allAnnotations.length > 0 && (
                     <div className="absolute top-full right-0 mt-2 px-3 py-2 bg-popover border border-border rounded-lg shadow-xl text-xs text-foreground w-56 text-center opacity-0 invisible group-hover/approve:opacity-100 group-hover/approve:visible transition-all pointer-events-none z-50">
                       <div className="absolute bottom-full right-4 border-4 border-transparent border-b-border" />
                       <div className="absolute bottom-full right-4 mt-px border-4 border-transparent border-b-popover" />

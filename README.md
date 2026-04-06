@@ -4,7 +4,7 @@
 
 # Plannotator
 
-Interactive Plan & Code Review for AI Coding Agents. Mark up and refine your plans or code diffs using a visual UI, share for team collaboration, and seamlessly integrate with **Claude Code**, **OpenCode**, **Pi**, and **Codex**.
+Interactive Plan & Code Review for AI Coding Agents. Mark up and refine your plans or code diffs using a visual UI, share for team collaboration, and seamlessly integrate with **Claude Code**, **Copilot CLI**, **Gemini CLI**, **OpenCode**, **Pi**, and **Codex**.
 
 **Plan Mode Demos:**
 <table>
@@ -54,6 +54,7 @@ Plannotator lets you privately share plans, annotations, and feedback with colle
 
 - [Claude Code](#install-for-claude-code)
 - [Copilot CLI](#install-for-copilot-cli)
+- [Gemini CLI](#install-for-gemini-cli)
 - [OpenCode](#install-for-opencode)
 - [Pi](#install-for-pi)
 - [Codex](#install-for-codex)
@@ -113,6 +114,39 @@ irm https://plannotator.ai/install.ps1 | iex
 Restart Copilot CLI after plugin install. Plan review activates automatically when you use plan mode (`Shift+Tab` to enter plan mode).
 
 See [apps/copilot/README.md](apps/copilot/README.md) for details.
+
+---
+
+## Install for Gemini CLI
+
+**Install the `plannotator` command:**
+
+**macOS / Linux / WSL:**
+
+```bash
+curl -fsSL https://plannotator.ai/install.sh | bash
+```
+
+**Windows PowerShell:**
+
+```powershell
+irm https://plannotator.ai/install.ps1 | iex
+```
+
+The installer auto-detects Gemini CLI (checks for `~/.gemini`) and configures the plan review hook and policy. It also installs `/plannotator-review` and `/plannotator-annotate` slash commands.
+
+**Then in Gemini CLI:**
+
+```
+/plan                              # Enter plan mode — plans open in your browser
+/plannotator-review                # Code review for current changes
+/plannotator-review <pr-url>       # Review a GitHub pull request
+/plannotator-annotate <file.md>    # Annotate a markdown file
+```
+
+Requires Gemini CLI 0.36.0 or later.
+
+See [apps/gemini/README.md](apps/gemini/README.md) for details.
 
 ---
 

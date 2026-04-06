@@ -240,6 +240,108 @@ else
     echo "Skipping skills install (git not found)"
 fi
 
+# --- Gemini CLI support (only if Gemini is installed) ---
+if [ -d "$HOME/.gemini" ]; then
+    # Install policy file
+    GEMINI_POLICIES_DIR="$HOME/.gemini/policies"
+    mkdir -p "$GEMINI_POLICIES_DIR"
+    cat > "$GEMINI_POLICIES_DIR/plannotator.toml" << 'GEMINI_POLICY_EOF'
+# Plannotator policy for Gemini CLI
+# Allows exit_plan_mode without TUI confirmation so the browser UI is the sole gate.
+[[rule]]
+toolName = "exit_plan_mode"
+decision = "allow"
+priority = 100
+GEMINI_POLICY_EOF
+    echo "Installed Gemini policy to ${GEMINI_POLICIES_DIR}/plannotator.toml"
+
+    # Configure hook in settings.json
+    GEMINI_SETTINGS="$HOME/.gemini/settings.json"
+    PLANNOTATOR_HOOK='{"matcher":"exit_plan_mode","hooks":[{"type":"command","command":"plannotator","timeout":345600}]}'
+
+    if [ -f "$GEMINI_SETTINGS" ]; then
+        if ! grep -q '"plannotator"' "$GEMINI_SETTINGS" 2>/dev/null; then
+            # Merge hook into existing settings.json using node (ships with Gemini CLI)
+            if command -v node &>/dev/null; then
+                node -e "
+                  const fs = require('fs');
+                  const settings = JSON.parse(fs.readFileSync('$GEMINI_SETTINGS', 'utf8'));
+                  if (!settings.hooks) settings.hooks = {};
+                  if (!settings.hooks.BeforeTool) settings.hooks.BeforeTool = [];
+                  settings.hooks.BeforeTool.push($PLANNOTATOR_HOOK);
+                  fs.writeFileSync('$GEMINI_SETTINGS', JSON.stringify(settings, null, 2) + '\n');
+                "
+                echo "Added plannotator hook to ${GEMINI_SETTINGS}"
+            else
+                echo ""
+                echo "Add the following to your ~/.gemini/settings.json hooks:"
+                echo ""
+                echo '  "hooks": {'
+                echo '    "BeforeTool": [{'
+                echo '      "matcher": "exit_plan_mode",'
+                echo '      "hooks": [{"type": "command", "command": "plannotator", "timeout": 345600}]'
+                echo '    }]'
+                echo '  }'
+            fi
+        fi
+    else
+        cat > "$GEMINI_SETTINGS" << 'GEMINI_SETTINGS_EOF'
+{
+  "hooks": {
+    "BeforeTool": [
+      {
+        "matcher": "exit_plan_mode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "plannotator",
+            "timeout": 345600
+          }
+        ]
+      }
+    ]
+  },
+  "experimental": {
+    "plan": true
+  }
+}
+GEMINI_SETTINGS_EOF
+        echo "Created Gemini settings at ${GEMINI_SETTINGS}"
+    fi
+
+    # Install slash commands
+    GEMINI_COMMANDS_DIR="$HOME/.gemini/commands"
+    mkdir -p "$GEMINI_COMMANDS_DIR"
+
+    cat > "$GEMINI_COMMANDS_DIR/plannotator-review.toml" << 'GEMINI_CMD_EOF'
+description = "Open interactive code review for current changes or a PR URL"
+prompt = """
+## Code Review Feedback
+
+!{plannotator review {{args}}}
+
+## Your task
+
+If the review above contains feedback or annotations, address them. If no changes were requested, acknowledge and continue.
+"""
+GEMINI_CMD_EOF
+
+    cat > "$GEMINI_COMMANDS_DIR/plannotator-annotate.toml" << 'GEMINI_CMD_EOF'
+description = "Open interactive annotation UI for a markdown file or folder"
+prompt = """
+## Markdown Annotations
+
+!{plannotator annotate {{args}}}
+
+## Your task
+
+Address the annotation feedback above. The user has reviewed the markdown file and provided specific annotations and comments.
+"""
+GEMINI_CMD_EOF
+
+    echo "Installed Gemini slash commands to ${GEMINI_COMMANDS_DIR}/"
+fi
+
 echo ""
 echo "=========================================="
 echo "  OPENCODE USERS"
@@ -258,6 +360,19 @@ echo ""
 echo "Install or update the extension:"
 echo ""
 echo "  pi install npm:@plannotator/pi-extension"
+echo ""
+echo "=========================================="
+echo "  GEMINI CLI USERS"
+echo "=========================================="
+echo ""
+echo "Enable plan mode in Gemini settings, then run:"
+echo ""
+echo "  gemini"
+echo "  /plan"
+echo ""
+echo "Plans will open in your browser for review."
+echo "If settings.json was not auto-configured, see:"
+echo "  ~/.gemini/settings.json (add BeforeTool hook)"
 echo ""
 echo "=========================================="
 echo "  CLAUDE CODE USERS: YOU'RE ALL SET!"

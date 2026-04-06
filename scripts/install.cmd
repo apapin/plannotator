@@ -259,6 +259,100 @@ if !ERRORLEVEL! equ 0 (
     echo Skipping skills install ^(git not found^)
 )
 
+REM --- Gemini CLI support (only if Gemini is installed) ---
+if exist "%USERPROFILE%\.gemini" (
+    REM Install policy file
+    if not exist "%USERPROFILE%\.gemini\policies" mkdir "%USERPROFILE%\.gemini\policies"
+    (
+echo # Plannotator policy for Gemini CLI
+echo # Allows exit_plan_mode without TUI confirmation so the browser UI is the sole gate.
+echo [[rule]]
+echo toolName = "exit_plan_mode"
+echo decision = "allow"
+echo priority = 100
+    ) > "%USERPROFILE%\.gemini\policies\plannotator.toml"
+    echo Installed Gemini policy to %USERPROFILE%\.gemini\policies\plannotator.toml
+
+    REM Configure hook in settings.json
+    if not exist "%USERPROFILE%\.gemini\settings.json" (
+        (
+echo {
+echo   "hooks": {
+echo     "BeforeTool": [
+echo       {
+echo         "matcher": "exit_plan_mode",
+echo         "hooks": [
+echo           {
+echo             "type": "command",
+echo             "command": "plannotator",
+echo             "timeout": 345600
+echo           }
+echo         ]
+echo       }
+echo     ]
+echo   },
+echo   "experimental": {
+echo     "plan": true
+echo   }
+echo }
+        ) > "%USERPROFILE%\.gemini\settings.json"
+        echo Created Gemini settings at %USERPROFILE%\.gemini\settings.json
+    ) else (
+        findstr /c:"plannotator" "%USERPROFILE%\.gemini\settings.json" >nul 2>&1
+        if !ERRORLEVEL! neq 0 (
+            REM Merge hook into existing settings.json using node (ships with Gemini CLI)
+            where node >nul 2>&1
+            if !ERRORLEVEL! equ 0 (
+                set "GEMINI_SETTINGS_PATH=%USERPROFILE%\.gemini\settings.json"
+                set "GEMINI_SETTINGS_FWD=!GEMINI_SETTINGS_PATH:\=/!"
+                node -e "const fs=require('fs');const s=JSON.parse(fs.readFileSync('!GEMINI_SETTINGS_FWD!','utf8'));if(!s.hooks)s.hooks={};if(!s.hooks.BeforeTool)s.hooks.BeforeTool=[];s.hooks.BeforeTool.push({matcher:'exit_plan_mode',hooks:[{type:'command',command:'plannotator',timeout:345600}]});fs.writeFileSync('!GEMINI_SETTINGS_FWD!',JSON.stringify(s,null,2)+'\n');"
+                echo Added plannotator hook to !GEMINI_SETTINGS_PATH!
+            ) else (
+                echo.
+                echo Add the following to your ~/.gemini/settings.json hooks:
+                echo.
+                echo   "hooks": {
+                echo     "BeforeTool": [{
+                echo       "matcher": "exit_plan_mode",
+                echo       "hooks": [{"type": "command", "command": "plannotator", "timeout": 345600}]
+                echo     }]
+                echo   }
+            )
+        )
+    )
+
+    REM Install slash commands
+    if not exist "%USERPROFILE%\.gemini\commands" mkdir "%USERPROFILE%\.gemini\commands"
+
+    (
+echo description = "Open interactive code review for current changes or a PR URL"
+echo prompt = """
+echo ## Code Review Feedback
+echo.
+echo ^!{plannotator review {{args}}}
+echo.
+echo ## Your task
+echo.
+echo If the review above contains feedback or annotations, address them. If no changes were requested, acknowledge and continue.
+echo """
+    ) > "%USERPROFILE%\.gemini\commands\plannotator-review.toml"
+
+    (
+echo description = "Open interactive annotation UI for a markdown file or folder"
+echo prompt = """
+echo ## Markdown Annotations
+echo.
+echo ^!{plannotator annotate {{args}}}
+echo.
+echo ## Your task
+echo.
+echo Address the annotation feedback above. The user has reviewed the markdown file and provided specific annotations and comments.
+echo """
+    ) > "%USERPROFILE%\.gemini\commands\plannotator-annotate.toml"
+
+    echo Installed Gemini slash commands to %USERPROFILE%\.gemini\commands\
+)
+
 echo.
 echo Test the install:
 echo   echo {"tool_input":{"plan":"# Test Plan\\n\\nHello world"}} ^| plannotator

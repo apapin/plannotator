@@ -250,6 +250,109 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
     Write-Host "Skipping skills install (git not found)"
 }
 
+# --- Gemini CLI support (only if Gemini is installed) ---
+$geminiDir = "$env:USERPROFILE\.gemini"
+if (Test-Path $geminiDir) {
+    # Install policy file
+    $geminiPoliciesDir = "$geminiDir\policies"
+    New-Item -ItemType Directory -Force -Path $geminiPoliciesDir | Out-Null
+    @'
+# Plannotator policy for Gemini CLI
+# Allows exit_plan_mode without TUI confirmation so the browser UI is the sole gate.
+[[rule]]
+toolName = "exit_plan_mode"
+decision = "allow"
+priority = 100
+'@ | Set-Content -Path "$geminiPoliciesDir\plannotator.toml"
+    Write-Host "Installed Gemini policy to $geminiPoliciesDir\plannotator.toml"
+
+    # Configure hook in settings.json
+    $geminiSettings = "$geminiDir\settings.json"
+    if (Test-Path $geminiSettings) {
+        $content = Get-Content -Path $geminiSettings -Raw -ErrorAction SilentlyContinue
+        if ($content -notmatch '"plannotator"') {
+            # Merge hook into existing settings.json using node (ships with Gemini CLI)
+            if (Get-Command node -ErrorAction SilentlyContinue) {
+                $mergeScript = @"
+const fs = require('fs');
+const settings = JSON.parse(fs.readFileSync('$($geminiSettings.Replace('\','/'))', 'utf8'));
+if (!settings.hooks) settings.hooks = {};
+if (!settings.hooks.BeforeTool) settings.hooks.BeforeTool = [];
+settings.hooks.BeforeTool.push({"matcher":"exit_plan_mode","hooks":[{"type":"command","command":"plannotator","timeout":345600}]});
+fs.writeFileSync('$($geminiSettings.Replace('\','/'))', JSON.stringify(settings, null, 2) + '\n');
+"@
+                node -e $mergeScript
+                Write-Host "Added plannotator hook to $geminiSettings"
+            } else {
+                Write-Host ""
+                Write-Host "Add the following to your ~/.gemini/settings.json hooks:"
+                Write-Host ""
+                Write-Host '  "hooks": {'
+                Write-Host '    "BeforeTool": [{'
+                Write-Host '      "matcher": "exit_plan_mode",'
+                Write-Host '      "hooks": [{"type": "command", "command": "plannotator", "timeout": 345600}]'
+                Write-Host '    }]'
+                Write-Host '  }'
+            }
+        }
+    } else {
+        @'
+{
+  "hooks": {
+    "BeforeTool": [
+      {
+        "matcher": "exit_plan_mode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "plannotator",
+            "timeout": 345600
+          }
+        ]
+      }
+    ]
+  },
+  "experimental": {
+    "plan": true
+  }
+}
+'@ | Set-Content -Path $geminiSettings
+        Write-Host "Created Gemini settings at $geminiSettings"
+    }
+
+    # Install slash commands
+    $geminiCommandsDir = "$geminiDir\commands"
+    New-Item -ItemType Directory -Force -Path $geminiCommandsDir | Out-Null
+
+    @'
+description = "Open interactive code review for current changes or a PR URL"
+prompt = """
+## Code Review Feedback
+
+!{plannotator review {{args}}}
+
+## Your task
+
+If the review above contains feedback or annotations, address them. If no changes were requested, acknowledge and continue.
+"""
+'@ | Set-Content -Path "$geminiCommandsDir\plannotator-review.toml"
+
+    @'
+description = "Open interactive annotation UI for a markdown file or folder"
+prompt = """
+## Markdown Annotations
+
+!{plannotator annotate {{args}}}
+
+## Your task
+
+Address the annotation feedback above. The user has reviewed the markdown file and provided specific annotations and comments.
+"""
+'@ | Set-Content -Path "$geminiCommandsDir\plannotator-annotate.toml"
+
+    Write-Host "Installed Gemini slash commands to $geminiCommandsDir\"
+}
+
 Write-Host ""
 Write-Host "=========================================="
 Write-Host "  OPENCODE USERS"

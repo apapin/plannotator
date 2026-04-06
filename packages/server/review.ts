@@ -573,6 +573,8 @@ export async function startReviewServer(
                 fileComments: PRReviewFileComment[];
               };
 
+              console.error(`[pr-action] ${body.action} with ${body.fileComments.length} file comment(s), headSha=${prMetadata.headSha}`);
+
               await submitPRReview(
                 prRef!,
                 prMetadata.headSha,
@@ -581,10 +583,12 @@ export async function startReviewServer(
                 body.fileComments,
               );
 
+              console.error(`[pr-action] Success`);
               return Response.json({ ok: true, prUrl: prMetadata.url });
             } catch (err) {
               const message =
                 err instanceof Error ? err.message : "Failed to submit PR review";
+              console.error(`[pr-action] Failed: ${message}`);
               return Response.json({ error: message }, { status: 500 });
             }
           }

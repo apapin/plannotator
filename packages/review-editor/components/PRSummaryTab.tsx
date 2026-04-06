@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useEffect } from 'react';
 import DOMPurify from 'dompurify';
 import { parseMarkdownToBlocks } from '@plannotator/ui/utils/parser';
 import { renderInlineMarkdown } from '../utils/renderInlineMarkdown';
@@ -15,7 +15,7 @@ const containsHtml = (text: string) => HTML_TAG_RE.test(text);
 
 /** Sanitize HTML using DOMPurify — defense-in-depth for GitHub API content. */
 function sanitizeHtml(html: string): string {
-  const clean = DOMPurify.sanitize(html, {
+  return DOMPurify.sanitize(html, {
     ALLOWED_TAGS: [
       'sub', 'sup', 'b', 'i', 'em', 'strong', 'br', 'hr', 'p', 'span',
       'del', 'ins', 'mark', 'small', 'abbr', 'kbd', 'var', 'samp',
@@ -24,11 +24,21 @@ function sanitizeHtml(html: string): string {
       'table', 'thead', 'tbody', 'tr', 'th', 'td',
       'a', 'img', 'div',
     ],
-    ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'rel', 'target', 'width', 'height', 'align', 'onerror'],
+    ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'rel', 'target', 'width', 'height', 'align'],
   });
-  // Inject inline onerror on img tags — hides broken images on first 404 synchronously
-  // (useEffect-based approaches are too late — the browser loads the image before effects fire)
-  return clean.replace(/<img /g, `<img onerror="this.style.display='none';this.onerror=null;" `);
+}
+
+/** Renders sanitized HTML and hides broken images via ref (no inline event handlers). */
+function SafeHtml({ html, as: Tag = 'div' }: { html: string; as?: 'div' | 'span' }) {
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!ref.current) return;
+    const imgs = ref.current.querySelectorAll('img');
+    imgs.forEach((img) => {
+      img.onerror = () => { img.style.display = 'none'; img.onerror = null; };
+    });
+  }, [html]);
+  return <Tag ref={ref as any} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
 /**
@@ -37,7 +47,7 @@ function sanitizeHtml(html: string): string {
  */
 function renderContent(content: string): React.ReactNode {
   if (containsHtml(content)) {
-    return <span dangerouslySetInnerHTML={{ __html: sanitizeHtml(content) }} />;
+    return <SafeHtml html={sanitizeHtml(content)} as="span" />;
   }
   return renderInlineMarkdown(content);
 }
@@ -88,7 +98,7 @@ export function MarkdownBody({ markdown }: { markdown: string }) {
             if (!block.content) return null;
             // If the entire paragraph is HTML, sanitize and render
             if (containsHtml(block.content)) {
-              return <div key={block.id} dangerouslySetInnerHTML={{ __html: sanitizeHtml(block.content) }} />;
+              return <SafeHtml key={block.id} html={sanitizeHtml(block.content)} />;
             }
             return <p key={block.id}>{renderInlineMarkdown(block.content)}</p>;
         }

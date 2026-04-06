@@ -46,7 +46,7 @@ export async function fetchRef(
   ref: string,
   options?: { cwd?: string },
 ): Promise<void> {
-  const result = await runtime.runGit(["fetch", "origin", ref], { cwd: options?.cwd });
+  const result = await runtime.runGit(["fetch", "origin", "--", ref], { cwd: options?.cwd });
   if (result.exitCode !== 0) {
     throw new Error(`git fetch origin ${ref} failed: ${result.stderr.trim() || `exit code ${result.exitCode}`}`);
   }

@@ -200,6 +200,7 @@ function VerdictCard({ summary, isCorrect, terminal }: {
   terminal: boolean;
 }) {
   if (summary) {
+    const verdictText = `${isCorrect ? 'Correct' : 'Incorrect'} (${Math.round(summary.confidence * 100)}% confidence)\n\n${summary.explanation}`;
     return (
       <div className={`rounded px-3 py-2.5 ${
         isCorrect ? 'bg-success/5' : 'bg-destructive/5'
@@ -211,6 +212,7 @@ function VerdictCard({ summary, isCorrect, terminal }: {
           <span className="text-[10px] text-muted-foreground">
             Confidence {Math.round(summary.confidence * 100)}%
           </span>
+          <CopyButton text={verdictText} variant="inline" />
         </div>
         <p className="text-xs text-foreground/80 leading-relaxed mt-1.5">{summary.explanation}</p>
       </div>
@@ -303,7 +305,7 @@ function AnnotationRow({ annotation: ann, dismissed, onClick }: {
   return (
     <button
       className={`w-full text-left px-3 py-2.5 rounded bg-card border transition-all duration-150 shadow-[0_1px_3px_rgba(0,0,0,0.06)] ${
-        dismissed ? 'opacity-30 cursor-default border-border/20' : 'border-border/40 hover:shadow-[0_2px_6px_rgba(0,0,0,0.08)] hover:translate-x-0.5 cursor-pointer'
+        dismissed ? 'opacity-30 cursor-default border-border/20' : 'border-border/40 hover:shadow-[0_2px_6px_rgba(0,0,0,0.08)] cursor-pointer'
       }`}
       onClick={() => !dismissed && onClick(ann)}
       disabled={dismissed}

@@ -327,10 +327,11 @@ if (args[0] === "sessions") {
           // Step 3: Checkout and ensure base is available
           Bun.spawnSync(["git", "checkout", "FETCH_HEAD"], { cwd: localPath, stderr: "pipe" });
 
-          // Fetch the exact base SHA and create a local branch for it so
-          // `git diff main...HEAD` shows only the PR changes.
+          // Fetch the exact base SHA and create both local and remote-tracking refs
+          // so `git diff main...HEAD` and `git diff origin/main...HEAD` both work.
           Bun.spawnSync(["git", "fetch", "--depth=50", "origin", prMetadata.baseSha], { cwd: localPath, stderr: "pipe" });
-          Bun.spawnSync(["git", "branch", prMetadata.baseBranch, prMetadata.baseSha], { cwd: localPath, stderr: "pipe" });
+          Bun.spawnSync(["git", "branch", "--", prMetadata.baseBranch, prMetadata.baseSha], { cwd: localPath, stderr: "pipe" });
+          Bun.spawnSync(["git", "update-ref", `refs/remotes/origin/${prMetadata.baseBranch}`, prMetadata.baseSha], { cwd: localPath, stderr: "pipe" });
 
           worktreeCleanup = () => { try { rmSync(localPath, { recursive: true, force: true }); } catch {} };
           process.on("exit", () => {

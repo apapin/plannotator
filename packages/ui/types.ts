@@ -80,6 +80,13 @@ export interface CodeAnnotation {
   reasoning?: string; // Validation chain — how the issue was confirmed (Claude)
 }
 
+/** Severity display styles — shared between agent detail panel and inline diff annotations. */
+export const SEVERITY_STYLES: Record<string, { dot: string; label: string }> = {
+  important: { dot: 'bg-destructive', label: 'Important' },
+  nit: { dot: 'bg-amber-500', label: 'Nit' },
+  pre_existing: { dot: 'bg-muted-foreground', label: 'Pre-existing' },
+};
+
 // For @pierre/diffs integration
 export interface DiffAnnotationMetadata {
   annotationId: string;

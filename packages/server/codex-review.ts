@@ -203,7 +203,7 @@ export function buildCodexReviewUserMessage(
 
     case "branch": {
       const base = options?.defaultBranch || "main";
-      return `Review the code changes against the base branch '${base}'. Run \`git diff ${base}...HEAD\` to inspect the changes. Provide prioritized, actionable findings.`;
+      return `Review the code changes against the base branch '${base}'. Run \`git diff ${base}..HEAD\` to inspect the changes. Provide prioritized, actionable findings.`;
     }
 
     default:

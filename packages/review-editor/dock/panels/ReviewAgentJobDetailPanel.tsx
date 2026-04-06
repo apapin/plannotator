@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import type { IDockviewPanelProps } from 'dockview-react';
-import type { AgentJobInfo, CodeAnnotation } from '@plannotator/ui/types';
+import { SEVERITY_STYLES, type AgentJobInfo, type CodeAnnotation } from '@plannotator/ui/types';
 import { isTerminalStatus } from '@plannotator/shared/agent-jobs';
 import { useReviewState } from '../ReviewStateContext';
 import { useJobLogs } from '../JobLogsContext';
@@ -81,8 +81,9 @@ export const ReviewAgentJobDetailPanel: React.FC<IDockviewPanelProps> = (props) 
   const dismissedCount = useMemo(() => displayAnnotations.filter((d) => d.dismissed).length, [displayAnnotations]);
 
   const handleAnnotationClick = useCallback((ann: CodeAnnotation) => {
+    state.openDiffFile(ann.filePath);
     state.onSelectAnnotation(ann.id);
-  }, [state.onSelectAnnotation]);
+  }, [state.openDiffFile, state.onSelectAnnotation]);
 
   const copyAllText = useMemo(
     () => activeAnnotations.length > 0 ? exportReviewFeedback(activeAnnotations, state.prMetadata) : '',
@@ -311,11 +312,6 @@ function Disclosure({ title, copyText, nested, children }: {
   );
 }
 
-const SEVERITY_STYLES: Record<string, { dot: string; label: string }> = {
-  important: { dot: 'bg-destructive', label: 'Important' },
-  nit: { dot: 'bg-amber-500', label: 'Nit' },
-  pre_existing: { dot: 'bg-muted-foreground', label: 'Pre-existing' },
-};
 
 function AnnotationRow({ annotation: ann, dismissed, onClick }: {
   annotation: CodeAnnotation;

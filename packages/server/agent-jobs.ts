@@ -306,6 +306,8 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions): AgentJob
 
     entry.info.status = "killed";
     entry.info.endedAt = Date.now();
+    jobOutputPaths.delete(id);
+    jobOutputPaths.delete(`${id}:cwd`);
     broadcast({ type: "job:completed", job: { ...entry.info } });
     return true;
   }

@@ -1,5 +1,5 @@
 import React from 'react';
-import { DiffAnnotationMetadata } from '@plannotator/ui/types';
+import { SEVERITY_STYLES, DiffAnnotationMetadata } from '@plannotator/ui/types';
 import { SuggestionBlock } from './SuggestionBlock';
 import { renderInlineMarkdown } from '../utils/renderInlineMarkdown';
 
@@ -19,12 +19,7 @@ export const InlineAnnotation: React.FC<InlineAnnotationProps> = ({
   onEdit,
   onDelete,
 }) => {
-  const severityStyles: Record<string, { dot: string; label: string }> = {
-    important: { dot: 'bg-destructive', label: 'Important' },
-    nit: { dot: 'bg-amber-500', label: 'Nit' },
-    pre_existing: { dot: 'bg-muted-foreground', label: 'Pre-existing' },
-  };
-  const severity = metadata.severity ? severityStyles[metadata.severity] : null;
+  const severity = metadata.severity ? SEVERITY_STYLES[metadata.severity] : null;
 
   return (
     <div

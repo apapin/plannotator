@@ -397,14 +397,7 @@ export async function startReviewServer(options: {
 			aiEndpoints = ai.createAIEndpoints({
 				registry,
 				sessionManager,
-				getCwd: () => {
-					if (options.agentCwd) return options.agentCwd;
-					if (currentDiffType.startsWith("worktree:")) {
-						const parsed = parseWorktreeDiffType(currentDiffType);
-						if (parsed) return parsed.path;
-					}
-					return options.gitContext?.cwd ?? process.cwd();
-				},
+				getCwd: resolveAgentCwd,
 			});
 			aiSessionManager = sessionManager;
 			aiRegistry = registry;
@@ -612,8 +605,12 @@ export async function startReviewServer(options: {
 		} else if (url.pathname === "/api/agents" && req.method === "GET") {
 			json(res, { agents: [] });
 		} else if (url.pathname === "/api/git-add" && req.method === "POST") {
-			// Staging only available for local diff types that support it (not PR mode, not branch diffs)
-			const canStage = currentDiffType === "uncommitted" || currentDiffType === "unstaged";
+			// Staging only available for local diff types that support it (not PR mode, not branch diffs).
+			// Worktree diff types use composite format "worktree:/path:uncommitted" — extract the base type.
+			const baseDiffType = currentDiffType.startsWith("worktree:")
+				? (parseWorktreeDiffType(currentDiffType)?.subType ?? currentDiffType)
+				: currentDiffType;
+			const canStage = baseDiffType === "uncommitted" || baseDiffType === "unstaged";
 			if (isPRMode || !canStage) {
 				json(res, { error: "Staging not available" }, 400);
 				return;

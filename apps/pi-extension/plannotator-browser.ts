@@ -206,6 +206,7 @@ export async function openCodeReview(
 	let diffType: DiffType | undefined;
 	let agentCwd: string | undefined;
 	let worktreeCleanup: (() => void | Promise<void>) | undefined;
+	let exitHandler: (() => void) | undefined;
 
 	if (isPRMode && urlArg) {
 		// --- PR Review Mode ---
@@ -289,10 +290,15 @@ export async function openCodeReview(
 				});
 
 				const worktreePath = localPath;
-				worktreeCleanup = () => removeWorktree(nodeGitRuntime, worktreePath, { force: true, cwd: repoDir });
-				process.once("exit", () => {
-					try { spawnSync("git", ["worktree", "remove", "--force", worktreePath]); } catch {}
-				});
+				const wtRepoDir = repoDir;
+				exitHandler = () => {
+					try { spawnSync("git", ["worktree", "remove", "--force", worktreePath], { cwd: wtRepoDir }); } catch {}
+				};
+				worktreeCleanup = () => {
+					if (exitHandler) { process.removeListener("exit", exitHandler); exitHandler = undefined; }
+					return removeWorktree(nodeGitRuntime, worktreePath, { force: true, cwd: wtRepoDir });
+				};
+				process.once("exit", exitHandler);
 			} else {
 				// ── Cross-repo: shallow clone + fetch PR head ──
 				const prRepo = prMetadata.platform === "github"
@@ -301,12 +307,17 @@ export async function openCodeReview(
 				if (/^-/.test(prRepo)) throw new Error(`Invalid repository identifier: ${prRepo}`);
 				const cli = prMetadata.platform === "github" ? "gh" : "glab";
 				const host = prMetadata.host;
-				const hostnameArgs = (host === "github.com" || host === "gitlab.com") ? [] : ["--hostname", host];
+				// gh/glab repo clone doesn't accept --hostname; set GH_HOST/GITLAB_HOST env instead
+				const isDefaultHost = host === "github.com" || host === "gitlab.com";
+				const cloneEnv = isDefaultHost ? undefined : {
+					...process.env,
+					...(prMetadata.platform === "github" ? { GH_HOST: host } : { GITLAB_HOST: host }),
+				};
 
 				console.error(`Cloning ${prRepo} (shallow)...`);
-				const cloneResult = runSync(cli, ["repo", "clone", prRepo, localPath, ...hostnameArgs, "--", "--depth=1", "--no-checkout"]);
-				if (cloneResult.exitCode !== 0) {
-					throw new Error(`${cli} repo clone failed: ${cloneResult.stderr.trim()}`);
+				const cloneResult = spawnSync(cli, ["repo", "clone", prRepo, localPath, "--", "--depth=1", "--no-checkout"], { encoding: "utf-8", env: cloneEnv });
+				if ((cloneResult.status ?? 1) !== 0) {
+					throw new Error(`${cli} repo clone failed: ${(cloneResult.stderr ?? "").trim()}`);
 				}
 
 				console.error("Fetching PR branch...");
@@ -325,10 +336,14 @@ export async function openCodeReview(
 				runSync("git", ["update-ref", `refs/remotes/origin/${prMetadata.baseBranch}`, prMetadata.baseSha], { cwd: localPath });
 
 				const clonePath = localPath;
-				worktreeCleanup = () => { try { rmSync(clonePath, { recursive: true, force: true }); } catch {} };
-				process.once("exit", () => {
+				exitHandler = () => {
 					try { rmSync(clonePath, { recursive: true, force: true }); } catch {}
-				});
+				};
+				worktreeCleanup = () => {
+					if (exitHandler) { process.removeListener("exit", exitHandler); exitHandler = undefined; }
+					try { rmSync(clonePath, { recursive: true, force: true }); } catch {}
+				};
+				process.once("exit", exitHandler);
 			}
 
 			agentCwd = localPath;

@@ -65,9 +65,14 @@ export const ReviewAgentJobDetailPanel: React.FC<IDockviewPanelProps> = (props) 
     });
   }, [state.externalAnnotations, job]);
 
+  const SEVERITY_ORDER: Record<string, number> = { important: 0, nit: 1, pre_existing: 2 };
   const displayAnnotations = useMemo(() =>
     Array.from(annotationSnapshot.values()).sort((a, b) => {
       if (a.dismissed !== b.dismissed) return a.dismissed ? 1 : -1;
+      // Sort by severity (important first), then file path, then line
+      const sa = SEVERITY_ORDER[a.annotation.severity ?? ''] ?? 3;
+      const sb = SEVERITY_ORDER[b.annotation.severity ?? ''] ?? 3;
+      if (sa !== sb) return sa - sb;
       return a.annotation.filePath.localeCompare(b.annotation.filePath) || a.annotation.lineStart - b.annotation.lineStart;
     }),
   [annotationSnapshot]);
@@ -153,13 +158,22 @@ export const ReviewAgentJobDetailPanel: React.FC<IDockviewPanelProps> = (props) 
 
           {/* Findings list */}
           {displayAnnotations.length > 0 && (
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-muted-foreground">
-                {activeAnnotations.length} finding{activeAnnotations.length !== 1 ? 's' : ''}
-                {dismissedCount > 0 && ` · ${dismissedCount} dismissed`}
-              </span>
-              {copyAllText && <CopyButton text={copyAllText} variant="inline" label="Copy All" />}
-            </div>
+            <>
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-muted-foreground">
+                  {activeAnnotations.length} finding{activeAnnotations.length !== 1 ? 's' : ''}
+                  {dismissedCount > 0 && ` · ${dismissedCount} dismissed`}
+                </span>
+                {copyAllText && <CopyButton text={copyAllText} variant="inline" label="Copy All" />}
+              </div>
+              {activeAnnotations.some(a => a.severity) && (
+                <div className="flex items-center gap-3 text-[10px] text-muted-foreground/60">
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-destructive" /> Important</span>
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Nit</span>
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-muted-foreground" /> Pre-existing</span>
+                </div>
+              )}
+            </>
           )}
 
           {displayAnnotations.length === 0 ? (
@@ -337,19 +351,14 @@ function AnnotationRow({ annotation: ann, dismissed, onClick }: {
         )}
       </div>
       {ann.text && (
-        <p className={`text-xs mt-1 line-clamp-2 leading-relaxed ${dismissed ? 'text-muted-foreground/40' : 'text-foreground/80'}`}>
+        <p className={`text-xs mt-1 leading-relaxed ${dismissed ? 'text-muted-foreground/40' : 'text-foreground/80'}`}>
           {ann.text}
         </p>
       )}
       {ann.reasoning && (
-        <details className="mt-1.5">
-          <summary className="text-[10px] text-muted-foreground/60 cursor-pointer hover:text-muted-foreground transition-colors">
-            Reasoning
-          </summary>
-          <p className="text-[11px] text-muted-foreground/80 leading-relaxed mt-1 pl-0.5">
-            {ann.reasoning}
-          </p>
-        </details>
+        <p className="text-[11px] text-muted-foreground/60 leading-relaxed mt-1.5">
+          {ann.reasoning}
+        </p>
       )}
     </div>
   );

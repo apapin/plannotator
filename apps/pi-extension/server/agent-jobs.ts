@@ -53,6 +53,8 @@ export interface AgentJobHandlerOptions {
 	mode: "plan" | "review" | "annotate";
 	getServerUrl: () => string;
 	getCwd: () => string;
+	/** Server-side command builder for known providers (codex, claude). */
+	buildCommand?: (provider: string) => Promise<{ command: string[]; label?: string; cwd?: string } | null>;
 }
 
 export function createAgentJobHandler(options: AgentJobHandlerOptions) {
@@ -67,7 +69,6 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions) {
 	const capabilities: AgentCapability[] = [
 		{ id: "claude", name: "Claude Code", available: whichCmd("claude") },
 		{ id: "codex", name: "Codex CLI", available: whichCmd("codex") },
-		{ id: "shell", name: "Shell Command", available: true },
 	];
 	const capabilitiesResponse: AgentCapabilities = {
 		mode,
@@ -276,16 +277,25 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions) {
 			if (url.pathname === JOBS && req.method === "POST") {
 				try {
 					const body = await parseBody(req);
-					const provider = typeof body.provider === "string" ? body.provider : "shell";
-					const rawCommand = Array.isArray(body.command) ? body.command : [];
-					const command = rawCommand.filter((c: unknown): c is string => typeof c === "string");
-					const label = typeof body.label === "string" ? body.label : `${provider} agent`;
+					const provider = typeof body.provider === "string" ? body.provider : "";
+					let rawCommand = Array.isArray(body.command) ? body.command : [];
+					let command = rawCommand.filter((c: unknown): c is string => typeof c === "string");
+					let label = typeof body.label === "string" ? body.label : `${provider} agent`;
 
 					// Validate provider is a known, available capability
 					const cap = capabilities.find((c) => c.id === provider);
 					if (!cap || !cap.available) {
 						json(res, { error: `Unknown or unavailable provider: ${provider}` }, 400);
 						return true;
+					}
+
+					// Try server-side command building for known providers
+					if (options.buildCommand) {
+						const built = await options.buildCommand(provider);
+						if (built) {
+							command = built.command;
+							if (built.label) label = built.label;
+						}
 					}
 
 					if (command.length === 0) {

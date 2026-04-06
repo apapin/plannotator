@@ -265,11 +265,7 @@ export function parseClaudeStreamOutput(stdout: string): ClaudeReviewOutput | nu
 // Finding transform — Claude findings → external annotations
 // ---------------------------------------------------------------------------
 
-function toRelativePath(absolutePath: string, cwd?: string): string {
-  if (!cwd) return absolutePath;
-  const prefix = cwd.endsWith("/") ? cwd : cwd + "/";
-  return absolutePath.startsWith(prefix) ? absolutePath.slice(prefix.length) : absolutePath;
-}
+import { toRelativePath } from "./path-utils";
 
 /** Transform Claude findings into the external annotation format. */
 export function transformClaudeFindings(

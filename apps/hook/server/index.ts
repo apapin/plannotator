@@ -261,6 +261,9 @@ if (args[0] === "sessions") {
           ? `refs/pull/${prMetadata.number}/head`
           : `refs/merge-requests/${prMetadata.iid}/head`;
 
+        // Validate baseBranch to prevent path traversal in git ref operations
+        if (prMetadata.baseBranch.includes('..')) throw new Error(`Invalid base branch: ${prMetadata.baseBranch}`);
+
         // Detect same-repo vs cross-repo
         let isSameRepo = false;
         try {
@@ -294,7 +297,7 @@ if (args[0] === "sessions") {
           });
 
           worktreeCleanup = () => removeWorktree(gitRuntime, localPath, { force: true, cwd: repoDir });
-          process.on("exit", () => {
+          process.once("exit", () => {
             try { Bun.spawnSync(["git", "worktree", "remove", "--force", localPath]); } catch {}
           });
         } else {
@@ -336,7 +339,7 @@ if (args[0] === "sessions") {
           Bun.spawnSync(["git", "update-ref", `refs/remotes/origin/${prMetadata.baseBranch}`, prMetadata.baseSha], { cwd: localPath, stderr: "pipe" });
 
           worktreeCleanup = () => { try { rmSync(localPath, { recursive: true, force: true }); } catch {} };
-          process.on("exit", () => {
+          process.once("exit", () => {
             try { Bun.spawnSync(["rm", "-rf", localPath]); } catch {}
           });
         }

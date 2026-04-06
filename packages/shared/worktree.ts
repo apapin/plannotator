@@ -66,7 +66,7 @@ export async function ensureObjectAvailable(
   if (check.exitCode === 0) return true;
 
   // Object missing locally — try fetching it
-  const fetch = await runtime.runGit(["fetch", "origin", sha], { cwd: options?.cwd });
+  const fetch = await runtime.runGit(["fetch", "origin", "--", sha], { cwd: options?.cwd });
   if (fetch.exitCode !== 0) return false;
 
   // Verify it's now available

@@ -10,14 +10,17 @@ import { homedir, tmpdir } from "node:os";
 import { appendFile, mkdir, unlink } from "node:fs/promises";
 import type { DiffType } from "./vcs";
 import type { PRMetadata } from "./pr";
+import { toRelativePath } from "./path-utils";
 
 // ---------------------------------------------------------------------------
-// Debug log — writes to ~/.plannotator/codex-review-debug.log
+// Debug log — only active when PLANNOTATOR_DEBUG is set
 // ---------------------------------------------------------------------------
 
+const DEBUG_ENABLED = !!process.env.PLANNOTATOR_DEBUG;
 const DEBUG_LOG_PATH = join(homedir(), ".plannotator", "codex-review-debug.log");
 
 async function debugLog(label: string, data?: unknown): Promise<void> {
+  if (!DEBUG_ENABLED) return;
   try {
     await mkdir(join(homedir(), ".plannotator"), { recursive: true });
     const timestamp = new Date().toISOString();
@@ -27,8 +30,6 @@ async function debugLog(label: string, data?: unknown): Promise<void> {
     await appendFile(DEBUG_LOG_PATH, line);
   } catch { /* never fail the main flow */ }
 }
-
-export { DEBUG_LOG_PATH };
 
 // ---------------------------------------------------------------------------
 // Schema — embedded as a string, written to disk on first use.
@@ -294,7 +295,6 @@ export async function parseCodexOutput(outputPath: string): Promise<CodexReviewO
     }
 
     const text = await file.text();
-    await debugLog("PARSE_OUTPUT_RAW", text);
 
     // Clean up temp file
     try { await unlink(outputPath); } catch { /* ignore */ }
@@ -339,17 +339,6 @@ export interface ReviewAnnotationInput {
   scope: string;
   text: string;
   author: string;
-}
-
-/**
- * Strip the cwd prefix from an absolute path to get a repo-relative path.
- * Diff headers use relative paths (e.g., "packages/server/codex-review.ts")
- * but Codex reports absolute paths (e.g., "/Users/.../packages/server/codex-review.ts").
- */
-function toRelativePath(absolutePath: string, cwd?: string): string {
-  if (!cwd) return absolutePath;
-  const prefix = cwd.endsWith("/") ? cwd : cwd + "/";
-  return absolutePath.startsWith(prefix) ? absolutePath.slice(prefix.length) : absolutePath;
 }
 
 /** Transform review findings (provider-agnostic) into the external annotation format. */

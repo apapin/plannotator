@@ -46,7 +46,7 @@ export const DiffHunkPreview: React.FC<DiffHunkPreviewProps> = ({
   });
 
   useEffect(() => {
-    requestAnimationFrame(() => {
+    const rafId = requestAnimationFrame(() => {
       const styles = getComputedStyle(document.documentElement);
       const bg = styles.getPropertyValue('--background').trim();
       const fg = styles.getPropertyValue('--foreground').trim();
@@ -79,6 +79,7 @@ export const DiffHunkPreview: React.FC<DiffHunkPreviewProps> = ({
         `,
       });
     });
+    return () => cancelAnimationFrame(rafId);
   }, [resolvedMode, state.fontFamily, state.fontSize]);
 
   if (!fileDiff) return null;

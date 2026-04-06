@@ -192,16 +192,21 @@ export interface ClaudeCommandResult {
 export function buildClaudeCommand(prompt: string): ClaudeCommandResult {
   const allowedTools = [
     "Agent", "Read", "Glob", "Grep",
+    // GitHub CLI
     "Bash(gh pr view:*)", "Bash(gh pr diff:*)", "Bash(gh pr list:*)",
     "Bash(gh issue view:*)", "Bash(gh issue list:*)",
     "Bash(gh api repos/*/*/pulls/*)", "Bash(gh api repos/*/*/pulls/*/files*)",
     "Bash(gh api repos/*/*/pulls/*/comments*)", "Bash(gh api repos/*/*/issues/*/comments*)",
+    // GitLab CLI
+    "Bash(glab mr view:*)", "Bash(glab mr diff:*)", "Bash(glab mr list:*)",
+    "Bash(glab api:*)",
+    // Git (read-only)
     "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)",
     "Bash(git show:*)", "Bash(git blame:*)", "Bash(git branch:*)",
     "Bash(git grep:*)", "Bash(git ls-remote:*)", "Bash(git ls-tree:*)",
     "Bash(git merge-base:*)", "Bash(git remote:*)", "Bash(git rev-parse:*)",
     "Bash(git show-ref:*)",
-    "Bash(find:*)", "Bash(ls:*)", "Bash(cat:*)", "Bash(wc:*)",
+    "Bash(wc:*)",
   ].join(",");
 
   const disallowedTools = [

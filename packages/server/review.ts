@@ -30,6 +30,7 @@ import {
   CLAUDE_REVIEW_PROMPT,
   buildClaudeCommand,
   parseClaudeStreamOutput,
+  transformClaudeFindings,
 } from "./claude-review";
 import { saveConfig, detectGitUser, getServerConfig } from "./config";
 import { type PRMetadata, type PRReviewFileComment, fetchPRFileContent, fetchPRContext, submitPRReview, fetchPRViewedFiles, markPRFilesViewed, getPRUser, prRefFromMetadata, getDisplayRepo, getMRLabel, getMRNumberLabel } from "./pr";
@@ -161,32 +162,45 @@ export async function startReviewServer(
     },
 
     async onJobComplete(job, meta) {
-      let output: Awaited<ReturnType<typeof parseCodexOutput>> = null;
+      const cwd = options.agentCwd ?? resolveVcsCwd(currentDiffType, gitContext?.cwd) ?? process.cwd();
 
+      // --- Codex path ---
       if (job.provider === "codex" && meta.outputPath) {
-        output = await parseCodexOutput(meta.outputPath);
-      } else if (job.provider === "claude" && meta.stdout) {
-        output = parseClaudeStreamOutput(meta.stdout);
+        const output = await parseCodexOutput(meta.outputPath);
+        if (!output) return;
+
+        job.summary = {
+          correctness: output.overall_correctness,
+          explanation: output.overall_explanation,
+          confidence: output.overall_confidence_score,
+        };
+
+        if (output.findings.length > 0) {
+          const annotations = transformReviewFindings(output.findings, job.source, cwd, "Codex");
+          const result = externalAnnotations.addAnnotations({ annotations });
+          if ("error" in result) console.error(`[codex-review] addAnnotations error:`, result.error);
+        }
+        return;
       }
 
-      if (!output) return;
+      // --- Claude path ---
+      if (job.provider === "claude" && meta.stdout) {
+        const output = parseClaudeStreamOutput(meta.stdout);
+        if (!output) return;
 
-      // Set summary on the job — flows through job:completed broadcast
-      job.summary = {
-        correctness: output.overall_correctness,
-        explanation: output.overall_explanation,
-        confidence: output.overall_confidence_score,
-      };
+        const total = output.summary.important + output.summary.nit + output.summary.pre_existing;
+        job.summary = {
+          correctness: output.summary.important === 0 ? "Correct" : "Issues Found",
+          explanation: `${output.summary.important} important, ${output.summary.nit} nit, ${output.summary.pre_existing} pre-existing`,
+          confidence: total === 0 ? 1.0 : Math.max(0, 1.0 - (output.summary.important * 0.2)),
+        };
 
-      if (output.findings.length > 0) {
-        const cwd = options.agentCwd ?? resolveVcsCwd(currentDiffType, gitContext?.cwd) ?? process.cwd();
-        const authorName = job.provider === "codex" ? "Codex" : job.provider === "claude" ? "Claude Code" : "Review Agent";
-        const annotations = transformReviewFindings(output.findings, job.source, cwd, authorName);
-        const result = externalAnnotations.addAnnotations({ annotations });
-
-        if ("error" in result) {
-          console.error(`[${job.provider}-review] addAnnotations error:`, result.error);
+        if (output.findings.length > 0) {
+          const annotations = transformClaudeFindings(output.findings, job.source, cwd);
+          const result = externalAnnotations.addAnnotations({ annotations });
+          if ("error" in result) console.error(`[claude-review] addAnnotations error:`, result.error);
         }
+        return;
       }
     },
   });

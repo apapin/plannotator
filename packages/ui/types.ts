@@ -76,6 +76,8 @@ export interface CodeAnnotation {
   createdAt: number;
   author?: string;
   source?: string; // External tool identifier (e.g., "eslint") — set when annotation comes from external API
+  severity?: 'important' | 'nit' | 'pre_existing'; // Agent review severity (Claude)
+  reasoning?: string; // Validation chain — how the issue was confirmed (Claude)
 }
 
 // For @pierre/diffs integration

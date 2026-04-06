@@ -297,12 +297,19 @@ function Disclosure({ title, copyText, nested, children }: {
   );
 }
 
+const SEVERITY_STYLES: Record<string, { dot: string; label: string }> = {
+  important: { dot: 'bg-destructive', label: 'Important' },
+  nit: { dot: 'bg-warning', label: 'Nit' },
+  pre_existing: { dot: 'bg-muted-foreground', label: 'Pre-existing' },
+};
+
 function AnnotationRow({ annotation: ann, dismissed, onClick }: {
   annotation: CodeAnnotation;
   dismissed: boolean;
   onClick: (ann: CodeAnnotation) => void;
 }) {
   const copyText = ann.text ? `${ann.filePath}:${ann.lineStart}${ann.lineEnd !== ann.lineStart ? `-${ann.lineEnd}` : ''}\n${ann.text}` : '';
+  const severity = ann.severity ? SEVERITY_STYLES[ann.severity] : null;
   return (
     <div
       className={`group/finding w-full text-left px-3 py-2.5 rounded bg-card border transition-all duration-150 shadow-[0_1px_3px_rgba(0,0,0,0.06)] ${
@@ -311,6 +318,9 @@ function AnnotationRow({ annotation: ann, dismissed, onClick }: {
       onClick={() => !dismissed && onClick(ann)}
     >
       <div className="flex items-center gap-2 text-[10px]">
+        {severity && (
+          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${severity.dot}`} title={severity.label} />
+        )}
         <span className={`font-mono truncate ${dismissed ? 'line-through text-muted-foreground' : 'text-primary'}`}>
           {ann.filePath}
         </span>
@@ -330,6 +340,16 @@ function AnnotationRow({ annotation: ann, dismissed, onClick }: {
         <p className={`text-xs mt-1 line-clamp-2 leading-relaxed ${dismissed ? 'text-muted-foreground/40' : 'text-foreground/80'}`}>
           {ann.text}
         </p>
+      )}
+      {ann.reasoning && (
+        <details className="mt-1.5">
+          <summary className="text-[10px] text-muted-foreground/60 cursor-pointer hover:text-muted-foreground transition-colors">
+            Reasoning
+          </summary>
+          <p className="text-[11px] text-muted-foreground/80 leading-relaxed mt-1 pl-0.5">
+            {ann.reasoning}
+          </p>
+        </details>
       )}
     </div>
   );

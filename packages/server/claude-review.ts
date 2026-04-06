@@ -1,18 +1,41 @@
 /**
  * Claude Code Review Agent — prompt, command builder, and JSONL output parser.
  *
- * Complements codex-review.ts. Both produce the same schema (ReviewOutputEvent).
- * Claude uses --json-schema (inline JSON + Ajv validation with retries) instead
- * of Codex's --output-schema (file path + API-level strict mode).
+ * Claude has its own review model (severity-based findings with reasoning traces)
+ * separate from Codex's priority-based model. The transform layer normalizes
+ * both into the shared annotation format.
  *
- * Claude uses --output-format stream-json for live JSONL streaming. The final
- * event is type:"result" with structured_output containing validated findings.
+ * Claude uses --json-schema (inline JSON + Ajv validation with retries) and
+ * --output-format stream-json for live JSONL streaming. The final event is
+ * type:"result" with structured_output containing validated findings.
  */
 
-import type { CodexReviewOutput } from "./codex-review";
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export type ClaudeSeverity = "important" | "nit" | "pre_existing";
+
+export interface ClaudeFinding {
+  severity: ClaudeSeverity;
+  file: string;
+  line: number;
+  end_line: number;
+  description: string;
+  reasoning: string;
+}
+
+export interface ClaudeReviewOutput {
+  findings: ClaudeFinding[];
+  summary: {
+    important: number;
+    nit: number;
+    pre_existing: number;
+  };
+}
 
 // ---------------------------------------------------------------------------
-// Schema — same as Codex, serialized as inline JSON for --json-schema flag
+// Schema — Claude's own severity-based model
 // ---------------------------------------------------------------------------
 
 export const CLAUDE_REVIEW_SCHEMA_JSON = JSON.stringify({
@@ -23,88 +46,132 @@ export const CLAUDE_REVIEW_SCHEMA_JSON = JSON.stringify({
       items: {
         type: "object",
         properties: {
-          title: { type: "string" },
-          body: { type: "string" },
-          confidence_score: { type: "number" },
-          priority: { type: ["integer", "null"] },
-          code_location: {
-            type: "object",
-            properties: {
-              absolute_file_path: { type: "string" },
-              line_range: {
-                type: "object",
-                properties: {
-                  start: { type: "integer" },
-                  end: { type: "integer" },
-                },
-                required: ["start", "end"],
-                additionalProperties: false,
-              },
-            },
-            required: ["absolute_file_path", "line_range"],
-            additionalProperties: false,
-          },
+          severity: { type: "string", enum: ["important", "nit", "pre_existing"] },
+          file: { type: "string" },
+          line: { type: "integer" },
+          end_line: { type: "integer" },
+          description: { type: "string" },
+          reasoning: { type: "string" },
         },
-        required: ["title", "body", "confidence_score", "priority", "code_location"],
+        required: ["severity", "file", "line", "end_line", "description", "reasoning"],
         additionalProperties: false,
       },
     },
-    overall_correctness: { type: "string" },
-    overall_explanation: { type: "string" },
-    overall_confidence_score: { type: "number" },
+    summary: {
+      type: "object",
+      properties: {
+        important: { type: "integer" },
+        nit: { type: "integer" },
+        pre_existing: { type: "integer" },
+      },
+      required: ["important", "nit", "pre_existing"],
+      additionalProperties: false,
+    },
   },
-  required: ["findings", "overall_correctness", "overall_explanation", "overall_confidence_score"],
+  required: ["findings", "summary"],
   additionalProperties: false,
 });
 
 // ---------------------------------------------------------------------------
-// Review prompt — adapted from anthropics/claude-code code-review plugin
+// Review prompt — converges open-source Claude Code review + remote service
 // ---------------------------------------------------------------------------
 
-export const CLAUDE_REVIEW_PROMPT = `You are a code reviewer. Provide a thorough code review of the changes.
+export const CLAUDE_REVIEW_PROMPT = `# Claude Code Review System Prompt
 
-**Agent assumptions (applies to all agents and subagents):**
-- All tools are functional and will work without error. Do not test tools or make exploratory calls.
-- Only call a tool if it is required to complete the task. Every tool call should have a clear purpose.
+## Identity
+You are a code review system. Your job is to find bugs that would break
+production. You are not a linter, formatter, or style checker unless
+project guidance files explicitly expand your scope.
 
-Follow these steps:
+## Pipeline
 
-1. Examine the diff to understand what changed. Use git diff, git log, git show, or gh pr diff as appropriate for the context.
+Step 1: Gather context
+  - Retrieve the PR diff (gh pr diff or git diff)
+  - Read CLAUDE.md and REVIEW.md at the repo root and in every directory
+    containing modified files
+  - Build a map of which rules apply to which file paths
+  - Identify any skip rules (paths, patterns, or file types to ignore)
 
-2. Launch parallel agents to independently review the changes. Each agent should return the list of issues, where each issue includes a description and the reason it was flagged. The agents should:
+Step 2: Launch 4 parallel review agents
 
-   Agent 1: Bug agent
-   Scan for obvious bugs. Focus only on the diff itself without reading extra context. Flag only significant bugs; ignore nitpicks and likely false positives. Do not flag issues that you cannot validate without looking at context outside of the git diff.
+  Agent 1 — Bug + Regression (Opus-level reasoning)
+    Scan for logic errors, regressions, broken edge cases, build failures,
+    and code that will produce wrong results. Focus on the diff but read
+    surrounding code to understand call sites and data flow. Flag only
+    issues where the code is demonstrably wrong — not stylistic concerns,
+    not missing tests, not "could be cleaner."
 
-   Agent 2: Deep analysis agent
-   Look for problems that exist in the introduced code. This could be security issues, incorrect logic, etc. Only look for issues that fall within the changed code. Read surrounding code for context.
+  Agent 2 — Security + Deep Analysis (Opus-level reasoning)
+    Look for security vulnerabilities with concrete exploit paths, race
+    conditions, incorrect assumptions about trust boundaries, and subtle
+    issues in introduced code. Read surrounding code for context. Do not
+    flag theoretical risks without a plausible path to harm.
 
-   **CRITICAL: We only want HIGH SIGNAL issues.** Flag issues where:
-   - The code will fail to compile or parse (syntax errors, type errors, missing imports, unresolved references)
-   - The code will definitely produce wrong results regardless of inputs (clear logic errors)
-   - Security vulnerabilities with concrete exploit paths
+  Agent 3 — Code Quality + Reusability (Sonnet-level reasoning)
+    Look for code smells, unnecessary duplication, missed opportunities to
+    reuse existing utilities or patterns in the codebase, overly complex
+    implementations that could be simpler, and elegance issues. Read the
+    surrounding codebase to understand existing patterns before flagging.
+    Only flag issues a senior engineer would care about.
 
-   Do NOT flag:
-   - Code style or quality concerns
-   - Potential issues that depend on specific inputs or state
-   - Subjective suggestions or improvements
-   - Missing tests or documentation
+  Agent 4 — Guideline Compliance (Haiku-level reasoning)
+    Audit changes against rules from CLAUDE.md and REVIEW.md gathered in
+    Step 1. Only flag clear, unambiguous violations where you can cite the
+    exact rule broken. If a PR makes a CLAUDE.md statement outdated, flag
+    that the docs need updating. Respect all skip rules — never flag files
+    or patterns that guidance says to ignore.
 
-   If you are not certain an issue is real, do not flag it. False positives erode trust and waste reviewer time.
+  All agents:
+  - Do not duplicate each other's findings
+  - Do not flag issues in paths excluded by guidance files
+  - Provide file, line number, and a concise description for each candidate
 
-3. For each issue found, launch parallel agents to validate. Each validator should confirm the issue is real with high confidence by examining the actual code. If validation fails, drop the issue.
+Step 3: Validate each candidate finding
+  For each candidate, launch a validation agent. The validator:
+  - Traces the actual code path to confirm the issue is real
+  - Checks whether the issue is handled elsewhere (try/catch, upstream
+    guard, fallback logic, type system guarantees)
+  - Confirms the finding is not a false positive with high confidence
+  - If validation fails, drop the finding silently
+  - If validation passes, write a clear reasoning chain explaining how
+    the issue was confirmed — this becomes the \`reasoning\` field
 
-4. Return all validated findings as structured output matching the JSON schema. Include an overall correctness verdict.
+Step 4: Classify each validated finding
+  Assign exactly one severity:
 
-At the beginning of each finding title, tag with priority level:
-- [P0] – Drop everything to fix. Blocking.
-- [P1] – Urgent. Should be addressed in the next cycle.
-- [P2] – Normal. To be fixed eventually.
-- [P3] – Low. Nice to have.
+  important — A bug that should be fixed before merging. Build failures,
+    clear logic errors, security vulnerabilities with exploit paths, data
+    loss risks, race conditions with observable consequences.
 
-Set the numeric priority field accordingly (0-3). If priority cannot be determined, use null.
+  nit — A minor issue worth fixing but non-blocking. Style deviations
+    from project guidelines, code quality concerns, edge cases that are
+    unlikely but worth noting, convention violations that don't affect
+    correctness.
 
-Do NOT post any comments to GitHub or GitLab. Do NOT use gh pr comment or any commenting tool. Your only output is the structured JSON findings.`;
+  pre_existing — A bug that exists in the surrounding codebase but was
+    NOT introduced by this PR. Only flag when directly relevant to the
+    changed code path.
+
+Step 5: Deduplicate and rank
+  - Merge findings that describe the same underlying issue from different
+    agents — keep the most specific description and the highest severity
+  - Sort by severity: important → nit → pre_existing
+  - Within each severity, sort by file path and line number
+
+Step 6: Return structured JSON output matching the schema.
+  If no issues are found, return an empty findings array with zeroed summary.
+
+## Hard constraints
+- Never approve or block the PR
+- Never comment on formatting or code style unless guidance files say to
+- Never flag missing test coverage unless guidance files say to
+- Never invent rules — only enforce what CLAUDE.md or REVIEW.md state
+- Never flag issues in skipped paths or generated files unless guidance
+  explicitly includes them
+- Prefer silence over false positives — when in doubt, drop the finding
+- Do NOT post any comments to GitHub or GitLab
+- Do NOT use gh pr comment or any commenting tool
+- Your only output is the structured JSON findings`;
 
 // ---------------------------------------------------------------------------
 // Command builder
@@ -166,12 +233,10 @@ export function buildClaudeCommand(prompt: string): ClaudeCommandResult {
 /**
  * Parse Claude Code's stream-json output (JSONL).
  * Extracts structured_output from the final type:"result" event.
- * Returns the same CodexReviewOutput shape for provider-agnostic transform.
  */
-export function parseClaudeStreamOutput(stdout: string): CodexReviewOutput | null {
+export function parseClaudeStreamOutput(stdout: string): ClaudeReviewOutput | null {
   if (!stdout.trim()) return null;
 
-  // Find the last result event in the JSONL stream
   const lines = stdout.trim().split('\n');
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i].trim();
@@ -186,15 +251,64 @@ export function parseClaudeStreamOutput(stdout: string): CodexReviewOutput | nul
         const output = event.structured_output;
         if (!output || !Array.isArray(output.findings)) return null;
 
-        return output as CodexReviewOutput;
+        return output as ClaudeReviewOutput;
       }
     } catch {
-      // Not valid JSON — skip (could be a partial line or log noise)
+      // Not valid JSON — skip
     }
   }
 
   return null;
 }
+
+// ---------------------------------------------------------------------------
+// Finding transform — Claude findings → external annotations
+// ---------------------------------------------------------------------------
+
+function toRelativePath(absolutePath: string, cwd?: string): string {
+  if (!cwd) return absolutePath;
+  const prefix = cwd.endsWith("/") ? cwd : cwd + "/";
+  return absolutePath.startsWith(prefix) ? absolutePath.slice(prefix.length) : absolutePath;
+}
+
+/** Transform Claude findings into the external annotation format. */
+export function transformClaudeFindings(
+  findings: ClaudeFinding[],
+  source: string,
+  cwd?: string,
+): Array<{
+  source: string;
+  filePath: string;
+  lineStart: number;
+  lineEnd: number;
+  type: string;
+  side: string;
+  scope: string;
+  text: string;
+  severity: ClaudeSeverity;
+  reasoning: string;
+  author: string;
+}> {
+  return findings
+    .filter(f => f.file && typeof f.line === "number")
+    .map(f => ({
+      source,
+      filePath: toRelativePath(f.file, cwd),
+      lineStart: f.line,
+      lineEnd: f.end_line ?? f.line,
+      type: "comment",
+      side: "new",
+      scope: "line",
+      text: f.description,
+      severity: f.severity,
+      reasoning: f.reasoning,
+      author: "Claude Code",
+    }));
+}
+
+// ---------------------------------------------------------------------------
+// Live log formatter
+// ---------------------------------------------------------------------------
 
 /**
  * Extract log-worthy content from a JSONL line for the LiveLogViewer.
@@ -214,12 +328,9 @@ export function formatClaudeLogEvent(line: string): string | null {
         .filter((p: any) => p.type === 'text' && p.text)
         .map((p: any) => p.text);
       if (texts.length > 0) return texts.join('\n');
-    }
 
-    // Tool use events
-    if (event.type === 'assistant' && event.message?.content) {
-      const tools = (Array.isArray(event.message.content) ? event.message.content : [])
-        .filter((p: any) => p.type === 'tool_use');
+      // Tool use events (only reached if no text parts found)
+      const tools = parts.filter((p: any) => p.type === 'tool_use');
       if (tools.length > 0) {
         return tools.map((t: any) => `[${t.name}] ${typeof t.input === 'string' ? t.input.slice(0, 100) : JSON.stringify(t.input).slice(0, 100)}`).join('\n');
       }

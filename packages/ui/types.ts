@@ -88,6 +88,8 @@ export interface DiffAnnotationMetadata {
   suggestedCode?: string;
   originalCode?: string;
   author?: string;
+  severity?: 'important' | 'nit' | 'pre_existing';
+  reasoning?: string;
   // AI marker fields (set when kind === 'ai-marker')
   kind?: 'annotation' | 'ai-marker';
   questionId?: string;

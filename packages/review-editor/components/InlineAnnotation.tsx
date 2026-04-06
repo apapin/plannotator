@@ -19,6 +19,13 @@ export const InlineAnnotation: React.FC<InlineAnnotationProps> = ({
   onEdit,
   onDelete,
 }) => {
+  const severityStyles: Record<string, { dot: string; label: string }> = {
+    important: { dot: 'bg-destructive', label: 'Important' },
+    nit: { dot: 'bg-amber-500', label: 'Nit' },
+    pre_existing: { dot: 'bg-muted-foreground', label: 'Pre-existing' },
+  };
+  const severity = metadata.severity ? severityStyles[metadata.severity] : null;
+
   return (
     <div
       className="review-comment"
@@ -26,7 +33,12 @@ export const InlineAnnotation: React.FC<InlineAnnotationProps> = ({
       onClick={() => onSelect(metadata.annotationId)}
     >
       <div className="review-comment-header">
-        {metadata.author && <span className="text-xs text-muted-foreground">{metadata.author}</span>}
+        <div className="flex items-center gap-1.5">
+          {severity && (
+            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${severity.dot}`} title={severity.label} />
+          )}
+          {metadata.author && <span className="text-xs text-muted-foreground">{metadata.author}</span>}
+        </div>
         <div className="review-comment-actions">
           <button
             className="review-comment-action"
@@ -56,6 +68,11 @@ export const InlineAnnotation: React.FC<InlineAnnotationProps> = ({
       </div>
       {metadata.text && (
         <div className="review-comment-body">{renderInlineMarkdown(metadata.text)}</div>
+      )}
+      {metadata.reasoning && (
+        <div className="review-comment-reasoning text-[11px] text-muted-foreground/60 leading-relaxed mt-1.5">
+          {metadata.reasoning}
+        </div>
       )}
       {metadata.suggestedCode && (
         <div className="mt-2">

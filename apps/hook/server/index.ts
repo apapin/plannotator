@@ -309,7 +309,7 @@ if (args[0] === "sessions") {
           // Step 1: Fast skeleton clone (no checkout, depth 1 — minimal data transfer)
           console.error(`Cloning ${prRepo} (shallow)...`);
           const cloneResult = Bun.spawnSync(
-            [cli, "repo", "clone", prRepo, localPath, ...hostnameArgs, "--", "--depth=1", "--no-checkout"],
+            [cli, "repo", "clone", ...hostnameArgs, "--", prRepo, localPath, "--depth=1", "--no-checkout"],
             { stderr: "pipe" },
           );
           if (cloneResult.exitCode !== 0) {

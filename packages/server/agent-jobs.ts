@@ -8,6 +8,7 @@
  * Server-agnostic: takes a mode, server URL getter, and cwd getter.
  */
 
+import { formatClaudeLogEvent } from "./claude-review";
 import {
   type AgentJobInfo,
   type AgentJobEvent,
@@ -92,7 +93,6 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions): AgentJob
   const capabilities: AgentCapability[] = [
     { id: "claude", name: "Claude Code", available: !!Bun.which("claude") },
     { id: "codex", name: "Codex CLI", available: !!Bun.which("codex") },
-    { id: "shell", name: "Shell Command", available: true },
   ];
   const capabilitiesResponse: AgentCapabilities = {
     mode,
@@ -220,6 +220,14 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions): AgentJob
                 const lines = text.split('\n');
                 for (const line of lines) {
                   if (!line.trim()) continue;
+                  // Claude: format JSONL into readable text
+                  if (provider === "claude") {
+                    const formatted = formatClaudeLogEvent(line);
+                    if (formatted !== null) {
+                      broadcast({ type: "job:log", jobId: id, delta: formatted + '\n' });
+                    }
+                    continue;
+                  }
                   try {
                     const event = JSON.parse(line);
                     if (event.type === 'result') continue; // handled in onJobComplete
@@ -407,12 +415,12 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions): AgentJob
             );
           }
 
-          // For non-shell providers, try server-side command building
+          // Try server-side command building for known providers
           let captureStdout = false;
           let stdinPrompt: string | undefined;
           let spawnCwd: string | undefined;
           let promptText: string | undefined;
-          if (options.buildCommand && provider !== "shell") {
+          if (options.buildCommand) {
             const built = await options.buildCommand(provider);
             if (built) {
               command = built.command;

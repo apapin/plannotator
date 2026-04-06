@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { CodeAnnotation, type EditorAnnotation } from '@plannotator/ui/types';
 import { isCurrentUser } from '@plannotator/ui/utils/identity';
 import { EditorAnnotationCard } from '@plannotator/ui/components/EditorAnnotationCard';
+import { CopyButton } from './CopyButton';
 import { HighlightedCode } from './HighlightedCode';
 import { detectLanguage } from '../utils/detectLanguage';
 import { renderInlineMarkdown } from '../utils/renderInlineMarkdown';
@@ -349,18 +350,24 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
                                   <SuggestionPreview code={annotation.suggestedCode} originalCode={annotation.originalCode} language={detectLanguage(annotation.filePath)} />
                                 </div>
                               )}
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onDeleteAnnotation(annotation.id);
-                                }}
-                                className="absolute top-2 right-2 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all"
-                                title="Delete annotation"
-                              >
-                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                              </button>
+                              {/* Actions — visible on hover */}
+                              <div className="flex items-center gap-1 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                {annotation.text && (
+                                  <CopyButton text={`${annotation.filePath}:${annotation.lineStart}${annotation.lineEnd !== annotation.lineStart ? `-${annotation.lineEnd}` : ''}\n${annotation.text}`} variant="inline" />
+                                )}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onDeleteAnnotation(annotation.id);
+                                  }}
+                                  className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                                  title="Delete annotation"
+                                >
+                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                              </div>
                             </div>
                           );
                         })}

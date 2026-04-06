@@ -212,7 +212,7 @@ function VerdictCard({ summary, isCorrect, terminal }: {
           <span className="text-[10px] text-muted-foreground">
             Confidence {Math.round(summary.confidence * 100)}%
           </span>
-          <CopyButton text={verdictText} variant="inline" />
+          <span className="ml-auto"><CopyButton text={verdictText} variant="inline" /></span>
         </div>
         <p className="text-xs text-foreground/80 leading-relaxed mt-1.5">{summary.explanation}</p>
       </div>
@@ -302,13 +302,13 @@ function AnnotationRow({ annotation: ann, dismissed, onClick }: {
   dismissed: boolean;
   onClick: (ann: CodeAnnotation) => void;
 }) {
+  const copyText = ann.text ? `${ann.filePath}:${ann.lineStart}${ann.lineEnd !== ann.lineStart ? `-${ann.lineEnd}` : ''}\n${ann.text}` : '';
   return (
-    <button
-      className={`w-full text-left px-3 py-2.5 rounded bg-card border transition-all duration-150 shadow-[0_1px_3px_rgba(0,0,0,0.06)] ${
+    <div
+      className={`group/finding w-full text-left px-3 py-2.5 rounded bg-card border transition-all duration-150 shadow-[0_1px_3px_rgba(0,0,0,0.06)] ${
         dismissed ? 'opacity-30 cursor-default border-border/20' : 'border-border/40 hover:shadow-[0_2px_6px_rgba(0,0,0,0.08)] cursor-pointer'
       }`}
       onClick={() => !dismissed && onClick(ann)}
-      disabled={dismissed}
     >
       <div className="flex items-center gap-2 text-[10px]">
         <span className={`font-mono truncate ${dismissed ? 'line-through text-muted-foreground' : 'text-primary'}`}>
@@ -320,13 +320,18 @@ function AnnotationRow({ annotation: ann, dismissed, onClick }: {
         {dismissed && (
           <span className="px-1 py-0.5 rounded text-[10px] uppercase tracking-wider bg-muted text-muted-foreground/60">dismissed</span>
         )}
+        {!dismissed && copyText && (
+          <span className="ml-auto opacity-0 group-hover/finding:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+            <CopyButton text={copyText} variant="inline" />
+          </span>
+        )}
       </div>
       {ann.text && (
         <p className={`text-xs mt-1 line-clamp-2 leading-relaxed ${dismissed ? 'text-muted-foreground/40' : 'text-foreground/80'}`}>
           {ann.text}
         </p>
       )}
-    </button>
+    </div>
   );
 }
 

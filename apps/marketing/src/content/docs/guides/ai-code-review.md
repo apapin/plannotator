@@ -17,6 +17,8 @@ When reviewing code (local changes or a PR), click **Run Agent** in the Agents t
 
 Each provider has its own review model. Findings appear as annotations in the diff viewer, sorted by severity, with inline reasoning explaining how each issue was verified.
 
+Our Claude integration is derived from Anthropic's official [Claude Code Review](https://code.claude.com/docs/en/code-review) service and the open-source [code-review plugin](https://github.com/anthropics/claude-code/blob/main/plugins/code-review/README.md). Our Codex integration is based on [OpenAI Codex CLI](https://github.com/openai/codex) and its structured output capabilities. We adapted both for Plannotator's interactive review UI — the underlying review methodology comes from each provider's official tooling.
+
 ## How it works
 
 ```

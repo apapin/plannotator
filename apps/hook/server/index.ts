@@ -336,12 +336,15 @@ if (args[0] === "sessions") {
           );
           if (fetchResult.exitCode !== 0) throw new Error(`Failed to fetch PR head ref: ${new TextDecoder().decode(fetchResult.stderr).trim()}`);
 
-          // Step 3: Checkout and ensure base is available
-          Bun.spawnSync(["git", "checkout", "FETCH_HEAD"], { cwd: localPath, stderr: "pipe" });
+          // Step 3: Checkout PR head (critical — if this fails, worktree is empty)
+          const checkoutResult = Bun.spawnSync(["git", "checkout", "FETCH_HEAD"], { cwd: localPath, stderr: "pipe" });
+          if (checkoutResult.exitCode !== 0) {
+            throw new Error(`git checkout FETCH_HEAD failed: ${new TextDecoder().decode(checkoutResult.stderr).trim()}`);
+          }
 
-          // Fetch the exact base SHA and create both local and remote-tracking refs
-          // so `git diff main...HEAD` and `git diff origin/main...HEAD` both work.
-          Bun.spawnSync(["git", "fetch", "--depth=50", "origin", prMetadata.baseSha], { cwd: localPath, stderr: "pipe" });
+          // Best-effort: create base refs so `git diff main...HEAD` and `git diff origin/main...HEAD` work
+          const baseFetch = Bun.spawnSync(["git", "fetch", "--depth=50", "origin", prMetadata.baseSha], { cwd: localPath, stderr: "pipe" });
+          if (baseFetch.exitCode !== 0) console.error("Warning: failed to fetch baseSha, agent diffs may be inaccurate");
           Bun.spawnSync(["git", "branch", "--", prMetadata.baseBranch, prMetadata.baseSha], { cwd: localPath, stderr: "pipe" });
           Bun.spawnSync(["git", "update-ref", `refs/remotes/origin/${prMetadata.baseBranch}`, prMetadata.baseSha], { cwd: localPath, stderr: "pipe" });
 

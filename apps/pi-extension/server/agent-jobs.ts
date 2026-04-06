@@ -208,8 +208,9 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions) {
 				});
 			}
 
-			// Monitor process exit
-			proc.on("exit", async (exitCode) => {
+			// Monitor process close (fires after stdio streams are fully drained,
+			// unlike 'exit' which fires before — critical for stdout capture)
+			proc.on("close", async (exitCode) => {
 				// Flush remaining stderr
 				if (logFlushTimer) { clearTimeout(logFlushTimer); logFlushTimer = null; }
 				if (logPending) {

@@ -157,8 +157,9 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions): AgentJob
 
       // Write prompt to stdin and close (for providers that read prompt from stdin)
       if (hasStdinPrompt && proc.stdin) {
-        proc.stdin.write(spawnOptions!.stdinPrompt!);
-        proc.stdin.end();
+        const sink = proc.stdin as import("bun").FileSink;
+        sink.write(spawnOptions!.stdinPrompt!);
+        sink.end();
       }
 
       info.status = "running";

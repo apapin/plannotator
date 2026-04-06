@@ -264,16 +264,23 @@ if (args[0] === "sessions") {
         // Validate baseBranch to prevent path traversal in git ref operations
         if (prMetadata.baseBranch.includes('..')) throw new Error(`Invalid base branch: ${prMetadata.baseBranch}`);
 
-        // Detect same-repo vs cross-repo
+        // Detect same-repo vs cross-repo (must match both owner/repo AND host)
         let isSameRepo = false;
         try {
           const remoteResult = await gitRuntime.runGit(["remote", "get-url", "origin"]);
           if (remoteResult.exitCode === 0) {
-            const currentRepo = parseRemoteUrl(remoteResult.stdout.trim());
+            const remoteUrl = remoteResult.stdout.trim();
+            const currentRepo = parseRemoteUrl(remoteUrl);
             const prRepo = prMetadata.platform === "github"
               ? `${prMetadata.owner}/${prMetadata.repo}`
               : prMetadata.projectPath;
-            isSameRepo = !!currentRepo && currentRepo.toLowerCase() === prRepo.toLowerCase();
+            const repoMatches = !!currentRepo && currentRepo.toLowerCase() === prRepo.toLowerCase();
+            // Extract host from remote URL to avoid cross-instance false positives (GHE)
+            const sshHost = remoteUrl.match(/^[^@]+@([^:]+):/)?.[1];
+            const httpsHost = (() => { try { return new URL(remoteUrl).hostname; } catch { return null; } })();
+            const remoteHost = (sshHost || httpsHost || "").toLowerCase();
+            const prHost = prMetadata.host.toLowerCase();
+            isSameRepo = repoMatches && remoteHost === prHost;
           }
         } catch { /* not in a git repo — cross-repo path */ }
 

@@ -243,8 +243,9 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions): AgentJob
 
       // Monitor process exit
       proc.exited.then(async (exitCode) => {
-        // Ensure stdout is fully drained before reading results
-        await stdoutDone;
+        // Wait for stdout to drain — grace period in case the pipe doesn't close cleanly.
+        // The process is dead; if the stream hasn't flushed in 2s, the runtime has a bug.
+        await Promise.race([stdoutDone, new Promise(r => setTimeout(r, 2000))]);
         const entry = jobs.get(id);
         if (!entry || isTerminalStatus(entry.info.status)) return;
 

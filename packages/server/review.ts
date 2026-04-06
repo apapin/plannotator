@@ -169,8 +169,11 @@ export async function startReviewServer(
         const output = await parseCodexOutput(meta.outputPath);
         if (!output) return;
 
+        // Override verdict if there are blocking findings (P0/P1) — Codex's
+        // freeform correctness string can say "mostly correct" with real bugs.
+        const hasBlockingFindings = output.findings.some(f => f.priority !== null && f.priority <= 1);
         job.summary = {
-          correctness: output.overall_correctness,
+          correctness: hasBlockingFindings ? "Issues Found" : output.overall_correctness,
           explanation: output.overall_explanation,
           confidence: output.overall_confidence_score,
         };
@@ -186,7 +189,10 @@ export async function startReviewServer(
       // --- Claude path ---
       if (job.provider === "claude" && meta.stdout) {
         const output = parseClaudeStreamOutput(meta.stdout);
-        if (!output) return;
+        if (!output) {
+          console.error(`[claude-review] Failed to parse output (${meta.stdout.length} bytes, last 200: ${meta.stdout.slice(-200)})`);
+          return;
+        }
 
         const total = output.summary.important + output.summary.nit + output.summary.pre_existing;
         job.summary = {

@@ -1,3 +1,5 @@
+import { toRelativePath } from "./path-utils";
+
 /**
  * Claude Code Review Agent — prompt, command builder, and JSONL output parser.
  *
@@ -264,8 +266,6 @@ export function parseClaudeStreamOutput(stdout: string): ClaudeReviewOutput | nu
 // ---------------------------------------------------------------------------
 // Finding transform — Claude findings → external annotations
 // ---------------------------------------------------------------------------
-
-import { toRelativePath } from "./path-utils";
 
 /** Transform Claude findings into the external annotation format. */
 export function transformClaudeFindings(

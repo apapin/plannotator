@@ -362,6 +362,8 @@ if (args[0] === "sessions") {
       } catch (err) {
         console.error(`Warning: --local failed, falling back to remote diff`);
         console.error(err instanceof Error ? err.message : String(err));
+        // Clean up partially-created clone directory (clone may have succeeded before fetch/checkout failed)
+        try { rmSync(localPath, { recursive: true, force: true }); } catch {}
         agentCwd = undefined;
         worktreeCleanup = undefined;
       }

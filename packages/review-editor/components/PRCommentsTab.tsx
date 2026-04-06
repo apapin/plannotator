@@ -141,41 +141,12 @@ export const PRCommentsTab: React.FC<PRCommentsTabProps> = React.memo(({ context
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
         e.preventDefault();
         searchInputRef.current?.focus();
-        return;
-      }
-
-      if (isTypingTarget(e.target)) return;
-
-      // j / ArrowDown → next
-      if (e.key === 'j' || e.key === 'ArrowDown') {
-        e.preventDefault();
-        if (displayTimeline.length === 0) return;
-        const idx = selectedId ? displayTimeline.findIndex((e) => e.data.id === selectedId) : -1;
-        const next = Math.min(idx + 1, displayTimeline.length - 1);
-        setSelectedId(displayTimeline[next].data.id);
-        return;
-      }
-
-      // k / ArrowUp → previous
-      if (e.key === 'k' || e.key === 'ArrowUp') {
-        e.preventDefault();
-        if (displayTimeline.length === 0) return;
-        const idx = selectedId ? displayTimeline.findIndex((e) => e.data.id === selectedId) : displayTimeline.length;
-        const prev = Math.max(idx - 1, 0);
-        setSelectedId(displayTimeline[prev].data.id);
-        return;
-      }
-
-      // Escape → deselect
-      if (e.key === 'Escape' && selectedId) {
-        setSelectedId(null);
-        return;
       }
     };
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [displayTimeline, selectedId]);
+  }, []);
 
   // --- Collapse helpers ---
   const toggleCollapsed = useCallback((id: string) => {
@@ -420,7 +391,7 @@ function ThreadCard({ thread, isSelected, isCollapsed, onSelect, onToggleCollaps
   if (!first) return null;
   const replies = thread.comments.slice(1);
   const isDimmed = thread.isResolved || thread.isOutdated;
-  const lineLabel = thread.startLine && thread.startLine !== thread.line
+  const lineLabel = thread.startLine && thread.line && thread.startLine !== thread.line
     ? `L${thread.startLine}–${thread.line}`
     : thread.line ? `L${thread.line}` : '';
 

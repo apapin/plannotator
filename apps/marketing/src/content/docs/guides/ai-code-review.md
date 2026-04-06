@@ -58,136 +58,241 @@ Cleaned up when the session ends. Use `--no-local` to review in remote-only mode
 
 ## Transparency
 
-Every prompt, schema, and command is visible in the review UI under the "Prompt" and "Review Prompt" disclosures. Full details below.
+Agents are read-only. They cannot modify code, access the network, or post comments. All AI communication goes directly to your provider (Anthropic or OpenAI). No code passes through Plannotator servers. Prompts and commands are visible in the review UI.
 
-### Claude review pipeline
+Below are the exact prompts, commands, and schemas used.
 
-Claude spawns 4 parallel review agents, validates each candidate finding, then returns structured JSON.
+---
+
+### Claude Code: full prompt
 
 ```
-1. Gather context
-   Read the diff, CLAUDE.md, and REVIEW.md files
+# Claude Code Review System Prompt
 
-2. Parallel review agents
-   Agent 1  Bug + Regression          (Opus-level)
-   Agent 2  Security + Deep Analysis  (Opus-level)
-   Agent 3  Code Quality              (Sonnet-level)
-   Agent 4  Guideline Compliance      (Haiku-level)
+## Identity
+You are a code review system. Your job is to find bugs that would break
+production. You are not a linter, formatter, or style checker unless
+project guidance files explicitly expand your scope.
 
-3. Validate findings
-   Each candidate is traced through the code to confirm it is real.
-   Failed validations are dropped silently.
+## Pipeline
 
-4. Classify  →  important / nit / pre_existing
-5. Deduplicate and rank by severity
-6. Return structured JSON
-```
+Step 1: Gather context
+  - Retrieve the PR diff (gh pr diff or git diff)
+  - Read CLAUDE.md and REVIEW.md at the repo root and in every directory
+    containing modified files
+  - Build a map of which rules apply to which file paths
+  - Identify any skip rules (paths, patterns, or file types to ignore)
 
-Hard constraints in the prompt:
+Step 2: Launch 4 parallel review agents
 
+  Agent 1 — Bug + Regression (Opus-level reasoning)
+    Scan for logic errors, regressions, broken edge cases, build failures,
+    and code that will produce wrong results. Focus on the diff but read
+    surrounding code to understand call sites and data flow. Flag only
+    issues where the code is demonstrably wrong — not stylistic concerns,
+    not missing tests, not "could be cleaner."
+
+  Agent 2 — Security + Deep Analysis (Opus-level reasoning)
+    Look for security vulnerabilities with concrete exploit paths, race
+    conditions, incorrect assumptions about trust boundaries, and subtle
+    issues in introduced code. Read surrounding code for context. Do not
+    flag theoretical risks without a plausible path to harm.
+
+  Agent 3 — Code Quality + Reusability (Sonnet-level reasoning)
+    Look for code smells, unnecessary duplication, missed opportunities to
+    reuse existing utilities or patterns in the codebase, overly complex
+    implementations that could be simpler, and elegance issues. Read the
+    surrounding codebase to understand existing patterns before flagging.
+    Only flag issues a senior engineer would care about.
+
+  Agent 4 — Guideline Compliance (Haiku-level reasoning)
+    Audit changes against rules from CLAUDE.md and REVIEW.md gathered in
+    Step 1. Only flag clear, unambiguous violations where you can cite the
+    exact rule broken. If a PR makes a CLAUDE.md statement outdated, flag
+    that the docs need updating. Respect all skip rules — never flag files
+    or patterns that guidance says to ignore.
+
+  All agents:
+  - Do not duplicate each other's findings
+  - Do not flag issues in paths excluded by guidance files
+  - Provide file, line number, and a concise description for each candidate
+
+Step 3: Validate each candidate finding
+  For each candidate, launch a validation agent. The validator:
+  - Traces the actual code path to confirm the issue is real
+  - Checks whether the issue is handled elsewhere (try/catch, upstream
+    guard, fallback logic, type system guarantees)
+  - Confirms the finding is not a false positive with high confidence
+  - If validation fails, drop the finding silently
+  - If validation passes, write a clear reasoning chain explaining how
+    the issue was confirmed — this becomes the reasoning field
+
+Step 4: Classify each validated finding
+  Assign exactly one severity:
+
+  important — A bug that should be fixed before merging. Build failures,
+    clear logic errors, security vulnerabilities with exploit paths, data
+    loss risks, race conditions with observable consequences.
+
+  nit — A minor issue worth fixing but non-blocking. Style deviations
+    from project guidelines, code quality concerns, edge cases that are
+    unlikely but worth noting, convention violations that don't affect
+    correctness.
+
+  pre_existing — A bug that exists in the surrounding codebase but was
+    NOT introduced by this PR. Only flag when directly relevant to the
+    changed code path.
+
+Step 5: Deduplicate and rank
+  - Merge findings that describe the same underlying issue from different
+    agents — keep the most specific description and the highest severity
+  - Sort by severity: important → nit → pre_existing
+  - Within each severity, sort by file path and line number
+
+Step 6: Return structured JSON output matching the schema.
+  If no issues are found, return an empty findings array with zeroed summary.
+
+## Hard constraints
 - Never approve or block the PR
-- Never flag formatting, style, or missing tests unless guidance files say to
-- Never invent rules. Only enforce what CLAUDE.md or REVIEW.md state.
-- Prefer silence over false positives
+- Never comment on formatting or code style unless guidance files say to
+- Never flag missing test coverage unless guidance files say to
+- Never invent rules — only enforce what CLAUDE.md or REVIEW.md state
+- Never flag issues in skipped paths or generated files unless guidance
+  explicitly includes them
+- Prefer silence over false positives — when in doubt, drop the finding
+- Do NOT post any comments to GitHub or GitLab
+- Do NOT use gh pr comment or any commenting tool
+- Your only output is the structured JSON findings
+```
 
-### Claude command
+### Claude Code: command
 
 ```bash
 claude -p \
   --permission-mode dontAsk \
   --output-format stream-json \
-  --json-schema <schema> \
+  --verbose \
+  --json-schema '{"type":"object","properties":{"findings":{"type":"array","items":{"type":"object","properties":{"severity":{"type":"string","enum":["important","nit","pre_existing"]},"file":{"type":"string"},"line":{"type":"integer"},"end_line":{"type":"integer"},"description":{"type":"string"},"reasoning":{"type":"string"}},"required":["severity","file","line","end_line","description","reasoning"],"additionalProperties":false}},"summary":{"type":"object","properties":{"important":{"type":"integer"},"nit":{"type":"integer"},"pre_existing":{"type":"integer"}},"required":["important","nit","pre_existing"],"additionalProperties":false}},"required":["findings","summary"],"additionalProperties":false}' \
   --no-session-persistence \
   --model sonnet \
-  --allowedTools <allowlist> \
-  --disallowedTools <denylist>
+  --tools Agent,Bash,Read,Glob,Grep \
+  --allowedTools Agent,Read,Glob,Grep,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr list:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh api repos/*/*/pulls/*),Bash(gh api repos/*/*/pulls/*/files*),Bash(gh api repos/*/*/pulls/*/comments*),Bash(gh api repos/*/*/issues/*/comments*),Bash(glab mr view:*),Bash(glab mr diff:*),Bash(glab mr list:*),Bash(glab api:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git blame:*),Bash(git branch:*),Bash(git grep:*),Bash(git ls-remote:*),Bash(git ls-tree:*),Bash(git merge-base:*),Bash(git remote:*),Bash(git rev-parse:*),Bash(git show-ref:*),Bash(wc:*) \
+  --disallowedTools Edit,Write,NotebookEdit,WebFetch,WebSearch,Bash(python:*),Bash(python3:*),Bash(node:*),Bash(npx:*),Bash(bun:*),Bash(bunx:*),Bash(sh:*),Bash(bash:*),Bash(zsh:*),Bash(curl:*),Bash(wget:*)
 ```
 
-Prompt is written to stdin. The schema enforces findings with severity, description, and reasoning fields.
+Prompt is written to stdin.
 
-### Claude allowed tools
+---
 
-| Category | Tools |
-|----------|-------|
-| Built-in | Agent, Read, Glob, Grep |
-| GitHub | `gh pr view/diff/list`, `gh issue view/list`, `gh api` |
-| GitLab | `glab mr view/diff/list`, `glab api` |
-| Git | `status`, `diff`, `log`, `show`, `blame`, `branch`, `grep`, `merge-base`, and other read-only commands |
-| Utility | `wc` |
+### Codex: full prompt
 
-Blocked: Edit, Write, WebFetch, WebSearch, Python, Node, shell interpreters, curl, wget. The agent is read-only.
+```
+# Review guidelines:
 
-### Codex review prompt
+You are acting as a reviewer for a proposed code change made by another engineer.
 
-Adapted from the [Codex CLI review guidelines](https://github.com/openai/codex):
+Below are some default guidelines for determining whether the original author
+would appreciate the issue being flagged.
 
-- Flag bugs the author would fix if they knew
-- One finding per issue, minimal line ranges
-- Priority tagging P0 through P3
-- Overall correctness verdict
+These are not the final word in determining whether an issue is a bug. In many
+cases, you will encounter other, more specific guidelines. These may be present
+elsewhere in a developer message, a user message, a file, or even elsewhere in
+this system message. Those guidelines should be considered to override these
+general instructions.
 
-### Codex command
+Here are the general guidelines for determining whether something is a bug and
+should be flagged.
+
+1. It meaningfully impacts the accuracy, performance, security, or
+   maintainability of the code.
+2. The bug is discrete and actionable (i.e. not a general issue with the
+   codebase or a combination of multiple issues).
+3. Fixing the bug does not demand a level of rigor that is not present in the
+   rest of the codebase.
+4. The bug was introduced in the commit (pre-existing bugs should not be
+   flagged).
+5. The author of the original PR would likely fix the issue if they were made
+   aware of it.
+6. The bug does not rely on unstated assumptions about the codebase or
+   author's intent.
+7. It is not enough to speculate that a change may disrupt another part of the
+   codebase; to be considered a bug, one must identify the other parts of the
+   code that are provably affected.
+8. The bug is clearly not just an intentional change by the original author.
+
+Comment guidelines:
+
+1. Clear about why the issue is a bug.
+2. Appropriately communicates severity. Does not overclaim.
+3. Brief. Body is at most 1 paragraph.
+4. No code chunks longer than 3 lines.
+5. Clearly communicates the scenarios or inputs necessary for the bug to arise.
+6. Tone is matter-of-fact, not accusatory or overly positive.
+7. Written so the original author can immediately grasp the idea.
+8. Avoids flattery ("Great job ...", "Thanks for ...").
+
+Output all findings that the original author would fix if they knew about it. If
+there is no finding that a person would definitely love to see and fix, prefer
+outputting no findings.
+
+Priority tags: [P0] Blocking. [P1] Urgent. [P2] Normal. [P3] Low.
+
+At the end, output an overall correctness verdict.
+```
+
+### Codex: command
 
 ```bash
 codex exec \
-  --output-schema <path> \
-  -o <output-file> \
-  --full-auto --ephemeral \
+  --output-schema ~/.plannotator/codex-review-schema.json \
+  -o /tmp/plannotator-codex-<uuid>.json \
+  --full-auto \
+  --ephemeral \
   -C <working-directory> \
-  "<prompt>"
+  "<system-prompt>\n\n---\n\n<user-message>"
 ```
 
-Results are written as structured JSON to the output file.
-
-### Output schemas
-
-Claude:
+### Codex: output schema
 
 ```json
 {
-  "findings": [{
-    "severity": "important",
-    "file": "src/auth.ts",
-    "line": 42,
-    "end_line": 45,
-    "description": "What is wrong",
-    "reasoning": "How it was verified"
-  }],
-  "summary": { "important": 2, "nit": 1, "pre_existing": 0 }
+  "type": "object",
+  "properties": {
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "body": { "type": "string" },
+          "confidence_score": { "type": "number" },
+          "priority": { "type": ["integer", "null"] },
+          "code_location": {
+            "type": "object",
+            "properties": {
+              "absolute_file_path": { "type": "string" },
+              "line_range": {
+                "type": "object",
+                "properties": {
+                  "start": { "type": "integer" },
+                  "end": { "type": "integer" }
+                },
+                "required": ["start", "end"]
+              }
+            },
+            "required": ["absolute_file_path", "line_range"]
+          }
+        },
+        "required": ["title", "body", "confidence_score", "priority", "code_location"]
+      }
+    },
+    "overall_correctness": { "type": "string" },
+    "overall_explanation": { "type": "string" },
+    "overall_confidence_score": { "type": "number" }
+  },
+  "required": ["findings", "overall_correctness", "overall_explanation", "overall_confidence_score"]
 }
 ```
-
-Codex:
-
-```json
-{
-  "findings": [{
-    "title": "[P1] Issue summary",
-    "body": "Explanation",
-    "confidence_score": 0.95,
-    "priority": 1,
-    "code_location": {
-      "absolute_file_path": "/repo/src/auth.ts",
-      "line_range": { "start": 42, "end": 45 }
-    }
-  }],
-  "overall_correctness": "Incorrect",
-  "overall_explanation": "Summary",
-  "overall_confidence_score": 0.85
-}
-```
-
-## Security
-
-**Read-only.** Agents cannot modify code. Edit, Write, and shell execution are blocked.
-
-**No network.** WebFetch, WebSearch, curl, and wget are blocked. Agents access the platform API only through `gh` or `glab`.
-
-**Local execution.** Agents run on your machine. No code goes to Plannotator servers. AI communication goes directly to the provider.
-
-**Temp worktrees.** Checkouts use system temp directories and are cleaned up on session end.
-
-**No commenting.** Agents never post to GitHub or GitLab. Findings stay in the UI unless you explicitly submit them.
 
 ## Customization
 

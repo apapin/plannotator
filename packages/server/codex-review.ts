@@ -7,7 +7,8 @@
 
 import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
-import { appendFile, mkdir, unlink } from "node:fs/promises";
+import { appendFile, mkdir, unlink, writeFile, readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import type { DiffType } from "./vcs";
 import type { PRMetadata } from "./pr";
 import { toRelativePath } from "./path-utils";
@@ -87,7 +88,7 @@ let schemaMaterialized = false;
 async function ensureSchemaFile(): Promise<string> {
   if (!schemaMaterialized) {
     await mkdir(SCHEMA_DIR, { recursive: true });
-    await Bun.write(SCHEMA_FILE, CODEX_REVIEW_SCHEMA);
+    await writeFile(SCHEMA_FILE, CODEX_REVIEW_SCHEMA);
     schemaMaterialized = true;
   }
   return SCHEMA_FILE;
@@ -288,13 +289,12 @@ export async function parseCodexOutput(outputPath: string): Promise<CodexReviewO
   await debugLog("PARSE_OUTPUT_START", { outputPath });
 
   try {
-    const file = Bun.file(outputPath);
-    if (!await file.exists()) {
+    if (!existsSync(outputPath)) {
       await debugLog("PARSE_OUTPUT_FILE_MISSING", outputPath);
       return null;
     }
 
-    const text = await file.text();
+    const text = await readFile(outputPath, "utf-8");
 
     // Clean up temp file
     try { await unlink(outputPath); } catch { /* ignore */ }

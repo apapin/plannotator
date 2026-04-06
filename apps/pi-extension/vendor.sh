@@ -11,6 +11,16 @@ for f in feedback-templates review-core storage draft project pr-provider pr-git
   printf '// @generated — DO NOT EDIT. Source: packages/shared/%s.ts\n' "$f" | cat - "$src" > "generated/$f.ts"
 done
 
+# Vendor review agent modules from packages/server/ — rewrite imports for generated/ layout
+for f in codex-review claude-review path-utils; do
+  src="../../packages/server/$f.ts"
+  printf '// @generated — DO NOT EDIT. Source: packages/server/%s.ts\n' "$f" | cat - "$src" \
+    | sed 's|from "./vcs"|from "./review-core.js"|' \
+    | sed 's|from "./pr"|from "./pr-provider.js"|' \
+    | sed 's|from "./path-utils"|from "./path-utils.js"|' \
+    > "generated/$f.ts"
+done
+
 for f in index types provider session-manager endpoints context base-session; do
   src="../../packages/ai/$f.ts"
   printf '// @generated — DO NOT EDIT. Source: packages/ai/%s.ts\n' "$f" | cat - "$src" > "generated/ai/$f.ts"

@@ -103,7 +103,7 @@ export const ReviewAgentJobDetailPanel: React.FC<IDockviewPanelProps> = (props) 
   return (
     <div className="h-full flex flex-col overflow-hidden bg-background">
       {/* ── Header ── */}
-      <div className="flex-shrink-0 px-4 py-3 border-b border-border/40">
+      <div className="flex-shrink-0 px-8 py-3 border-b border-border/40">
         <div className="flex items-center gap-2">
           <StatusDot status={job.status} />
           <ProviderPill provider={job.provider} />
@@ -130,7 +130,7 @@ export const ReviewAgentJobDetailPanel: React.FC<IDockviewPanelProps> = (props) 
               <pre className="text-xs font-mono text-foreground/80 whitespace-pre-wrap break-words max-h-48 overflow-y-auto">{userMessage}</pre>
             </Disclosure>
             {systemPrompt && (
-              <Disclosure title="System Prompt" copyText={systemPrompt} nested>
+              <Disclosure title="Review Prompt" copyText={systemPrompt} nested>
                 <pre className="text-xs font-mono text-foreground/80 whitespace-pre-wrap break-words max-h-48 overflow-y-auto">{systemPrompt}</pre>
               </Disclosure>
             )}
@@ -139,7 +139,7 @@ export const ReviewAgentJobDetailPanel: React.FC<IDockviewPanelProps> = (props) 
       </div>
 
       {/* ── Tabs ── */}
-      <div className="flex-shrink-0 px-4 flex gap-0.5 border-b border-border/40">
+      <div className="flex-shrink-0 px-8 flex gap-0.5 border-b border-border/40">
         <TabButton active={activeTab === 'findings'} onClick={() => setActiveTab('findings')}>
           Findings{activeAnnotations.length > 0 && ` (${activeAnnotations.length})`}
         </TabButton>
@@ -189,7 +189,7 @@ export const ReviewAgentJobDetailPanel: React.FC<IDockviewPanelProps> = (props) 
         </div>
         </ScrollFade>
       ) : (
-        <div className="flex-1 flex flex-col min-h-0 px-4 py-3">
+        <div className="flex-1 flex flex-col min-h-0 px-8 py-3">
           <LiveLogViewer content={logContent} isLive={!terminal} />
           {!logContent && job.error && terminal && (
             <div className="mt-2 flex-shrink-0">

@@ -62,6 +62,12 @@ Agents are read-only. They cannot modify code, access the network, or post comme
 
 Below are the exact prompts, commands, and schemas used.
 
+- [Claude Code: full prompt](#claude-code-full-prompt)
+- [Claude Code: command](#claude-code-command)
+- [Codex: full prompt](#codex-full-prompt)
+- [Codex: command](#codex-command)
+- [Codex: output schema](#codex-output-schema)
+
 ---
 
 ### Claude Code: full prompt

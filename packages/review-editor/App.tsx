@@ -36,7 +36,7 @@ import { ReviewHeaderMenu } from './components/ReviewHeaderMenu';
 import { ReviewSidebar } from './components/ReviewSidebar';
 import { FileTree } from './components/FileTree';
 import { DEMO_DIFF } from './demoData';
-import { exportReviewFeedback } from './utils/exportFeedback';
+import { exportReviewFeedback, formatConventionalPrefix } from './utils/exportFeedback';
 import { ReviewStateProvider, type ReviewState } from './dock/ReviewStateContext';
 import { JobLogsProvider } from './dock/JobLogsContext';
 import { reviewPanelComponents } from './dock/reviewPanelComponents';
@@ -751,15 +751,16 @@ const ReviewApp: React.FC = () => {
     text?: string,
     suggestedCode?: string,
     originalCode?: string,
-    conventionalLabel?: ConventionalLabel,
+    conventionalLabel?: ConventionalLabel | null,
     decorations?: ConventionalDecoration[],
   ) => {
     const ann = allAnnotationsRef.current.find(a => a.id === id);
-    const updates = {
+    const updates: Partial<CodeAnnotation> = {
       ...(text !== undefined && { text }),
       ...(suggestedCode !== undefined && { suggestedCode }),
       ...(originalCode !== undefined && { originalCode }),
-      ...(conventionalLabel !== undefined && { conventionalLabel }),
+      // null clears the label; undefined means "not provided, keep existing"
+      ...(conventionalLabel !== undefined && { conventionalLabel: conventionalLabel ?? undefined }),
       ...(decorations !== undefined && { decorations }),
     };
     if (ann?.source && externalAnnotations.some(e => e.id === id)) {
@@ -1130,7 +1131,8 @@ const ReviewApp: React.FC = () => {
 
     // Inline file comments
     const fileComments = fileAnnotations.map(ann => {
-      let commentBody = ann.text ?? '';
+      const ccPrefix = formatConventionalPrefix(ann.conventionalLabel, ann.decorations);
+      let commentBody = ccPrefix + (ann.text ?? '');
       if (ann.suggestedCode) {
         commentBody += `\n\n\`\`\`suggestion\n${ann.suggestedCode}\n\`\`\``;
       }

@@ -3,7 +3,7 @@ import type { PRMetadata } from '@plannotator/shared/pr-provider';
 import { getMRLabel, getMRNumberLabel, getDisplayRepo } from '@plannotator/shared/pr-provider';
 
 /** Format a conventional comment prefix: `**label** (decorations): ` */
-function formatConventionalPrefix(
+export function formatConventionalPrefix(
   label?: ConventionalLabel,
   decorations?: ConventionalDecoration[],
 ): string {

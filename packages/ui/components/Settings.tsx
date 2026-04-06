@@ -351,7 +351,7 @@ function parseCCLabels(json: string | null): CCLabelConfig[] {
     return parsed.map((l: Record<string, unknown>) => ({
       label: (l.label as string) || 'custom',
       display: (l.display as string) || (l.label as string) || 'custom',
-      blocking: l.blocking === true || l.blocking === 'blocking' || l.blocking === 'non-blocking',
+      blocking: l.blocking === true || l.blocking === 'true',
     }));
   } catch {
     return DEFAULT_CC_LABELS;
@@ -381,7 +381,11 @@ const CommentsTab: React.FC = () => {
   };
 
   const addLabel = () => {
-    save([...labels, { label: 'custom', display: 'custom', blocking: false }]);
+    const existing = new Set(labels.map(l => l.label));
+    let slug = 'custom';
+    let n = 2;
+    while (existing.has(slug)) { slug = `custom-${n++}`; }
+    save([...labels, { label: slug, display: slug, blocking: false }]);
   };
 
   const resetToDefaults = () => {

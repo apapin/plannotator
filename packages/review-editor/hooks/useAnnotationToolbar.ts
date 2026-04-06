@@ -29,7 +29,7 @@ interface UseAnnotationToolbarArgs {
   isFocused: boolean;
   onLineSelection: (range: SelectedLineRange | null) => void;
   onAddAnnotation: (type: CodeAnnotationType, text?: string, suggestedCode?: string, originalCode?: string, conventionalLabel?: ConventionalLabel, decorations?: ConventionalDecoration[], tokenMeta?: TokenAnnotationMeta) => void;
-  onEditAnnotation: (id: string, text?: string, suggestedCode?: string, originalCode?: string, conventionalLabel?: ConventionalLabel, decorations?: ConventionalDecoration[]) => void;
+  onEditAnnotation: (id: string, text?: string, suggestedCode?: string, originalCode?: string, conventionalLabel?: ConventionalLabel | null, decorations?: ConventionalDecoration[]) => void;
 }
 
 // Per-range draft storage (survives component remounts, e.g. file switches)
@@ -198,8 +198,9 @@ export function useAnnotationToolbar({ patch, filePath, isFocused, onLineSelecti
     const code = hasCode ? suggestedCode : undefined;
     const original = hasCode && selectedOriginalCode ? selectedOriginalCode : undefined;
 
-    const label = conventionalLabel || undefined;
-    const decs = decorations.length > 0 ? decorations : undefined;
+    // Pass null explicitly when label is cleared so edits can remove it
+    const label = conventionalLabel ?? null;
+    const decs = decorations;
 
     if (editingAnnotationId) {
       onEditAnnotation(editingAnnotationId, text, code, original, label, decs);
@@ -210,7 +211,7 @@ export function useAnnotationToolbar({ patch, filePath, isFocused, onLineSelecti
         charEnd: tokenSel.anchor.charEnd,
         tokenText: tokenSel.fullText,
       } : undefined;
-      onAddAnnotation('comment', text, code, original, label, decs, tokenMeta);
+      onAddAnnotation('comment', text, code, original, label || undefined, decs.length > 0 ? decs : undefined, tokenMeta);
     }
 
     clearDraft();

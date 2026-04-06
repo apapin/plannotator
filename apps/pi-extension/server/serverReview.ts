@@ -168,7 +168,6 @@ export async function startReviewServer(options: {
 
 	// Agent jobs — background process manager (late-binds serverUrl via getter)
 	let serverUrl = "";
-	const isPRMode = !!options.prMetadata;
 	const agentJobs = createAgentJobHandler({
 		mode: "review",
 		getServerUrl: () => serverUrl,

@@ -295,7 +295,7 @@ export function transformClaudeFindings(
       type: "comment",
       side: "new",
       scope: "line",
-      text: f.description,
+      text: `[${f.severity}] ${f.description}`,
       severity: f.severity,
       reasoning: f.reasoning,
       author: "Claude Code",

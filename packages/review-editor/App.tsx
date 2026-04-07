@@ -850,10 +850,12 @@ const ReviewApp: React.FC = () => {
     (path: string) => setViewedFiles(prev => new Set(prev).add(path)),
     [],
   );
-  const { stagedFiles, stagingFile, canStageFiles, stageFile, resetStagedFiles, stageError } = useGitAdd({
+  const { stagedFiles, stagingFile, canStageFiles: canStageRaw, stageFile, resetStagedFiles, stageError } = useGitAdd({
     activeDiffBase,
     onFileViewed: handleFileViewedFromStage,
   });
+  // Staging is never available in PR review mode — the server rejects it and the UI shouldn't offer it.
+  const canStageFiles = canStageRaw && !prMetadata;
 
   // Shared helper: fetch a diff switch and update state
   const fetchDiffSwitch = useCallback(async (fullDiffType: string) => {

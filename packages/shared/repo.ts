@@ -22,8 +22,11 @@ export function parseRemoteUrl(url: string): string | null {
 	if (sshPortMatch) return sshPortMatch[1];
 
 	// SSH format: git@host:path.git — capture full path after ':'
-	const sshMatch = url.match(/:([^/][^:]+?)(?:\.git)?$/);
-	if (sshMatch) return sshMatch[1];
+	// Reject URLs with :// scheme (HTTPS with non-standard ports like :8443)
+	if (!url.includes("://")) {
+		const sshMatch = url.match(/:([^/][^:]+?)(?:\.git)?$/);
+		if (sshMatch) return sshMatch[1];
+	}
 
 	// HTTPS format: https://host/path.git — capture full path after host
 	const httpsMatch = url.match(/^https?:\/\/[^/]+\/(.+?)(?:\.git)?$/);

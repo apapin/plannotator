@@ -345,12 +345,17 @@ export default function plannotator(pi: ExtensionAPI): void {
 
 			try {
 				const prUrl = args?.trim() || undefined;
+				const isPRReview = prUrl?.startsWith("http://") || prUrl?.startsWith("https://");
 				const result = await openCodeReview(ctx, { prUrl });
 				if (result.feedback) {
 					if (result.approved) {
 						pi.sendUserMessage(
 							`# Code Review\n\nCode review completed — no changes requested.`,
 						);
+					} else if (isPRReview) {
+						// Platform PR actions (approve/comment) return approved:false with a
+						// status message — don't tell the agent to "address" a platform action.
+						pi.sendUserMessage(result.feedback);
 					} else {
 						pi.sendUserMessage(
 							`${result.feedback}\n\nPlease address this feedback.`,

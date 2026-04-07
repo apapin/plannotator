@@ -475,7 +475,20 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
   // Inject resolved colors into @pierre/diffs shadow DOM.
   // CSS custom properties don't cross the shadow boundary, so we read computed
   // values and pass them via unsafeCSS. Single state object avoids split renders.
-  const [pierreTheme, setPierreTheme] = useState<{ type: 'dark' | 'light'; css: string }>({ type: 'dark', css: '' });
+  const [pierreTheme, setPierreTheme] = useState<{ type: 'dark' | 'light'; css: string }>(() => {
+    // Compute initial theme synchronously to avoid a flash of unstyled dark content
+    const styles = getComputedStyle(document.documentElement);
+    const bg = styles.getPropertyValue('--background').trim();
+    const fg = styles.getPropertyValue('--foreground').trim();
+    if (!bg || !fg) return { type: resolvedMode ?? 'dark', css: '' };
+    return { type: resolvedMode ?? 'dark', css: `
+      :host, [data-diff], [data-file], [data-diffs-header], [data-error-wrapper], [data-virtualizer-buffer] {
+        --diffs-bg: ${bg} !important; --diffs-fg: ${fg} !important;
+        --diffs-dark-bg: ${bg}; --diffs-light-bg: ${bg}; --diffs-dark: ${fg}; --diffs-light: ${fg};
+      }
+      pre, code { background-color: ${bg} !important; }
+    `};
+  });
 
   useEffect(() => {
     requestAnimationFrame(() => {

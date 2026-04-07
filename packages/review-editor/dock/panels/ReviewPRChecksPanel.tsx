@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import type { IDockviewPanelProps } from 'dockview-react';
 import { useReviewState } from '../ReviewStateContext';
 import { PRChecksTab } from '../../components/PRChecksTab';
+import { OverlayScrollArea } from '@plannotator/ui/components/OverlayScrollArea';
 
 /**
  * Dock panel wrapper for PR Checks.
@@ -39,8 +40,8 @@ export const ReviewPRChecksPanel: React.FC<IDockviewPanelProps> = () => {
   if (!prContext) return null;
 
   return (
-    <div className="h-full overflow-y-auto">
+    <OverlayScrollArea className="h-full">
       <PRChecksTab context={prContext} />
-    </div>
+    </OverlayScrollArea>
   );
 };

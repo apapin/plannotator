@@ -13,6 +13,7 @@ import { SparklesIcon } from './SparklesIcon';
 import { ReviewAgentsIcon } from '@plannotator/ui/components/ReviewAgentsIcon';
 import { AgentsTab } from '@plannotator/ui/components/AgentsTab';
 import type { PRMetadata } from '@plannotator/shared/pr-provider';
+import { OverlayScrollArea } from '@plannotator/ui/components/OverlayScrollArea';
 import type { AIChatEntry } from '../hooks/useAIChat';
 import type { AgentJobInfo, AgentCapabilities } from '@plannotator/ui/types';
 import type { DiffFile } from '../types';
@@ -282,7 +283,7 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = /* React.memo */({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto">
+        <OverlayScrollArea className="flex-1 min-h-0">
           {/* Annotations tab */}
           {activeTab === 'annotations' && (
             <div className="p-2 space-y-1.5">
@@ -439,7 +440,7 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = /* React.memo */({
             />
           )}
 
-        </div>
+        </OverlayScrollArea>
 
         {/* Quick Copy Footer — annotations tab only */}
         {activeTab === 'annotations' && feedbackMarkdown && totalCount > 0 && (

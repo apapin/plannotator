@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import type { IDockviewPanelProps } from 'dockview-react';
 import { useReviewState } from '../ReviewStateContext';
 import { PRSummaryTab } from '../../components/PRSummaryTab';
+import { OverlayScrollArea } from '@plannotator/ui/components/OverlayScrollArea';
 
 /**
  * Dock panel wrapper for PR Summary — renders the existing PRSummaryTab
@@ -44,8 +45,8 @@ export const ReviewPRSummaryPanel: React.FC<IDockviewPanelProps> = () => {
   if (!prContext) return null;
 
   return (
-    <div className="h-full overflow-y-auto">
+    <OverlayScrollArea className="h-full">
       <PRSummaryTab context={prContext} metadata={prMetadata} />
-    </div>
+    </OverlayScrollArea>
   );
 };

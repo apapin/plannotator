@@ -3,6 +3,7 @@ import type { PRContext, PRComment, PRReview, PRReviewThread } from '@plannotato
 import { MarkdownBody } from './PRSummaryTab';
 import { CopyButton } from './CopyButton';
 import { DiffHunkPreview } from './DiffHunkPreview';
+import { OverlayScrollArea } from '@plannotator/ui/components/OverlayScrollArea';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -309,7 +310,8 @@ export const PRCommentsTab: React.FC<PRCommentsTabProps> = React.memo(({ context
       </div>
 
       {/* ── Timeline ── */}
-      <div className="flex-1 overflow-y-auto px-8 py-4">
+      <OverlayScrollArea className="flex-1 min-h-0">
+      <div className="px-8 py-4">
         <div className="space-y-3 max-w-2xl">
         {displayTimeline.length === 0 ? (
           <div className="text-center py-8">
@@ -396,6 +398,7 @@ export const PRCommentsTab: React.FC<PRCommentsTabProps> = React.memo(({ context
         )}
         </div>
       </div>
+      </OverlayScrollArea>
     </div>
   );
 });

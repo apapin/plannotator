@@ -9,6 +9,7 @@ import { CopyButton } from './CopyButton';
 import { PermissionCard } from './PermissionCard';
 import { AIConfigBar } from './AIConfigBar';
 import { submitHint } from '@plannotator/ui/utils/platform';
+import { OverlayScrollArea } from '@plannotator/ui/components/OverlayScrollArea';
 
 interface AIProviderInfo {
   id: string;
@@ -188,7 +189,8 @@ export const AITab: React.FC<AITabProps> = ({
 
   return (
     <div className="flex flex-col h-full">
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-2">
+      <OverlayScrollArea className="flex-1 min-h-0">
+      <div ref={scrollRef} className="p-2">
         {isCreatingSession && messages.length === 0 && (
           <div className="text-xs text-muted-foreground text-center py-4">
             <span className="ai-streaming-cursor" /> Starting AI session...
@@ -261,6 +263,7 @@ export const AITab: React.FC<AITabProps> = ({
           </div>
         )}
       </div>
+      </OverlayScrollArea>
 
       {/* Config bar */}
       <AIConfigBar

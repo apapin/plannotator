@@ -37,6 +37,7 @@ import { PlanDiffBadge } from './plan-diff/PlanDiffBadge';
 import { PinpointOverlay } from './PinpointOverlay';
 import { usePinpoint } from '../hooks/usePinpoint';
 import { useAnnotationHighlighter } from '../hooks/useAnnotationHighlighter';
+import { useScrollViewport } from '../hooks/useScrollViewport';
 
 interface ViewerProps {
   blocks: Block[];
@@ -254,17 +255,19 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(({
     return () => container.removeEventListener('contextmenu', handleContextMenu);
   }, []);
 
-  // Detect when sticky action bar is "stuck" to show card background
+  // Detect when sticky action bar is "stuck" to show card background.
+  // The IntersectionObserver root must be the actual scroll element — the
+  // OverlayScrollArea viewport — not the <main> host, which doesn't scroll.
+  const stickyScrollViewport = useScrollViewport();
   useEffect(() => {
-    if (!stickyActions || !stickySentinelRef.current) return;
-    const scrollContainer = document.querySelector('main');
+    if (!stickyActions || !stickySentinelRef.current || !stickyScrollViewport) return;
     const observer = new IntersectionObserver(
       ([entry]) => setIsStuck(!entry.isIntersecting),
-      { root: scrollContainer, threshold: 0 }
+      { root: stickyScrollViewport, threshold: 0 }
     );
     observer.observe(stickySentinelRef.current);
     return () => observer.disconnect();
-  }, [stickyActions]);
+  }, [stickyActions, stickyScrollViewport]);
 
   // Cmd+C / Ctrl+C keyboard shortcut for copying selected text
   useEffect(() => {

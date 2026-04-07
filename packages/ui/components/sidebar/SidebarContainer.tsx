@@ -16,6 +16,7 @@ import { VersionBrowser } from "./VersionBrowser";
 import { VaultBrowser } from "./VaultBrowser";
 import { FileBrowser } from "./FileBrowser";
 import { ArchiveBrowser, type ArchivedPlan } from "./ArchiveBrowser";
+import { OverlayScrollArea } from "../OverlayScrollArea";
 
 interface SidebarContainerProps {
   activeTab: SidebarTab;
@@ -250,14 +251,14 @@ export const SidebarContainer: React.FC<SidebarContainerProps> = ({
       </div>
 
       {/* Content area */}
-      <div className="flex-1 overflow-y-auto">
+      <OverlayScrollArea className="flex-1 min-h-0">
         {activeTab === "toc" && (
           <TableOfContents
             blocks={blocks}
             annotations={annotations}
             activeId={activeSection}
             onNavigate={onTocNavigate}
-            className="overflow-y-auto"
+            className=""
             linkedDocFilepath={linkedDocFilepath}
             onLinkedDocBack={onLinkedDocBack}
             backLabel={backLabel}
@@ -315,7 +316,7 @@ export const SidebarContainer: React.FC<SidebarContainerProps> = ({
             isLoading={isLoadingArchive}
           />
         )}
-      </div>
+      </OverlayScrollArea>
     </aside>
   );
 };

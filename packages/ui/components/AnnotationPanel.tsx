@@ -4,6 +4,7 @@ import { isCurrentUser } from '../utils/identity';
 import { ImageThumbnail } from './ImageThumbnail';
 import { EditorAnnotationCard } from './EditorAnnotationCard';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { OverlayScrollArea } from './OverlayScrollArea';
 
 interface PanelProps {
   isOpen: boolean;
@@ -113,7 +114,8 @@ export const AnnotationPanel: React.FC<PanelProps> = ({
       </div>
 
       {/* List */}
-      <div ref={listRef} className="flex-1 overflow-y-auto p-2 space-y-1.5">
+      <OverlayScrollArea className="flex-1 min-h-0">
+        <div ref={listRef} className="p-2 space-y-1.5">
         {totalCount === 0 ? (
           <div className="flex flex-col items-center justify-center h-40 text-center px-4">
             <div className="w-10 h-10 rounded-full bg-muted/50 flex items-center justify-center mb-3">
@@ -158,7 +160,8 @@ export const AnnotationPanel: React.FC<PanelProps> = ({
 
           </>
         )}
-      </div>
+        </div>
+      </OverlayScrollArea>
 
       {/* Quick Actions Footer */}
       {totalCount > 0 && (

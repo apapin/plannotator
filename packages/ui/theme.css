@@ -95,11 +95,67 @@ body {
   box-shadow: 0 0 10px oklch(from var(--primary) l c h / 0.1);
 }
 
-/* Custom scrollbar */
+/* ------------------------------------------------------------------ */
+/* Scrollbars                                                         */
+/* ------------------------------------------------------------------ */
+/*
+ * Primary scroll containers are wrapped in <OverlayScrollArea> and styled
+ * through the `os-theme-plannotator` theme below. Unwrapped surfaces
+ * (third-party libraries, not-yet-migrated panels, small inline scrollers)
+ * fall back to a thin native scrollbar.
+ *
+ * Transitions are color + width only — transform/opacity were removed
+ * globally in abc952f to prevent scroll jank. DO NOT re-add them here.
+ */
+
+/* Native fallback for anything we haven't wrapped */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--muted-foreground); }
+
+/* Firefox fallback */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+/* OverlayScrollbars theme — "os-theme-plannotator".
+ * The library renders .os-scrollbar elements with CSS variables we can
+ * override. Widths are 10px at rest / 14px on hover, colors are translucent
+ * muted-foreground so they track whatever theme is active.
+ */
+.os-theme-plannotator {
+  --os-size: 10px;
+  --os-padding-perpendicular: 2px;
+  --os-padding-axis: 2px;
+  --os-track-border-radius: 8px;
+  --os-track-bg: transparent;
+  --os-track-bg-hover: oklch(from var(--border) l c h / 0.25);
+  --os-track-bg-active: oklch(from var(--border) l c h / 0.4);
+  --os-handle-border-radius: 8px;
+  --os-handle-bg: oklch(from var(--muted-foreground) l c h / 0.28);
+  --os-handle-bg-hover: oklch(from var(--muted-foreground) l c h / 0.55);
+  --os-handle-bg-active: oklch(from var(--muted-foreground) l c h / 0.75);
+  --os-handle-min-size: 40px;
+}
+
+/* Widen on hover — width animates via the library's internal transition. */
+.os-theme-plannotator.os-scrollbar-horizontal:hover,
+.os-theme-plannotator.os-scrollbar-vertical:hover,
+.os-theme-plannotator.os-scrollbar-handle-interactive:hover {
+  --os-size: 14px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Library honors autoHide: 'never' via the component option; this just
+     kills any residual fade transitions on the scrollbar itself. */
+  .os-theme-plannotator .os-scrollbar,
+  .os-theme-plannotator .os-scrollbar-track,
+  .os-theme-plannotator .os-scrollbar-handle {
+    transition: none !important;
+  }
+}
 
 /* Selection */
 ::selection {

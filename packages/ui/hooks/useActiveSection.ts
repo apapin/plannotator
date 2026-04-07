@@ -4,12 +4,19 @@ import { useEffect, useState, useRef } from 'react';
  * Track which heading section is currently visible in the viewport
  * Uses Intersection Observer to detect when headings enter/leave view
  */
-export function useActiveSection(containerRef: React.RefObject<HTMLElement | null>, headingCount: number) {
+export function useActiveSection(
+  containerRef: React.RefObject<HTMLElement | null>,
+  headingCount: number,
+  /** Optional explicit scroll element. When provided, takes precedence over
+   *  containerRef.current and re-runs the effect when it changes — needed
+   *  for OverlayScrollArea, whose viewport is only available after mount. */
+  scrollElement?: HTMLElement | null,
+) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
-  
+
   useEffect(() => {
-    const container = containerRef.current;
+    const container = scrollElement ?? containerRef.current;
     if (!container) return;
     
     // Find all heading elements with data-block-id
@@ -65,7 +72,7 @@ export function useActiveSection(containerRef: React.RefObject<HTMLElement | nul
     return () => {
       observerRef.current?.disconnect();
     };
-  }, [containerRef, headingCount]);
+  }, [containerRef, headingCount, scrollElement]);
   
   return activeId;
 }

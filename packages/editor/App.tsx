@@ -36,6 +36,9 @@ import { usePrintMode } from '@plannotator/ui/hooks/usePrintMode';
 import { modKey } from '@plannotator/ui/utils/platform';
 import { useResizablePanel } from '@plannotator/ui/hooks/useResizablePanel';
 import { ResizeHandle } from '@plannotator/ui/components/ResizeHandle';
+import { OverlayScrollArea } from '@plannotator/ui/components/OverlayScrollArea';
+import { ScrollViewportContext } from '@plannotator/ui/hooks/useScrollViewport';
+import { useOverlayViewport } from '@plannotator/ui/hooks/useOverlayViewport';
 import { MobileMenu } from '@plannotator/ui/components/MobileMenu';
 import {
   getPermissionModeSettings,
@@ -124,7 +127,15 @@ const App: React.FC = () => {
   const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
 
   const viewerRef = useRef<ViewerHandle>(null);
-  const containerRef = useRef<HTMLElement>(null);
+  // containerRef + scrollViewport both point at the OverlayScrollbars
+  // viewport element (the node that actually scrolls), not the <main>
+  // host. Consumers: useActiveSection (IntersectionObserver root) and
+  // everything reading ScrollViewportContext.
+  const {
+    ref: containerRef,
+    viewport: scrollViewport,
+    onViewportReady: handleViewportReady,
+  } = useOverlayViewport();
 
   usePrintMode();
 
@@ -381,7 +392,7 @@ const App: React.FC = () => {
 
   // Track active section for TOC highlighting
   const headingCount = useMemo(() => blocks.filter(b => b.type === 'heading').length, [blocks]);
-  const activeSection = useActiveSection(containerRef, headingCount);
+  const activeSection = useActiveSection(containerRef, headingCount, scrollViewport);
 
   const { editorAnnotations, deleteEditorAnnotation } = useEditorAnnotations();
   const { externalAnnotations, updateExternalAnnotation, deleteExternalAnnotation } = useExternalAnnotations<Annotation>({ enabled: isApiMode });
@@ -1499,6 +1510,7 @@ const App: React.FC = () => {
         )}
 
         {/* Main Content */}
+        <ScrollViewportContext.Provider value={scrollViewport}>
         <div data-print-region="content" className={`flex-1 flex overflow-hidden relative z-0 ${isResizing ? 'select-none' : ''}`}>
           {/* Tater sprites — inside content wrapper so z-0 stacking context applies */}
           {taterMode && <TaterSpriteRunning />}
@@ -1571,7 +1583,12 @@ const App: React.FC = () => {
           )}
 
           {/* Document Area */}
-          <main data-print-region="document" ref={containerRef} className="flex-1 min-w-0 overflow-y-auto bg-grid">
+          <OverlayScrollArea
+            element="main"
+            className="flex-1 min-w-0 bg-grid"
+            data-print-region="document"
+            onViewportReady={handleViewportReady}
+          >
             <ConfirmDialog
               isOpen={!!draftBanner}
               onClose={dismissDraft}
@@ -1662,7 +1679,7 @@ const App: React.FC = () => {
                 />
               </div>
             </div>
-          </main>
+          </OverlayScrollArea>
 
           {/* Resize Handle */}
           {isPanelOpen && <ResizeHandle {...panelResize.handleProps} className="hidden md:block" side="right" />}
@@ -1689,6 +1706,7 @@ const App: React.FC = () => {
             onOtherFileAnnotationsClick={handleFlashAnnotatedFiles}
           />
         </div>
+        </ScrollViewportContext.Provider>
 
         {/* Export Modal */}
         <ExportModal

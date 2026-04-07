@@ -108,6 +108,11 @@
     display: none !important;
   }
 
+  /* Hide overlay scrollbars during print */
+  .os-scrollbar {
+    display: none !important;
+  }
+
   [data-print-hide] {
     display: none !important;
     margin: 0 !important;

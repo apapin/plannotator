@@ -63,6 +63,7 @@ import { ThemeTab } from './ThemeTab';
 import { isMac, modKey, altKey } from '../utils/platform';
 import { getAIProviderSettings } from '../utils/aiProvider';
 import { AISettingsTab } from './AISettingsTab';
+import { OverlayScrollArea } from './OverlayScrollArea';
 import {
   getFileBrowserSettings,
   saveFileBrowserSettings,
@@ -854,7 +855,8 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
               </nav>
 
               {/* Content — scrollable */}
-              <div className="flex-1 p-4 space-y-4 overflow-y-auto min-h-0">
+              <OverlayScrollArea className="flex-1 min-h-0">
+              <div className="p-4 space-y-4">
 
                 {/* === GENERAL TAB === */}
                 {activeTab === 'general' && (
@@ -2016,6 +2018,7 @@ tags: [plan, ...]
                 )}
 
               </div>
+              </OverlayScrollArea>
             </div>
           </div>
         </div>,

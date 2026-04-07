@@ -11,6 +11,7 @@ import { getObsidianSettings, getEffectiveVaultPath } from '../utils/obsidian';
 import { getBearSettings } from '../utils/bear';
 import { getOctarineSettings } from '../utils/octarine';
 import { wrapFeedbackForAgent } from '../utils/parser';
+import { OverlayScrollArea } from './OverlayScrollArea';
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -206,7 +207,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-auto p-4">
+        <OverlayScrollArea className="flex-1 min-h-0">
+        <div className="p-4">
           {/* Tabs */}
           {showTabs && (
             <div className="flex gap-1 bg-muted rounded-lg p-1 mb-4">
@@ -514,6 +516,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             </pre>
           )}
         </div>
+        </OverlayScrollArea>
 
         {/* Footer actions - only show for Annotations tab */}
         {activeTab === 'annotations' && (

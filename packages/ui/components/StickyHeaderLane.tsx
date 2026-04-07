@@ -1,14 +1,19 @@
 /**
- * StickyHeaderLane — compact "ghost" header that pins at the top of <main>
- * when the user scrolls past the AnnotationToolstrip.
+ * StickyHeaderLane — compact "ghost" header that pins as the user scrolls
+ * past the AnnotationToolstrip.
  *
- * At rest (top of doc): invisible, non-interactive. The original toolstrip and
- * badge cluster on the card remain the visible source of truth.
+ * At rest (top of doc): invisible, non-interactive. The original toolstrip
+ * and badge cluster on the card remain the visible source of truth.
  *
- * Scrolled: fades + slides in at top: 12px, sitting on the same horizontal
- * lane as the already-sticky action buttons inside the Viewer card. Contains
- * a compact <AnnotationToolstrip compact /> + a row-layout <DocBadges />.
+ * Scrolled, sm+ (640px): fades + slides in at top: 12px, sitting on the
+ * same horizontal lane as the already-sticky action buttons inside the
+ * Viewer card. Single horizontal header.
  *
+ * Scrolled, mobile (<640px): pins at top: 52px on its OWN full-width row,
+ * directly below the action buttons row. Toolstrip switches to icon-only
+ * (no labels) so the diff badges have room.
+ *
+ * Composes <AnnotationToolstrip compact /> + <DocBadges layout="row" />.
  * No state is duplicated — all props are passed through from App.tsx.
  */
 
@@ -54,6 +59,18 @@ export const StickyHeaderLane: React.FC<StickyHeaderLaneProps> = ({
 }) => {
   const sentinelRef = useRef<HTMLDivElement>(null);
   const [isStuck, setIsStuck] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Match the `sm` Tailwind breakpoint (640px). Below it the bar lives on
+  // its own row and switches the toolstrip to icon-only so the diff
+  // badges have room.
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 639px)');
+    const handler = () => setIsMobile(mq.matches);
+    handler();
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
 
   // IntersectionObserver-on-sentinel pattern (mirrors Viewer.tsx:257-267).
   // Sentinel sits inline at the natural position the bar would occupy; when
@@ -84,36 +101,70 @@ export const StickyHeaderLane: React.FC<StickyHeaderLaneProps> = ({
       {/* Sticky wrapper — zero-height so it never pushes content down. The
           visible bar is positioned absolutely relative to this wrapper.
           The Viewer's outer wrapper uses z-50 (Viewer.tsx:432), so the
-          sticky lane must sit above that to paint over the card. */}
+          sticky lane must sit above that to paint over the card.
+
+          Below sm (640px) — true mobile — the bar pins at top-[52px], on
+          its OWN full-width row BELOW the card's sticky action buttons.
+          Stacked horizontal lanes, no horizontal collision possible.
+
+          At sm+ the bar shares the top-3 lane with the action buttons
+          (single horizontal header). */}
       <div
-        aria-hidden={!isStuck}
-        className="sticky top-3 z-[60] w-full self-center pointer-events-none"
+        className="sticky top-[52px] sm:top-3 z-[60] w-full self-center pointer-events-none"
         style={{ maxWidth, height: 0 }}
       >
-        {/* Content-width bar — left-aligned, sized to its contents. The
-            Viewer's sticky action buttons live on the right side of the
-            card on the same top: 12px lane; keeping this bar content-width
-            (not full-width) avoids any background/chrome overlap. */}
+        {/* Responsive bar.
+
+            The bar is `inline-flex` with a `max-width` cap (not bounded
+            by `right-X`), so its chrome wraps tightly to the toolstrip +
+            badges and only extends as far as the content needs.
+
+            Below sm (mobile): max-w leaves a 24px gutter on the right.
+            Bar lives on its own row at top-[52px] so there's nothing to
+            collide with.
+
+            sm-md (tablet, short-label action buttons): max-w leaves
+            340px on the right to clear the action button cluster
+            (Attachments "Images" + Comment + Copy ≈ 320px).
+
+            lg+ (desktop, full-label action buttons): max-w leaves 400px
+            for the full-label cluster ("Global comment" + "Copy plan"
+            ≈ 380px).
+
+            `flex-shrink-0` on the toolstrip wrapper is a defensive
+            measure: if a long branch name pushes the badges, this stops
+            the toolstrip from being squeezed below its natural width and
+            tripping its internal flex-wrap. `overflow-hidden` on the bar
+            is the final safety net so any overflow clips inside the
+            chrome rather than leaking out.
+
+            `inert` removes the bar from the tab order when not stuck. */}
         <div
-          className={`absolute left-3 md:left-5 lg:left-7 xl:left-9 top-0 inline-flex items-center gap-3 rounded-lg px-2 py-1 md:px-3 md:py-1.5 bg-card/95 backdrop-blur-sm shadow-sm border border-border/30 motion-reduce:transform-none ${
+          inert={!isStuck || undefined}
+          className={`absolute left-3 sm:left-5 lg:left-7 xl:left-9 top-0 inline-flex items-center gap-3 max-w-[calc(100%-24px)] sm:max-w-[calc(100%-340px)] lg:max-w-[calc(100%-400px)] min-w-0 overflow-hidden rounded-lg py-1 md:py-1.5 bg-card/95 backdrop-blur-sm shadow-sm border border-border/30 motion-reduce:transform-none ${
             isStuck
               ? 'opacity-100 translate-y-0 pointer-events-auto'
               : 'opacity-0 -translate-y-1 pointer-events-none'
           }`}
           style={{
+            paddingLeft: 12,
+            paddingRight: 12,
             transition:
               'opacity 180ms cubic-bezier(0.2, 0, 0, 1), transform 180ms cubic-bezier(0.2, 0, 0, 1)',
             willChange: 'opacity, transform',
           }}
         >
-          <AnnotationToolstrip
-            inputMethod={inputMethod}
-            onInputMethodChange={onInputMethodChange}
-            mode={mode}
-            onModeChange={onModeChange}
-            taterMode={taterMode}
-            compact
-          />
+          <div className="flex-shrink-0">
+            <AnnotationToolstrip
+              inputMethod={inputMethod}
+              onInputMethodChange={onInputMethodChange}
+              mode={mode}
+              onModeChange={onModeChange}
+              taterMode={taterMode}
+              compact
+              iconOnly={isMobile}
+            />
+          </div>
           <DocBadges
             layout="row"
             repoInfo={repoInfo}

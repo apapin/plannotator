@@ -160,6 +160,20 @@
     margin: 0 !important;
   }
 
+  /* OverlayScrollbars wraps <main> with elements that default to
+     `overflow: hidden !important` and fixed viewport heights, which
+     beats `main { overflow: visible !important }` on specificity and
+     clips long plans to the visible viewport during print. Override
+     by targeting the library's own attribute selectors. */
+  [data-overlayscrollbars~="host"],
+  [data-overlayscrollbars-padding],
+  [data-overlayscrollbars-viewport] {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    display: block !important;
+  }
+
   article, [data-print-region="article"] {
     width: 100% !important;
     max-width: 100% !important;

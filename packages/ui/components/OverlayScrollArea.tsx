@@ -1,9 +1,11 @@
 import React, {
   forwardRef,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
+  useState,
   type ElementType,
   type ReactNode,
 } from 'react';
@@ -86,6 +88,7 @@ export const OverlayScrollArea = forwardRef<
 ) {
   const osRef = useRef<OverlayScrollbarsComponentRef<ElementType> | null>(null);
   const lastViewportRef = useRef<HTMLElement | null>(null);
+  const [instance, setInstance] = useState<OverlayScrollbars | null>(null);
 
   const getViewport = useCallback((): HTMLElement | null => {
     // Prefer our tracked viewport (delivered via `initialized` event) over
@@ -140,20 +143,51 @@ export const OverlayScrollArea = forwardRef<
   // the full lifecycle the ref callback can't observe.
   const events = useMemo<EventListeners>(
     () => ({
-      initialized: (instance) => {
-        const viewport = instance.elements().viewport;
+      initialized: (osInstance) => {
+        const viewport = osInstance.elements().viewport;
         if (viewport === lastViewportRef.current) return;
         lastViewportRef.current = viewport;
+        setInstance(osInstance);
         onViewportReady?.(viewport);
       },
       destroyed: () => {
         if (lastViewportRef.current === null) return;
         lastViewportRef.current = null;
+        setInstance(null);
         onViewportReady?.(null);
       },
     }),
     [onViewportReady],
   );
+
+  // Force an OverlayScrollbars recompute whenever the content element's
+  // box size changes. The library's own size observation is keyed off the
+  // host/viewport element, which has a fixed layout size (flex-1) and
+  // doesn't grow when content does. Observing the viewport's first child
+  // instead catches content-driven growth — including growth caused by
+  // DOM mutations inside a shadow root (e.g. @pierre/diffs expanding
+  // context lines), because layout propagates from shadow tree to host.
+  //
+  // rAF defers the update() call one frame, giving the browser time to
+  // commit layout after the mutation that triggered the resize.
+  useEffect(() => {
+    if (!instance) return;
+    const viewport = instance.elements().viewport;
+    const content = viewport.firstElementChild;
+    if (!content) return;
+
+    let rafId = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => instance.update(true));
+    });
+    observer.observe(content);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      observer.disconnect();
+    };
+  }, [instance]);
 
   const handleOsRef = useCallback(
     (node: OverlayScrollbarsComponentRef<ElementType> | null) => {

@@ -99,7 +99,7 @@ export interface ReviewServerResult {
 	stop: () => void;
 }
 
-const reviewRuntime: ReviewGitRuntime = {
+export const reviewRuntime: ReviewGitRuntime = {
 	async runGit(
 		args: string[],
 		options?: { cwd?: string },

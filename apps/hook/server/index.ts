@@ -319,13 +319,18 @@ if (args[0] === "sessions") {
           if (/^-/.test(prRepo)) throw new Error(`Invalid repository identifier: ${prRepo}`);
           const cli = prMetadata.platform === "github" ? "gh" : "glab";
           const host = prMetadata.host;
-          const hostnameArgs = (host === "github.com" || host === "gitlab.com") ? [] : ["--hostname", host];
+          // gh/glab repo clone doesn't accept --hostname; set GH_HOST/GITLAB_HOST env instead
+          const isDefaultHost = host === "github.com" || host === "gitlab.com";
+          const cloneEnv = isDefaultHost ? undefined : {
+            ...process.env,
+            ...(prMetadata.platform === "github" ? { GH_HOST: host } : { GITLAB_HOST: host }),
+          };
 
           // Step 1: Fast skeleton clone (no checkout, depth 1 — minimal data transfer)
           console.error(`Cloning ${prRepo} (shallow)...`);
           const cloneResult = Bun.spawnSync(
-            [cli, "repo", "clone", prRepo, localPath, ...hostnameArgs, "--", "--depth=1", "--no-checkout"],
-            { stderr: "pipe" },
+            [cli, "repo", "clone", prRepo, localPath, "--", "--depth=1", "--no-checkout"],
+            { stderr: "pipe", env: cloneEnv },
           );
           if (cloneResult.exitCode !== 0) {
             throw new Error(`${cli} repo clone failed: ${new TextDecoder().decode(cloneResult.stderr).trim()}`);
@@ -334,7 +339,7 @@ if (args[0] === "sessions") {
           // Step 2: Fetch only the PR head ref (targeted, much faster than full fetch)
           console.error("Fetching PR branch...");
           const fetchResult = Bun.spawnSync(
-            ["git", "fetch", "--depth=50", "origin", fetchRefStr],
+            ["git", "fetch", "--depth=200", "origin", fetchRefStr],
             { cwd: localPath, stderr: "pipe" },
           );
           if (fetchResult.exitCode !== 0) throw new Error(`Failed to fetch PR head ref: ${new TextDecoder().decode(fetchResult.stderr).trim()}`);
@@ -346,7 +351,7 @@ if (args[0] === "sessions") {
           }
 
           // Best-effort: create base refs so `git diff main...HEAD` and `git diff origin/main...HEAD` work
-          const baseFetch = Bun.spawnSync(["git", "fetch", "--depth=50", "origin", prMetadata.baseSha], { cwd: localPath, stderr: "pipe" });
+          const baseFetch = Bun.spawnSync(["git", "fetch", "--depth=200", "origin", prMetadata.baseSha], { cwd: localPath, stderr: "pipe" });
           if (baseFetch.exitCode !== 0) console.error("Warning: failed to fetch baseSha, agent diffs may be inaccurate");
           Bun.spawnSync(["git", "branch", "--", prMetadata.baseBranch, prMetadata.baseSha], { cwd: localPath, stderr: "pipe" });
           Bun.spawnSync(["git", "update-ref", `refs/remotes/origin/${prMetadata.baseBranch}`, prMetadata.baseSha], { cwd: localPath, stderr: "pipe" });

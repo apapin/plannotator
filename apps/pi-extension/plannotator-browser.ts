@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import {
 	getGitContext,
+	reviewRuntime,
 	runGitDiff,
 	startAnnotateServer,
 	startPlanReviewServer,
@@ -23,7 +24,6 @@ import {
 } from "./generated/pr-provider.js";
 import { parseRemoteUrl } from "./generated/repo.js";
 import { fetchRef, createWorktree, removeWorktree, ensureObjectAvailable } from "./generated/worktree.js";
-import type { ReviewGitRuntime, GitCommandResult } from "./generated/review-core.js";
 
 export type AnnotateMode = "annotate" | "annotate-folder" | "annotate-last";
 export interface PlanReviewDecision {
@@ -162,31 +162,6 @@ export async function openPlanReviewBrowser(
 	return session.waitForDecision();
 }
 
-// Lightweight git runtime for worktree operations (Node.js child_process)
-const nodeGitRuntime: ReviewGitRuntime = {
-	async runGit(args: string[], options?: { cwd?: string }): Promise<GitCommandResult> {
-		const result = spawnSync("git", args, { cwd: options?.cwd, encoding: "utf-8" });
-		return {
-			stdout: result.stdout ?? "",
-			stderr: result.stderr ?? "",
-			exitCode: result.status ?? (result.error ? 1 : 0),
-		};
-	},
-	async readTextFile(path: string): Promise<string | null> {
-		try { return readFileSync(path, "utf-8"); } catch { return null; }
-	},
-};
-
-/** Run a command synchronously, returning { stdout, stderr, exitCode }. */
-function runSync(cmd: string, args: string[], options?: { cwd?: string }): { stdout: string; stderr: string; exitCode: number } {
-	const result = spawnSync(cmd, args, { cwd: options?.cwd, encoding: "utf-8" });
-	return {
-		stdout: result.stdout ?? "",
-		stderr: result.stderr ?? "",
-		exitCode: result.status ?? (result.error ? 1 : 0),
-	};
-}
-
 export async function openCodeReview(
 	ctx: ExtensionContext,
 	options: { cwd?: string; defaultBranch?: string; diffType?: DiffType; prUrl?: string } = {},
@@ -259,7 +234,7 @@ export async function openCodeReview(
 			// Detect same-repo vs cross-repo (must match both owner/repo AND host)
 			let isSameRepo = false;
 			try {
-				const remoteResult = await nodeGitRuntime.runGit(["remote", "get-url", "origin"], { cwd: repoDir });
+				const remoteResult = await reviewRuntime.runGit(["remote", "get-url", "origin"], { cwd: repoDir });
 				if (remoteResult.exitCode === 0) {
 					const remoteUrl = remoteResult.stdout.trim();
 					const currentRepo = parseRemoteUrl(remoteUrl);
@@ -278,11 +253,11 @@ export async function openCodeReview(
 			if (isSameRepo) {
 				// ── Same-repo: fast worktree path ──
 				console.error("Fetching PR branch and creating local worktree...");
-				await fetchRef(nodeGitRuntime, prMetadata.baseBranch, { cwd: repoDir });
-				await ensureObjectAvailable(nodeGitRuntime, prMetadata.baseSha, { cwd: repoDir });
-				await fetchRef(nodeGitRuntime, fetchRefStr, { cwd: repoDir });
+				await fetchRef(reviewRuntime, prMetadata.baseBranch, { cwd: repoDir });
+				await ensureObjectAvailable(reviewRuntime, prMetadata.baseSha, { cwd: repoDir });
+				await fetchRef(reviewRuntime, fetchRefStr, { cwd: repoDir });
 
-				await createWorktree(nodeGitRuntime, {
+				await createWorktree(reviewRuntime, {
 					ref: "FETCH_HEAD",
 					path: localPath,
 					detach: true,
@@ -296,7 +271,7 @@ export async function openCodeReview(
 				};
 				worktreeCleanup = () => {
 					if (exitHandler) { process.removeListener("exit", exitHandler); exitHandler = undefined; }
-					return removeWorktree(nodeGitRuntime, worktreePath, { force: true, cwd: wtRepoDir });
+					return removeWorktree(reviewRuntime, worktreePath, { force: true, cwd: wtRepoDir });
 				};
 				process.once("exit", exitHandler);
 			} else {
@@ -321,19 +296,19 @@ export async function openCodeReview(
 				}
 
 				console.error("Fetching PR branch...");
-				const fetchResult = runSync("git", ["fetch", "--depth=50", "origin", fetchRefStr], { cwd: localPath });
+				const fetchResult = await reviewRuntime.runGit(["fetch", "--depth=200", "origin", fetchRefStr], { cwd: localPath });
 				if (fetchResult.exitCode !== 0) throw new Error(`Failed to fetch PR head ref: ${fetchResult.stderr.trim()}`);
 
-				const checkoutResult = runSync("git", ["checkout", "FETCH_HEAD"], { cwd: localPath });
+				const checkoutResult = await reviewRuntime.runGit(["checkout", "FETCH_HEAD"], { cwd: localPath });
 				if (checkoutResult.exitCode !== 0) {
 					throw new Error(`git checkout FETCH_HEAD failed: ${checkoutResult.stderr.trim()}`);
 				}
 
 				// Best-effort: create base refs so agent diffs work
-				const baseFetch = runSync("git", ["fetch", "--depth=50", "origin", prMetadata.baseSha], { cwd: localPath });
+				const baseFetch = await reviewRuntime.runGit(["fetch", "--depth=200", "origin", prMetadata.baseSha], { cwd: localPath });
 				if (baseFetch.exitCode !== 0) console.error("Warning: failed to fetch baseSha, agent diffs may be inaccurate");
-				runSync("git", ["branch", "--", prMetadata.baseBranch, prMetadata.baseSha], { cwd: localPath });
-				runSync("git", ["update-ref", `refs/remotes/origin/${prMetadata.baseBranch}`, prMetadata.baseSha], { cwd: localPath });
+				await reviewRuntime.runGit(["branch", "--", prMetadata.baseBranch, prMetadata.baseSha], { cwd: localPath });
+				await reviewRuntime.runGit(["update-ref", `refs/remotes/origin/${prMetadata.baseBranch}`, prMetadata.baseSha], { cwd: localPath });
 
 				const clonePath = localPath;
 				exitHandler = () => {
@@ -351,6 +326,7 @@ export async function openCodeReview(
 		} catch (err) {
 			console.error("Warning: local worktree creation failed, falling back to remote diff");
 			console.error(err instanceof Error ? err.message : String(err));
+			if (exitHandler) { process.removeListener("exit", exitHandler); exitHandler = undefined; }
 			if (localPath) try { rmSync(localPath, { recursive: true, force: true }); } catch {}
 			agentCwd = undefined;
 			worktreeCleanup = undefined;

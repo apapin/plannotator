@@ -24,6 +24,7 @@ export interface DiffOptions {
 export interface PlannotatorConfig {
   displayName?: string;
   diffOptions?: DiffOptions;
+  conventionalComments?: boolean;
 }
 
 const CONFIG_DIR = join(homedir(), ".plannotator");
@@ -80,7 +81,12 @@ export function detectGitUser(): string | null {
  * Build the serverConfig payload for API responses.
  * Reads config.json fresh each call so the response reflects the latest file on disk.
  */
-export function getServerConfig(gitUser: string | null): { displayName?: string; diffOptions?: DiffOptions; gitUser?: string } {
+export function getServerConfig(gitUser: string | null): { displayName?: string; diffOptions?: DiffOptions; gitUser?: string; conventionalComments?: boolean } {
   const cfg = loadConfig();
-  return { displayName: cfg.displayName, diffOptions: cfg.diffOptions, gitUser: gitUser ?? undefined };
+  return {
+    displayName: cfg.displayName,
+    diffOptions: cfg.diffOptions,
+    gitUser: gitUser ?? undefined,
+    ...(cfg.conventionalComments !== undefined && { conventionalComments: cfg.conventionalComments }),
+  };
 }

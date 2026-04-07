@@ -33,6 +33,11 @@ OverlayScrollbars.plugin(ClickScrollPlugin);
  * - Always visible when there's overflow (no auto-hide, no fade) —
  *   matches the persistent-scrollbar pattern used by every editor-class
  *   technical app (VS Code, Zed, JetBrains, Xcode, Sublime)
+ * - Auto-recomputes scrollbar visibility when the content box size
+ *   changes (via a ResizeObserver on the viewport's first child).
+ *   Catches growth caused by DOM mutations inside a shadow root —
+ *   e.g. @pierre/diffs expanding context lines — which the library's
+ *   own observers miss.
  * - No layout shift (overlay, not classic scrollbar)
  * - Hidden in print via `print.css`
  *

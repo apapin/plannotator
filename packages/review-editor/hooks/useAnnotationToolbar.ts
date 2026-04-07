@@ -84,7 +84,7 @@ export function useAnnotationToolbar({ patch, filePath, isFocused, onLineSelecti
     if (!range || editingRef.current) return;
     const form = formRef.current;
     const key = draftKey(filePath, range);
-    if (form.commentText.trim() || form.suggestedCode.trim()) {
+    if (form.commentText.trim() || form.suggestedCode.trim() || form.conventionalLabel) {
       draftStore.set(key, {
         ...form,
         range,

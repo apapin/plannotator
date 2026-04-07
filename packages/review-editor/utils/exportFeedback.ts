@@ -63,6 +63,8 @@ export function exportReviewFeedback(
 
         if (ann.text) {
           output += `${prefix}${ann.text}\n`;
+        } else if (prefix) {
+          output += `${prefix.trimEnd()}\n`;
         }
 
         if (ann.suggestedCode) {
@@ -84,6 +86,8 @@ export function exportReviewFeedback(
 
       if (ann.text) {
         output += `${prefix}${ann.text}\n`;
+      } else if (prefix) {
+        output += `${prefix.trimEnd()}\n`;
       }
 
       if (ann.reasoning) {

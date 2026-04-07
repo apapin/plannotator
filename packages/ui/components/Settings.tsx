@@ -477,10 +477,7 @@ const CommentsTab: React.FC = () => {
               value={label.display}
               onChange={(e) => {
                 const display = e.target.value;
-                updateLabel(index, {
-                  display,
-                  label: display.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
-                });
+                updateLabel(index, { display, label: display });
               }}
               className="flex-1 px-2 py-1 bg-background/80 rounded text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary/50 min-w-0"
             />

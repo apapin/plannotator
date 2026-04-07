@@ -24,7 +24,7 @@ export function parseRemoteUrl(url: string): string | null {
 	// SSH format: git@host:path.git — capture full path after ':'
 	// Reject URLs with :// scheme (HTTPS with non-standard ports like :8443)
 	if (!url.includes("://")) {
-		const sshMatch = url.match(/:([^/][^:]+?)(?:\.git)?$/);
+		const sshMatch = url.match(/:([^/][^:]*?)(?:\.git)?$/);
 		if (sshMatch) return sshMatch[1];
 	}
 

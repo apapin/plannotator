@@ -28,10 +28,16 @@ OverlayScrollbars.plugin(ClickScrollPlugin);
  *
  * - Wide (10px rest, 14px hover), translucent, full-length track
  * - Click anywhere on the track to page-animate toward the click
- * - Fades in on hover / scroll activity, auto-hides after ~800ms idle
+ * - Always visible when there's overflow (no auto-hide, no fade) —
+ *   matches the persistent-scrollbar pattern used by every editor-class
+ *   technical app (VS Code, Zed, JetBrains, Xcode, Sublime)
  * - No layout shift (overlay, not classic scrollbar)
- * - Honors `prefers-reduced-motion`: no fade, permanently visible
  * - Hidden in print via `print.css`
+ *
+ * `prefers-reduced-motion` is honored via a CSS media query in `theme.css`
+ * that disables the hover color + width/height transitions on the track
+ * and handle. The browser evaluates that rule independently — there's no
+ * React-level branch on motion preference inside this component.
  *
  * Exposes the library's internal *viewport* element (the node that actually
  * scrolls) via the `onViewportReady` callback (preferred) or an imperative

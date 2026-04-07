@@ -148,9 +148,10 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* Library honors autoHide: 'never' via the component option; this just
-     kills any residual fade transitions on the scrollbar itself. */
-  .os-theme-plannotator .os-scrollbar,
+  /* Library honors autoHide: 'never' via the component option when reduced
+     motion is on, which kills the scrollbar element's own opacity/visibility
+     transitions. This block kills the remaining hover color + width/height
+     transitions on the track and handle so state changes are instant. */
   .os-theme-plannotator .os-scrollbar-track,
   .os-theme-plannotator .os-scrollbar-handle {
     transition: none !important;

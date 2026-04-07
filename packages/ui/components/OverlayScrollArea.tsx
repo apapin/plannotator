@@ -4,7 +4,6 @@ import React, {
   useImperativeHandle,
   useMemo,
   useRef,
-  useSyncExternalStore,
   type ElementType,
   type ReactNode,
 } from 'react';
@@ -65,32 +64,6 @@ export interface OverlayScrollAreaProps
   overflowY?: 'hidden' | 'scroll' | 'visible';
 }
 
-const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
-
-function subscribeReducedMotion(onChange: () => void) {
-  if (typeof window === 'undefined') return () => {};
-  const mq = window.matchMedia(REDUCED_MOTION_QUERY);
-  mq.addEventListener('change', onChange);
-  return () => mq.removeEventListener('change', onChange);
-}
-
-function getReducedMotionSnapshot(): boolean {
-  if (typeof window === 'undefined' || !window.matchMedia) return false;
-  return window.matchMedia(REDUCED_MOTION_QUERY).matches;
-}
-
-function getReducedMotionServerSnapshot(): boolean {
-  return false;
-}
-
-function usePrefersReducedMotion(): boolean {
-  return useSyncExternalStore(
-    subscribeReducedMotion,
-    getReducedMotionSnapshot,
-    getReducedMotionServerSnapshot,
-  );
-}
-
 export const OverlayScrollArea = forwardRef<
   OverlayScrollAreaHandle,
   OverlayScrollAreaProps
@@ -121,14 +94,17 @@ export const OverlayScrollArea = forwardRef<
 
   useImperativeHandle(ref, () => ({ getViewport }), [getViewport]);
 
-  const reduceMotion = usePrefersReducedMotion();
-
   const options = useMemo<PartialOptions>(
     () => ({
       scrollbars: {
         theme: 'os-theme-plannotator',
-        autoHide: reduceMotion ? 'never' : 'leave',
-        autoHideDelay: 800,
+        // Always visible — Zed / VS Code / JetBrains pattern. Overlay
+        // scrollbars cost zero layout space, so persistent visibility
+        // has no downside for a technical doc / code review app where
+        // users rely on the scrollbar as both a position indicator and
+        // a targeting surface. No surprise disappearances on trackpad
+        // scroll while the pointer is outside the viewport.
+        autoHide: 'never',
         // `true` = animate one page-step toward the click (website-style,
         // requires ClickScrollPlugin registered above). `'instant'` would
         // jump straight to the clicked spot.
@@ -140,7 +116,7 @@ export const OverlayScrollArea = forwardRef<
         y: overflowY,
       },
     }),
-    [overflowX, overflowY, reduceMotion],
+    [overflowX, overflowY],
   );
 
   // CRITICAL: deliver the viewport element via the library's own

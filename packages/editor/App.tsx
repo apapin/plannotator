@@ -10,6 +10,7 @@ import { Annotation, Block, EditorMode, type InputMethod, type ImageAttachment }
 import { ThemeProvider } from '@plannotator/ui/components/ThemeProvider';
 import { ModeToggle } from '@plannotator/ui/components/ModeToggle';
 import { AnnotationToolstrip } from '@plannotator/ui/components/AnnotationToolstrip';
+import { StickyHeaderLane } from '@plannotator/ui/components/StickyHeaderLane';
 import { TaterSpriteRunning } from '@plannotator/ui/components/TaterSpriteRunning';
 import { TaterSpritePullup } from '@plannotator/ui/components/TaterSpritePullup';
 import { Settings } from '@plannotator/ui/components/Settings';
@@ -1583,6 +1584,28 @@ const App: React.FC = () => {
               showCancel
             />
             <div className="min-h-full flex flex-col items-center px-2 py-3 md:px-10 md:py-8 xl:px-16 relative z-10">
+              {/* Sticky header lane — ghost bar that pins the toolstrip +
+                  badges at top: 12px once the user scrolls. Invisible at top
+                  of doc; original toolstrip/badges remain the source of
+                  truth there. Hidden in plan diff, archive, linked-doc mode,
+                  or when sticky actions are disabled. */}
+              {!isPlanDiffActive && !archive.archiveMode && !linkedDocHook.isActive && uiPrefs.stickyActionsEnabled && (
+                <StickyHeaderLane
+                  inputMethod={inputMethod}
+                  onInputMethodChange={handleInputMethodChange}
+                  mode={editorMode}
+                  onModeChange={handleEditorModeChange}
+                  taterMode={taterMode}
+                  repoInfo={repoInfo}
+                  planDiffStats={planDiff.diffStats}
+                  isPlanDiffActive={isPlanDiffActive}
+                  hasPreviousVersion={planDiff.hasPreviousVersion}
+                  onPlanDiffToggle={() => setIsPlanDiffActive(!isPlanDiffActive)}
+                  archiveInfo={archive.currentInfo}
+                  maxWidth={planMaxWidth}
+                />
+              )}
+
               {/* Annotation Toolstrip (hidden during plan diff and archive mode) */}
               {!isPlanDiffActive && !archive.archiveMode && (
                 <div data-print-hide className="w-full mb-3 md:mb-4 flex items-center justify-start" style={{ maxWidth: planMaxWidth }}>

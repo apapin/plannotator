@@ -8,6 +8,12 @@ interface AnnotationToolstripProps {
   mode: EditorMode;
   onModeChange: (mode: EditorMode) => void;
   taterMode?: boolean;
+  /**
+   * Compact mode: used inside the sticky header lane. Buttons only expand for
+   * the active mode (no hover expansion), gap is tightened, and the help link
+   * is hidden.
+   */
+  compact?: boolean;
 }
 
 export const AnnotationToolstrip: React.FC<AnnotationToolstripProps> = ({
@@ -16,6 +22,7 @@ export const AnnotationToolstrip: React.FC<AnnotationToolstripProps> = ({
   mode,
   onModeChange,
   taterMode,
+  compact = false,
 }) => {
   const [showHelp, setShowHelp] = useState(false);
   const [helpTab, setHelpTab] = useState<'selection' | 'plannotator'>('selection');
@@ -28,7 +35,7 @@ export const AnnotationToolstrip: React.FC<AnnotationToolstripProps> = ({
 
   return (
     <>
-      <div className="flex items-center gap-1.5 flex-wrap">
+      <div className={`flex items-center flex-wrap ${compact ? 'gap-1' : 'gap-1.5'}`}>
         {/* Input method group */}
         <div className="inline-flex items-center gap-0.5 bg-muted/50 rounded-lg p-0.5 border border-border/30">
           <ToolstripButton
@@ -37,6 +44,7 @@ export const AnnotationToolstrip: React.FC<AnnotationToolstripProps> = ({
             label="Select"
             color="primary"
             mounted={mounted}
+            compact={compact}
             icon={
               <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 20h-1a2 2 0 0 1-2-2 2 2 0 0 1-2 2H6"/>
@@ -53,6 +61,7 @@ export const AnnotationToolstrip: React.FC<AnnotationToolstripProps> = ({
             label="Pinpoint"
             color="primary"
             mounted={mounted}
+            compact={compact}
             icon={
               <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="10" />
@@ -74,6 +83,7 @@ export const AnnotationToolstrip: React.FC<AnnotationToolstripProps> = ({
             label="Markup"
             color="secondary"
             mounted={mounted}
+            compact={compact}
             icon={
               <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                 <path d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
@@ -86,6 +96,7 @@ export const AnnotationToolstrip: React.FC<AnnotationToolstripProps> = ({
             label="Comment"
             color="accent"
             mounted={mounted}
+            compact={compact}
             icon={
               <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
@@ -98,6 +109,7 @@ export const AnnotationToolstrip: React.FC<AnnotationToolstripProps> = ({
             label="Redline"
             color="destructive"
             mounted={mounted}
+            compact={compact}
             icon={
               <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 9.75L14.25 12m0 0l2.25 2.25M14.25 12l2.25-2.25M14.25 12L12 14.25m-2.58 4.92l-6.375-6.375a1.125 1.125 0 010-1.59L9.42 4.83c.211-.211.498-.33.796-.33H19.5a2.25 2.25 0 012.25 2.25v10.5a2.25 2.25 0 01-2.25 2.25h-9.284c-.298 0-.585-.119-.796-.33z" />
@@ -110,6 +122,7 @@ export const AnnotationToolstrip: React.FC<AnnotationToolstripProps> = ({
             label="Label"
             color="warning"
             mounted={mounted}
+            compact={compact}
             icon={
               <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -119,12 +132,14 @@ export const AnnotationToolstrip: React.FC<AnnotationToolstripProps> = ({
         </div>
 
         {/* Help */}
-        <button
-          onClick={() => setShowHelp(true)}
-          className="ml-2 text-[10px] text-muted-foreground/60 hover:text-muted-foreground transition-colors hidden sm:block"
-        >
-          how does this work?
-        </button>
+        {!compact && (
+          <button
+            onClick={() => setShowHelp(true)}
+            className="ml-2 text-[10px] text-muted-foreground/60 hover:text-muted-foreground transition-colors hidden sm:block"
+          >
+            how does this work?
+          </button>
+        )}
       </div>
 
       {/* Help Video Dialog */}
@@ -241,7 +256,8 @@ const ToolstripButton: React.FC<{
   label: string;
   color: ButtonColor;
   mounted: boolean;
-}> = ({ active, onClick, icon, label, color, mounted }) => {
+  compact?: boolean;
+}> = ({ active, onClick, icon, label, color, mounted, compact = false }) => {
   const [hovered, setHovered] = useState(false);
   const [labelWidth, setLabelWidth] = useState(0);
   const measureRef = useRef<HTMLSpanElement>(null);
@@ -255,7 +271,9 @@ const ToolstripButton: React.FC<{
     }
   }, [label]);
 
-  const expanded = active || hovered || isTouchDevice;
+  // In compact mode, only the active button expands to show its label — no
+  // hover expansion, no touch-device always-on expansion.
+  const expanded = compact ? active : (active || hovered || isTouchDevice);
   const expandedWidth = H_PAD + ICON_INNER + GAP + labelWidth + H_PAD;
   const currentWidth = expanded ? expandedWidth : ICON_SIZE;
 

@@ -26,8 +26,9 @@ export function useOverlayViewport<T extends HTMLElement = HTMLElement>() {
   const [viewport, setViewport] = useState<T | null>(null);
 
   const onViewportReady = useCallback((next: HTMLElement | null) => {
-    ref.current = (next as T | null) ?? null;
-    setViewport((next as T | null) ?? null);
+    const el = next as T | null;
+    ref.current = el;
+    setViewport(el);
   }, []);
 
   return { ref, viewport, onViewportReady };

@@ -199,7 +199,10 @@ export function TableOfContents({
 
   return (
     <nav
-      className={className || "bg-card/50 backdrop-blur-sm border-r border-border overflow-y-auto"}
+      // Use ?? not || — an explicit empty string from a caller means "I'm
+      // managing my own container styling" (e.g. SidebarContainer wrapping
+      // us in an OverlayScrollArea), which should NOT trigger the default.
+      className={className ?? "bg-card/50 backdrop-blur-sm border-r border-border overflow-y-auto"}
       aria-label="Table of contents"
       style={style}
     >

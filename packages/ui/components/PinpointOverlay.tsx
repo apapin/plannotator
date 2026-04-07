@@ -43,17 +43,21 @@ export const PinpointOverlay: React.FC<PinpointOverlayProps> = ({ target, contai
       rafRef.current = requestAnimationFrame(updatePosition);
     };
 
+    // Window resize always matters, regardless of whether the scroll
+    // viewport is ready yet. Register it unconditionally so the overlay
+    // stays aligned during the brief window before OverlayScrollbars
+    // delivers its viewport.
+    window.addEventListener('resize', handleUpdate, { passive: true });
+
     // The scroll element is the OverlayScrollArea viewport. Falling back to
     // <main> or window would attach to the wrong node and the overlay
     // position would drift silently on scroll.
-    if (!scrollViewport) return;
-    scrollViewport.addEventListener('scroll', handleUpdate, { passive: true });
-    window.addEventListener('resize', handleUpdate, { passive: true });
+    scrollViewport?.addEventListener('scroll', handleUpdate, { passive: true });
 
     return () => {
       cancelAnimationFrame(rafRef.current);
-      scrollViewport.removeEventListener('scroll', handleUpdate);
       window.removeEventListener('resize', handleUpdate);
+      scrollViewport?.removeEventListener('scroll', handleUpdate);
     };
   }, [target, containerRef, scrollViewport]);
 

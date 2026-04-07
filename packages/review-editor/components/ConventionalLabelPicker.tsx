@@ -98,11 +98,11 @@ export const ConventionalLabelPicker: React.FC<ConventionalLabelPickerProps> = (
   return (
     <div className="cc-picker">
       <div className="cc-row">
-        {enabledLabels.map((def) => {
+        {enabledLabels.map((def, idx) => {
           const isActive = selected === def.label;
           return (
             <button
-              key={def.label}
+              key={`${idx}-${def.label}`}
               type="button"
               className={`cc-tag cc-tone-${def.tone}${isActive ? ' active' : ''}`}
               onClick={() => handleLabelClick(def.label)}

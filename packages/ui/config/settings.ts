@@ -162,13 +162,29 @@ export const SETTINGS = {
     },
     toServer: (v: boolean) => ({ conventionalComments: v }),
   },
-  /** JSON-serialized array of label configs, or null for defaults */
+  /** JSON-serialized array of label configs, or null for defaults.
+   *  Synced to ~/.plannotator/config.json as a parsed array (not a string). */
   conventionalLabels: {
     defaultValue: null as string | null,
     fromCookie: () => storage.getItem('plannotator-cc-labels') || undefined,
     toCookie: (v: string | null) => {
       if (v) storage.setItem('plannotator-cc-labels', v);
       else storage.removeItem('plannotator-cc-labels');
+    },
+    serverKey: 'conventionalLabels',
+    fromServer: (sc: Record<string, unknown>) => {
+      const v = sc.conventionalLabels;
+      if (v === null) return null;
+      if (Array.isArray(v)) return JSON.stringify(v);
+      return undefined;
+    },
+    toServer: (v: string | null) => {
+      if (v === null) return { conventionalLabels: null };
+      try {
+        return { conventionalLabels: JSON.parse(v) };
+      } catch {
+        return {};
+      }
     },
   },
 } satisfies Record<string, SettingDef<unknown>>;

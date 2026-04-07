@@ -198,12 +198,9 @@ export function useAnnotationToolbar({ patch, filePath, isFocused, onLineSelecti
     const code = hasCode ? suggestedCode : undefined;
     const original = hasCode && selectedOriginalCode ? selectedOriginalCode : undefined;
 
-    // Pass null explicitly when label is cleared so edits can remove it
-    const label = conventionalLabel ?? null;
-    const decs = decorations;
-
     if (editingAnnotationId) {
-      onEditAnnotation(editingAnnotationId, text, code, original, label, decs);
+      // Edit path: pass null explicitly so a cleared label is removed from the annotation
+      onEditAnnotation(editingAnnotationId, text, code, original, conventionalLabel, decorations);
     } else {
       const tokenSel = toolbarState.tokenSelection;
       const tokenMeta = tokenSel ? {
@@ -211,7 +208,15 @@ export function useAnnotationToolbar({ patch, filePath, isFocused, onLineSelecti
         charEnd: tokenSel.anchor.charEnd,
         tokenText: tokenSel.fullText,
       } : undefined;
-      onAddAnnotation('comment', text, code, original, label || undefined, decs.length > 0 ? decs : undefined, tokenMeta);
+      onAddAnnotation(
+        'comment',
+        text,
+        code,
+        original,
+        conventionalLabel ?? undefined,
+        decorations.length > 0 ? decorations : undefined,
+        tokenMeta,
+      );
     }
 
     clearDraft();

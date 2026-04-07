@@ -21,10 +21,19 @@ export interface DiffOptions {
   fontSize?: string;
 }
 
+/** Single conventional comment label entry stored in config.json */
+export interface CCLabelConfig {
+  label: string;
+  display: string;
+  blocking: boolean;
+}
+
 export interface PlannotatorConfig {
   displayName?: string;
   diffOptions?: DiffOptions;
   conventionalComments?: boolean;
+  /** null = explicitly cleared (use defaults), undefined = not set */
+  conventionalLabels?: CCLabelConfig[] | null;
 }
 
 const CONFIG_DIR = join(homedir(), ".plannotator");
@@ -81,12 +90,19 @@ export function detectGitUser(): string | null {
  * Build the serverConfig payload for API responses.
  * Reads config.json fresh each call so the response reflects the latest file on disk.
  */
-export function getServerConfig(gitUser: string | null): { displayName?: string; diffOptions?: DiffOptions; gitUser?: string; conventionalComments?: boolean } {
+export function getServerConfig(gitUser: string | null): {
+  displayName?: string;
+  diffOptions?: DiffOptions;
+  gitUser?: string;
+  conventionalComments?: boolean;
+  conventionalLabels?: CCLabelConfig[] | null;
+} {
   const cfg = loadConfig();
   return {
     displayName: cfg.displayName,
     diffOptions: cfg.diffOptions,
     gitUser: gitUser ?? undefined,
     ...(cfg.conventionalComments !== undefined && { conventionalComments: cfg.conventionalComments }),
+    ...(cfg.conventionalLabels !== undefined && { conventionalLabels: cfg.conventionalLabels }),
   };
 }

@@ -84,6 +84,8 @@ export const PRCommentsTab: React.FC<PRCommentsTabProps> = React.memo(({ context
   // --- State ---
   const [searchQuery, setSearchQuery] = useState('');
   const [sortNewestFirst, setSortNewestFirst] = useState(false);
+  const [hideResolved, setHideResolved] = useState(false);
+  const [hideOutdated, setHideOutdated] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [excludedAuthors, setExcludedAuthors] = useState<Set<string>>(new Set());
@@ -113,6 +115,12 @@ export const PRCommentsTab: React.FC<PRCommentsTabProps> = React.memo(({ context
 
   const filteredTimeline = useMemo(() => {
     let result = baseTimeline;
+    if (hideResolved) {
+      result = result.filter((e) => e.kind !== 'thread' || !e.data.isResolved);
+    }
+    if (hideOutdated) {
+      result = result.filter((e) => e.kind !== 'thread' || !e.data.isOutdated);
+    }
     if (excludedAuthors.size > 0) {
       result = result.filter((e) => !excludedAuthors.has(getEntryAuthor(e)));
     }
@@ -120,7 +128,7 @@ export const PRCommentsTab: React.FC<PRCommentsTabProps> = React.memo(({ context
       result = result.filter((e) => matchesSearch(e, searchQuery.trim()));
     }
     return result;
-  }, [baseTimeline, searchQuery, excludedAuthors]);
+  }, [baseTimeline, searchQuery, excludedAuthors, hideResolved, hideOutdated]);
 
   const displayTimeline = useMemo(
     () => sortNewestFirst ? [...filteredTimeline].reverse() : filteredTimeline,
@@ -179,6 +187,8 @@ export const PRCommentsTab: React.FC<PRCommentsTabProps> = React.memo(({ context
   const clearFilters = useCallback(() => {
     setSearchQuery('');
     setExcludedAuthors(new Set());
+    setHideResolved(false);
+    setHideOutdated(false);
   }, []);
 
   // --- Empty state (no comments at all) ---
@@ -195,7 +205,7 @@ export const PRCommentsTab: React.FC<PRCommentsTabProps> = React.memo(({ context
     );
   }
 
-  const hasFilters = !!searchQuery.trim() || excludedAuthors.size > 0;
+  const hasFilters = !!searchQuery.trim() || excludedAuthors.size > 0 || hideResolved || hideOutdated;
 
   return (
     <div ref={containerRef} className="h-full flex flex-col">
@@ -261,8 +271,23 @@ export const PRCommentsTab: React.FC<PRCommentsTabProps> = React.memo(({ context
             ))}
           </div>
 
-          {/* Sort + collapse controls */}
+          {/* Filter + sort + collapse controls */}
           <div className="flex items-center gap-1 flex-shrink-0">
+            <button
+              onClick={() => setHideResolved((v) => !v)}
+              className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${hideResolved ? 'bg-success/15 text-success' : 'bg-muted text-muted-foreground hover:text-foreground'}`}
+              title={hideResolved ? 'Show resolved threads' : 'Hide resolved threads'}
+            >
+              Resolved
+            </button>
+            <button
+              onClick={() => setHideOutdated((v) => !v)}
+              className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${hideOutdated ? 'bg-warning/15 text-warning' : 'bg-muted text-muted-foreground hover:text-foreground'}`}
+              title={hideOutdated ? 'Show outdated threads' : 'Hide outdated threads'}
+            >
+              Outdated
+            </button>
+            <div className="w-px h-3 bg-border/30 mx-0.5" />
             <button
               onClick={() => setSortNewestFirst((v) => !v)}
               className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground hover:text-foreground transition-colors"

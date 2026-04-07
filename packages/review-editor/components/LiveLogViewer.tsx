@@ -1,5 +1,7 @@
-import React, { useRef, useEffect, useMemo, useCallback } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { CopyButton } from './CopyButton';
+import { OverlayScrollArea } from '@plannotator/ui/components/OverlayScrollArea';
+import { useOverlayViewport } from '@plannotator/ui/hooks/useOverlayViewport';
 
 interface LiveLogViewerProps {
   /** The full accumulated log text. */
@@ -24,21 +26,29 @@ export const LiveLogViewer: React.FC<LiveLogViewerProps> = ({
   maxRenderSize = 50_000,
   className,
 }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
+  const { ref: containerRef, viewport, onViewportReady } =
+    useOverlayViewport<HTMLDivElement>();
   const isAtBottomRef = useRef(true);
 
-  const handleScroll = useCallback(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-  }, []);
+  // Track whether the user is within 40px of the bottom. Attach directly
+  // to the OverlayScrollbars viewport because React's onScroll doesn't
+  // bubble across the library's wrapper layers.
+  useEffect(() => {
+    if (!viewport) return;
+    const handleScroll = () => {
+      isAtBottomRef.current =
+        viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 40;
+    };
+    viewport.addEventListener('scroll', handleScroll, { passive: true });
+    return () => viewport.removeEventListener('scroll', handleScroll);
+  }, [viewport]);
 
   // Auto-scroll on new content if user is at bottom
   useEffect(() => {
     if (isAtBottomRef.current && containerRef.current) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
-  }, [content]);
+  }, [content, viewport]);
 
   const displayText = useMemo(() => {
     if (content.length <= maxRenderSize) return content;
@@ -56,11 +66,11 @@ export const LiveLogViewer: React.FC<LiveLogViewerProps> = ({
 
   return (
     <div className={`group relative flex-1 min-h-0 ${className ?? ''}`}>
-      <div
-        ref={containerRef}
-        onScroll={handleScroll}
-        className="h-full overflow-y-auto rounded bg-muted/30 p-3"
+      <OverlayScrollArea
+        className="h-full rounded bg-muted/30"
+        onViewportReady={onViewportReady}
       >
+        <div className="p-3">
         {!content && isLive ? (
           <span className="text-xs text-muted-foreground/50 animate-pulse">
             Waiting for output...
@@ -73,7 +83,8 @@ export const LiveLogViewer: React.FC<LiveLogViewerProps> = ({
             )}
           </pre>
         )}
-      </div>
+        </div>
+      </OverlayScrollArea>
       {content && (
         <div className="absolute top-2 right-2">
           <CopyButton text={content} variant="inline" />

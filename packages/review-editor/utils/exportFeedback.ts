@@ -2,14 +2,18 @@ import type { CodeAnnotation, ConventionalLabel, ConventionalDecoration } from '
 import type { PRMetadata } from '@plannotator/shared/pr-provider';
 import { getMRLabel, getMRNumberLabel, getDisplayRepo } from '@plannotator/shared/pr-provider';
 
-/** Format a conventional comment prefix: `**label** (decorations): ` */
+/**
+ * Format a conventional comment prefix per the Conventional Comments spec:
+ * `**label (decorations):** ` — entire label+decorations+colon wrapped in bold.
+ * See https://conventionalcomments.org for examples.
+ */
 export function formatConventionalPrefix(
   label?: ConventionalLabel,
   decorations?: ConventionalDecoration[],
 ): string {
   if (!label) return '';
   const decs = decorations?.length ? ` (${decorations.join(', ')})` : '';
-  return `**${label}**${decs}: `;
+  return `**${label}${decs}:** `;
 }
 
 /**

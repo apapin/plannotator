@@ -334,7 +334,7 @@ interface CCLabelConfig {
 const DEFAULT_CC_LABELS: CCLabelConfig[] = [
   { label: 'suggestion', display: 'suggestion', blocking: true },
   { label: 'nitpick',    display: 'nit',        blocking: false },
-  { label: 'question',   display: 'question',   blocking: false },
+  { label: 'question',   display: 'question',   blocking: true },
   { label: 'issue',      display: 'issue',      blocking: true },
   { label: 'praise',     display: 'praise',     blocking: false },
   { label: 'thought',    display: 'thought',    blocking: false },
@@ -347,7 +347,7 @@ function parseCCLabels(json: string | null): CCLabelConfig[] {
   if (!json) return DEFAULT_CC_LABELS;
   try {
     const parsed = JSON.parse(json);
-    if (!Array.isArray(parsed) || parsed.length === 0) return DEFAULT_CC_LABELS;
+    if (!Array.isArray(parsed)) return DEFAULT_CC_LABELS;
     return parsed.map((l: Record<string, unknown>) => ({
       label: (l.label as string) || 'custom',
       display: (l.display as string) || (l.label as string) || 'custom',

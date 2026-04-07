@@ -17,7 +17,7 @@ export const CONVENTIONAL_LABELS: LabelDef[] = [
   // Everyday — the three you reach for on 90%+ of comments
   { label: 'suggestion', display: 'suggestion', tone: 'info',    showBlockingToggle: true,  hint: 'Proposes an improvement' },
   { label: 'nitpick',    display: 'nit',        tone: 'neutral', showBlockingToggle: false, hint: 'Trivial, preference-based' },
-  { label: 'question',   display: 'question',   tone: 'info',    showBlockingToggle: false, hint: 'Seeking clarification' },
+  { label: 'question',   display: 'question',   tone: 'info',    showBlockingToggle: true,  hint: 'Seeking clarification' },
   // High-signal
   { label: 'issue',      display: 'issue',      tone: 'danger',  showBlockingToggle: true,  hint: 'A problem that needs addressing' },
   { label: 'praise',     display: 'praise',     tone: 'success', showBlockingToggle: false, hint: 'Highlight something positive' },
@@ -33,12 +33,12 @@ export const CONVENTIONAL_LABELS: LabelDef[] = [
 // Picker
 // ---------------------------------------------------------------------------
 
-/** Resolve which labels to show based on user config (null = all defaults) */
+/** Resolve which labels to show based on user config (null = all defaults; empty array = user cleared all) */
 export function getEnabledLabels(configJson: string | null): LabelDef[] {
   if (!configJson) return CONVENTIONAL_LABELS;
   try {
     const parsed = JSON.parse(configJson) as Array<Record<string, unknown>>;
-    if (!Array.isArray(parsed) || parsed.length === 0) return CONVENTIONAL_LABELS;
+    if (!Array.isArray(parsed)) return CONVENTIONAL_LABELS;
     return parsed.map(cfg => {
       const builtIn = CONVENTIONAL_LABELS.find(l => l.label === cfg.label);
       return {

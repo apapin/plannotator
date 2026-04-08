@@ -119,16 +119,6 @@ export const BUILT_IN_THEMES: ThemeInfo[] = [
     },
   },
   {
-    id: 'kanagawa-bones',
-    name: 'Kanagawa Bones',
-    builtIn: true,
-    modeSupport: 'dark-only',
-    colors: {
-      dark: { primary: '#7bc2df', secondary: '#3c3c51', accent: '#a98fd2', background: '#1f1f28', foreground: '#ddd8bb' },
-      light: { primary: '#7bc2df', secondary: '#3c3c51', accent: '#a98fd2', background: '#1f1f28', foreground: '#ddd8bb' },
-    },
-  },
-  {
     id: 'kanagawa-dragon',
     name: 'Kanagawa Dragon',
     builtIn: true,
@@ -136,6 +126,16 @@ export const BUILT_IN_THEMES: ThemeInfo[] = [
     colors: {
       dark: { primary: '#7fb4ca', secondary: '#2a2625', accent: '#7aa89f', background: '#181616', foreground: '#c8c093' },
       light: { primary: '#7fb4ca', secondary: '#2a2625', accent: '#7aa89f', background: '#181616', foreground: '#c8c093' },
+    },
+  },
+  {
+    id: 'kanagawa-lotus',
+    name: 'Kanagawa Lotus',
+    builtIn: true,
+    modeSupport: 'light-only',
+    colors: {
+      dark: { primary: '#4d699b', secondary: '#dcd5ac', accent: '#624c83', background: '#f2ecbc', foreground: '#545464' },
+      light: { primary: '#4d699b', secondary: '#dcd5ac', accent: '#624c83', background: '#f2ecbc', foreground: '#545464' },
     },
   },
   {

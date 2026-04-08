@@ -1622,7 +1622,6 @@ const App: React.FC = () => {
             onSelect={setSelectedAnnotationId}
             onDelete={handleDeleteAnnotation}
             onEdit={handleEditAnnotation}
-            shareUrl={shareUrl}
             sharingEnabled={sharingEnabled}
             width={panelResize.width}
             editorAnnotations={editorAnnotations}
@@ -1631,6 +1630,7 @@ const App: React.FC = () => {
             onQuickCopy={async () => {
               await navigator.clipboard.writeText(wrapFeedbackForAgent(annotationsOutput));
             }}
+            onShare={() => { setInitialExportTab('share'); setShowExport(true); }}
             otherFileAnnotations={otherFileAnnotations}
             onOtherFileAnnotationsClick={handleFlashAnnotatedFiles}
           />

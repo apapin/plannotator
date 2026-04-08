@@ -37,6 +37,21 @@ import type { PlanDiffStats } from '../utils/planDiffEngine';
 // (which use [] deps) can't accidentally close over a stale instance.
 const snap = (n: number) => Math.round(n / 16) * 16;
 
+// Layout geometry — static tuning constants, hoisted alongside `snap`.
+// LEFT_OFFSET: matches the bar's `md:left-5` (20px).
+// GAP: minimum breathing room between the bar's right edge and the
+//      action button cluster's left edge when they share a lane.
+// Two-stage shared-lane shrinkage, mirroring the right side:
+//   WIDE_BAR_WIDTH: full toolstrip (active labels Pinpoint/Markup ~300px)
+//                   + badges (~140px) on a single line.
+//   MIN_BAR_WIDTH:  icon-only toolstrip (~140px) + badges (~140px).
+// Below MIN, even the icon-only bar can't fit beside the (likely also
+// icon-only) action cluster — stack as the final fallback.
+const LEFT_OFFSET = 20;
+const GAP = 16;
+const WIDE_BAR_WIDTH = 460;
+const MIN_BAR_WIDTH = 300;
+
 interface StickyHeaderLaneProps {
   // Toolstrip state
   inputMethod: InputMethod;
@@ -55,6 +70,14 @@ interface StickyHeaderLaneProps {
 
   // Layout
   maxWidth?: number;
+
+  // Re-query token for the [data-sticky-actions] ResizeObserver. When the
+  // Viewer remounts (e.g., toggling a linked doc), its `data-sticky-actions`
+  // node is replaced — but StickyHeaderLane itself does NOT remount, so
+  // its observer would otherwise stay attached to the now-detached old
+  // node and freeze `actionsWidth`. Pass a string that changes whenever
+  // Viewer remounts and the effect re-runs against the fresh DOM.
+  remountToken?: string;
 }
 
 export const StickyHeaderLane: React.FC<StickyHeaderLaneProps> = ({
@@ -70,6 +93,7 @@ export const StickyHeaderLane: React.FC<StickyHeaderLaneProps> = ({
   onPlanDiffToggle,
   archiveInfo,
   maxWidth,
+  remountToken,
 }) => {
   const sentinelRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -77,21 +101,6 @@ export const StickyHeaderLane: React.FC<StickyHeaderLaneProps> = ({
   const [wrapperWidth, setWrapperWidth] = useState(0);
   const [actionsWidth, setActionsWidth] = useState(0);
   const scrollViewport = useScrollViewport();
-
-  // Layout geometry.
-  // LEFT_OFFSET: matches the bar's `md:left-5` (20px).
-  // GAP: minimum breathing room between the bar's right edge and the
-  //      action button cluster's left edge when they share a lane.
-  // Two-stage shared-lane shrinkage, mirroring the right side:
-  //   WIDE_BAR_WIDTH: full toolstrip (active labels Pinpoint/Markup ~300px)
-  //                   + badges (~140px) on a single line.
-  //   MIN_BAR_WIDTH:  icon-only toolstrip (~140px) + badges (~140px).
-  // Below MIN, even the icon-only bar can't fit beside the (likely also
-  // icon-only) action cluster — stack as the final fallback.
-  const LEFT_OFFSET = 20;
-  const GAP = 16;
-  const WIDE_BAR_WIDTH = 460;
-  const MIN_BAR_WIDTH = 300;
 
   // Space available for the bar in the shared lane = wrapper width, minus
   // the bar's left offset, minus the action buttons' measured width, minus
@@ -125,6 +134,9 @@ export const StickyHeaderLane: React.FC<StickyHeaderLaneProps> = ({
   // labels — and with button count). No more guessing at ~310/360/400px.
   // The action button div is tagged with `data-sticky-actions` in
   // Viewer.tsx. It's a sibling in the DOM by the time effects fire.
+  // Re-runs when `remountToken` changes so we re-query after Viewer
+  // unmounts/remounts (e.g., linked-doc toggle) instead of leaving the
+  // observer attached to a detached node.
   useEffect(() => {
     const el = document.querySelector<HTMLElement>('[data-sticky-actions]');
     if (!el) return;
@@ -134,7 +146,7 @@ export const StickyHeaderLane: React.FC<StickyHeaderLaneProps> = ({
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [remountToken]);
 
   // IntersectionObserver-on-sentinel pattern (mirrors Viewer.tsx:257-267).
   // Sentinel sits inline at the top of the column. The 80px positive top

@@ -1550,6 +1550,7 @@ const App: React.FC = () => {
                   onPlanDiffToggle={() => setIsPlanDiffActive(!isPlanDiffActive)}
                   archiveInfo={archive.currentInfo}
                   maxWidth={planMaxWidth}
+                  remountToken={linkedDocHook.isActive ? `doc:${linkedDocHook.filepath}` : 'plan'}
                 />
               )}
 
@@ -1655,7 +1656,7 @@ const App: React.FC = () => {
             onQuickCopy={async () => {
               await navigator.clipboard.writeText(wrapFeedbackForAgent(annotationsOutput));
             }}
-            onShare={() => { setIsPanelOpen(false); setInitialExportTab('share'); setShowExport(true); }}
+            onShare={shareUrl ? () => { setIsPanelOpen(false); setInitialExportTab('share'); setShowExport(true); } : undefined}
             otherFileAnnotations={otherFileAnnotations}
             onOtherFileAnnotationsClick={handleFlashAnnotatedFiles}
           />

@@ -5,13 +5,20 @@
  * At rest (top of doc): invisible, non-interactive. The original toolstrip
  * and badge cluster on the card remain the visible source of truth.
  *
- * Scrolled, sm+ (640px): fades + slides in at top: 12px, sitting on the
- * same horizontal lane as the already-sticky action buttons inside the
- * Viewer card. Single horizontal header.
+ * Layout is driven by two ResizeObserver measurements — the sticky
+ * wrapper's actual width AND the Viewer action button cluster's actual
+ * width — so the bar fits exactly into the space between its left edge
+ * and the buttons, with no fixed pixel reserves.
  *
- * Scrolled, mobile (<640px): pins at top: 52px on its OWN full-width row,
- * directly below the action buttons row. Toolstrip switches to icon-only
- * (no labels) so the diff badges have room.
+ *   availableForBar = wrapperWidth - LEFT_OFFSET - actionsWidth - GAP
+ *
+ * Three states based on availableForBar:
+ *   wide  (>= WIDE_BAR_WIDTH): shared lane, toolstrip with active labels.
+ *   tight (>= MIN_BAR_WIDTH):  shared lane, toolstrip icon-only — gives
+ *                              the bar another ~160px of room before
+ *                              forcing a layout change.
+ *   narrow (< MIN_BAR_WIDTH):  stacked below the action buttons on its
+ *                              own full-width row, icon-only toolstrip.
  *
  * Composes <AnnotationToolstrip compact /> + <DocBadges layout="row" />.
  * No state is duplicated — all props are passed through from App.tsx.
@@ -20,6 +27,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AnnotationToolstrip } from './AnnotationToolstrip';
 import { DocBadges } from './DocBadges';
+import { useScrollViewport } from '../hooks/useScrollViewport';
 import type { EditorMode, InputMethod } from '../types';
 import type { PlanDiffStats } from '../utils/planDiffEngine';
 
@@ -58,90 +66,137 @@ export const StickyHeaderLane: React.FC<StickyHeaderLaneProps> = ({
   maxWidth,
 }) => {
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const [isStuck, setIsStuck] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
+  const [wrapperWidth, setWrapperWidth] = useState(0);
+  const [actionsWidth, setActionsWidth] = useState(0);
+  const scrollViewport = useScrollViewport();
 
-  // Match the `sm` Tailwind breakpoint (640px). Below it the bar lives on
-  // its own row and switches the toolstrip to icon-only so the diff
-  // badges have room.
+  // Layout geometry.
+  // LEFT_OFFSET: matches the bar's `md:left-5` (20px).
+  // GAP: minimum breathing room between the bar's right edge and the
+  //      action button cluster's left edge when they share a lane.
+  // Two-stage shared-lane shrinkage, mirroring the right side:
+  //   WIDE_BAR_WIDTH: full toolstrip (active labels Pinpoint/Markup ~300px)
+  //                   + badges (~140px) on a single line.
+  //   MIN_BAR_WIDTH:  icon-only toolstrip (~140px) + badges (~140px).
+  // Below MIN, even the icon-only bar can't fit beside the (likely also
+  // icon-only) action cluster — stack as the final fallback.
+  const LEFT_OFFSET = 20;
+  const GAP = 16;
+  const WIDE_BAR_WIDTH = 460;
+  const MIN_BAR_WIDTH = 300;
+
+  // Space available for the bar in the shared lane = wrapper width, minus
+  // the bar's left offset, minus the action buttons' measured width, minus
+  // the breathing gap.
+  const availableForBar = wrapperWidth - LEFT_OFFSET - actionsWidth - GAP;
+
+  // Narrow = not enough room in the shared lane for even the icon-only
+  // bar. Falls back to a stacked row below the action buttons.
+  // actionsWidth=0 before measurement is treated as "don't know yet"
+  // (not narrow), so we don't flash the wrong layout on first paint.
+  const measured = wrapperWidth > 0 && actionsWidth > 0;
+  const isNarrow = measured && availableForBar < MIN_BAR_WIDTH;
+  // Tight = shared lane still fits, but only if the toolstrip drops its
+  // active labels and goes icon-only. Lets us stay horizontally aligned
+  // for an extra ~160px of width before stacking.
+  const isToolstripIconOnly =
+    measured && !isNarrow && availableForBar < WIDE_BAR_WIDTH;
+
+  // Both width measurements snap to a 16px grid before being committed to
+  // state. ResizeObserver fires every frame during a drag; without this
+  // quantization the sticky bar would re-render on every pixel and the
+  // ResizeObserver callback chain (wrapper → bar → maxWidth style) makes
+  // the whole drag feel laggy. 16px steps are visually imperceptible.
+  const snap = (n: number) => Math.round(n / 16) * 16;
+
   useEffect(() => {
-    const mq = window.matchMedia('(max-width: 639px)');
-    const handler = () => setIsMobile(mq.matches);
-    handler();
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
+    if (!wrapperRef.current) return;
+    const ro = new ResizeObserver(([entry]) => {
+      const next = snap(entry.contentRect.width);
+      setWrapperWidth((prev) => (prev === next ? prev : next));
+    });
+    ro.observe(wrapperRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  // Measure the Viewer's action button cluster so the right reserve
+  // reflects its REAL width (which varies with viewport — short vs full
+  // labels — and with button count). No more guessing at ~310/360/400px.
+  // The action button div is tagged with `data-sticky-actions` in
+  // Viewer.tsx. It's a sibling in the DOM by the time effects fire.
+  useEffect(() => {
+    const el = document.querySelector<HTMLElement>('[data-sticky-actions]');
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      const next = snap(entry.contentRect.width);
+      setActionsWidth((prev) => (prev === next ? prev : next));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
   }, []);
 
   // IntersectionObserver-on-sentinel pattern (mirrors Viewer.tsx:257-267).
-  // Sentinel sits inline at the natural position the bar would occupy; when
-  // it leaves the viewport, the bar pins. The positive top rootMargin grows
-  // the effective viewport upward so the sentinel is considered "visible"
-  // for an extra ~72px of scroll — delaying the bar's appearance until the
-  // real toolstrip has actually scrolled past the top of <main>. Without
-  // this, the sentinel (which sits at the top of the column, above the
-  // toolstrip) fires the moment scrolling begins and the bar doubles up
-  // with the still-visible toolstrip.
+  // Sentinel sits inline at the top of the column. The 80px positive top
+  // rootMargin grows the effective viewport upward so the sentinel is
+  // considered "visible" for an extra ~80px of scroll — delaying the bar's
+  // appearance until the real toolstrip has actually scrolled past. Without
+  // this, the sentinel fires the moment scrolling begins and the ghost bar
+  // doubles up with the still-visible toolstrip. Root is the OverlayScrollArea
+  // viewport from context, NOT <main> (which doesn't actually scroll).
   useEffect(() => {
-    if (!sentinelRef.current) return;
-    const scrollContainer = document.querySelector('main');
+    if (!sentinelRef.current || !scrollViewport) return;
     const observer = new IntersectionObserver(
       ([entry]) => setIsStuck(!entry.isIntersecting),
-      { root: scrollContainer, rootMargin: '72px 0px 0px 0px', threshold: 0 }
+      { root: scrollViewport, rootMargin: '80px 0px 0px 0px', threshold: 0 }
     );
     observer.observe(sentinelRef.current);
     return () => observer.disconnect();
-  }, []);
+  }, [scrollViewport]);
 
   return (
     <>
-      {/* Sentinel — zero-size, rendered in normal flow at the top of <main>.
-          When it scrolls out of the viewport, the sticky bar fades in. */}
+      {/* Sentinel — zero-size, rendered in normal flow at the top of the
+          column. When it scrolls out of the OverlayScrollArea viewport,
+          the sticky bar fades in. */}
       <div ref={sentinelRef} aria-hidden="true" className="h-0 w-0" />
 
       {/* Sticky wrapper — zero-height so it never pushes content down. The
           visible bar is positioned absolutely relative to this wrapper.
-          The Viewer's outer wrapper uses z-50 (Viewer.tsx:432), so the
-          sticky lane must sit above that to paint over the card.
+          The Viewer's outer wrapper uses z-50, so the sticky lane must
+          sit above that to paint over the card.
 
-          Below sm (640px) — true mobile — the bar pins at top-[52px], on
-          its OWN full-width row BELOW the card's sticky action buttons.
-          Stacked horizontal lanes, no horizontal collision possible.
+          Narrow: the bar pins at top-[52px] / md:top-[60px] on its OWN
+          full-width row BELOW the card's sticky action buttons. Stacked
+          horizontal lanes, no horizontal collision possible.
 
-          At sm+ the bar shares the top-3 lane with the action buttons
-          (single horizontal header). */}
+          Wide / tight: the bar shares the top-3 lane with the action
+          buttons (single horizontal header). */}
       <div
-        className="sticky top-[52px] sm:top-3 z-[60] w-full self-center pointer-events-none"
+        ref={wrapperRef}
+        className={`sticky z-[60] w-full self-center pointer-events-none ${
+          isNarrow ? 'top-[52px] md:top-[60px]' : 'top-3'
+        }`}
         style={{ maxWidth, height: 0 }}
       >
         {/* Responsive bar.
 
-            The bar is `inline-flex` with a `max-width` cap (not bounded
-            by `right-X`), so its chrome wraps tightly to the toolstrip +
-            badges and only extends as far as the content needs.
+            `inline-flex flex-wrap` + a measured `max-width` cap (set inline
+            below) lets the bar wrap badges to a second row if the toolstrip
+            + badges can't fit on one line. The max-width is computed from
+            the real measured action button width — no fixed reserves.
 
-            Below sm (mobile): max-w leaves a 24px gutter on the right.
-            Bar lives on its own row at top-[52px] so there's nothing to
-            collide with.
-
-            sm-md (tablet, short-label action buttons): max-w leaves
-            340px on the right to clear the action button cluster
-            (Attachments "Images" + Comment + Copy ≈ 320px).
-
-            lg+ (desktop, full-label action buttons): max-w leaves 400px
-            for the full-label cluster ("Global comment" + "Copy plan"
-            ≈ 380px).
-
-            `flex-shrink-0` on the toolstrip wrapper is a defensive
-            measure: if a long branch name pushes the badges, this stops
-            the toolstrip from being squeezed below its natural width and
-            tripping its internal flex-wrap. `overflow-hidden` on the bar
-            is the final safety net so any overflow clips inside the
-            chrome rather than leaking out.
+            `flex-shrink-0` on the toolstrip wrapper is a defensive measure:
+            if a long branch name pushes the badges, this stops the toolstrip
+            from being squeezed below its natural width. `overflow-hidden`
+            is the final safety net so any overflow clips inside the chrome
+            rather than leaking out.
 
             `inert` removes the bar from the tab order when not stuck. */}
         <div
           inert={!isStuck || undefined}
-          className={`absolute left-3 sm:left-5 lg:left-7 xl:left-9 top-0 inline-flex items-center gap-3 max-w-[calc(100%-24px)] sm:max-w-[calc(100%-340px)] lg:max-w-[calc(100%-400px)] min-w-0 overflow-hidden rounded-lg py-1 md:py-1.5 bg-card/95 backdrop-blur-sm shadow-sm border border-border/30 motion-reduce:transform-none ${
+          className={`absolute left-3 md:left-5 top-0 inline-flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0 overflow-hidden rounded-lg py-1 md:py-1.5 bg-card/95 backdrop-blur-sm shadow-sm border border-border/30 motion-reduce:transform-none ${
             isStuck
               ? 'opacity-100 translate-y-0 pointer-events-auto'
               : 'opacity-0 -translate-y-1 pointer-events-none'
@@ -149,6 +204,11 @@ export const StickyHeaderLane: React.FC<StickyHeaderLaneProps> = ({
           style={{
             paddingLeft: 12,
             paddingRight: 12,
+            maxWidth: isNarrow
+              ? 'calc(100% - 24px)'
+              : availableForBar > 0
+                ? availableForBar
+                : undefined,
             transition:
               'opacity 180ms cubic-bezier(0.2, 0, 0, 1), transform 180ms cubic-bezier(0.2, 0, 0, 1)',
             willChange: 'opacity, transform',
@@ -162,7 +222,7 @@ export const StickyHeaderLane: React.FC<StickyHeaderLaneProps> = ({
               onModeChange={onModeChange}
               taterMode={taterMode}
               compact
-              iconOnly={isMobile}
+              iconOnly={isNarrow || isToolstripIconOnly}
             />
           </div>
           <DocBadges

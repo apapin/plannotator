@@ -6,7 +6,7 @@ import { AnnotationPanel } from '@plannotator/ui/components/AnnotationPanel';
 import { ExportModal } from '@plannotator/ui/components/ExportModal';
 import { ImportModal } from '@plannotator/ui/components/ImportModal';
 import { ConfirmDialog } from '@plannotator/ui/components/ConfirmDialog';
-import { Annotation, Block, EditorMode, type InputMethod, type ImageAttachment } from '@plannotator/ui/types';
+import { Annotation, Block, EditorMode, type InputMethod, type ImageAttachment, type ActionsLabelMode } from '@plannotator/ui/types';
 import { ThemeProvider } from '@plannotator/ui/components/ThemeProvider';
 import { AnnotationToolstrip } from '@plannotator/ui/components/AnnotationToolstrip';
 import { StickyHeaderLane } from '@plannotator/ui/components/StickyHeaderLane';
@@ -97,6 +97,30 @@ const App: React.FC = () => {
     return stored === 'true';
   });
   const [uiPrefs, setUiPrefs] = useState(() => getUIPreferences());
+
+  // Plan-area width (inside the OverlayScrollArea, after sidebar/panel
+  // shrinkage) drives the action button label compactness. ResizeObserver
+  // fires every frame during a resize drag, so we store only the BUCKET
+  // ('full' | 'short' | 'icon') in state — App.tsx then re-renders at
+  // most twice across an entire drag (once per threshold crossing) instead
+  // of on every pixel, which would chug the whole tree.
+  //
+  //   full  → "Global comment" / "Copy plan"  — fits when planArea >= 800
+  //   short → "Comment" / "Copy"              — fits when planArea >= 680
+  //   icon  → labels hidden                    — fallback below that
+  const planAreaRef = useRef<HTMLDivElement>(null);
+  const [actionsLabelMode, setActionsLabelMode] = useState<ActionsLabelMode>('full');
+  useEffect(() => {
+    if (!planAreaRef.current) return;
+    const ro = new ResizeObserver(([entry]) => {
+      const w = entry.contentRect.width;
+      const next: ActionsLabelMode =
+        w >= 800 ? 'full' : w >= 680 ? 'short' : 'icon';
+      setActionsLabelMode((prev) => (prev === next ? prev : next));
+    });
+    ro.observe(planAreaRef.current);
+    return () => ro.disconnect();
+  }, []);
   const [isApiMode, setIsApiMode] = useState(false);
   const [origin, setOrigin] = useState<Origin | null>(null);
   const [gitUser, setGitUser] = useState<string | undefined>();
@@ -1506,7 +1530,7 @@ const App: React.FC = () => {
               cancelText="Dismiss"
               showCancel
             />
-            <div className="min-h-full flex flex-col items-center px-2 py-3 md:px-10 md:py-8 xl:px-16 relative z-10">
+            <div ref={planAreaRef} className="min-h-full flex flex-col items-center px-2 py-3 md:px-10 md:py-8 xl:px-16 relative z-10">
               {/* Sticky header lane — ghost bar that pins the toolstrip +
                   badges at top: 12px once the user scrolls. Invisible at top
                   of doc; original toolstrip/badges remain the source of
@@ -1605,6 +1629,7 @@ const App: React.FC = () => {
                   archiveInfo={archive.currentInfo}
                   onToggleCheckbox={checkbox.toggle}
                   checkboxOverrides={checkbox.overrides}
+                  actionsLabelMode={actionsLabelMode}
                 />
               </div>
             </div>

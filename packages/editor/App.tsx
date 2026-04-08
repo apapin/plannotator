@@ -1455,7 +1455,7 @@ const App: React.FC = () => {
               showVaultTab={showVaultTab}
               hasFileAnnotations={hasFileAnnotations}
               hasVaultAnnotations={hasVaultAnnotations}
-              className="hidden lg:flex"
+              className="hidden lg:flex absolute left-0 top-0 z-10"
             />
           )}
 
@@ -1516,7 +1516,7 @@ const App: React.FC = () => {
           {/* Document Area */}
           <OverlayScrollArea
             element="main"
-            className="flex-1 min-w-0 bg-grid"
+            className={`flex-1 min-w-0 bg-grid ${!sidebar.isOpen ? 'lg:pl-[30px]' : ''}`}
             data-print-region="document"
             onViewportReady={handleViewportReady}
           >

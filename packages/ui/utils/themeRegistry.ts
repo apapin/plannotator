@@ -119,6 +119,36 @@ export const BUILT_IN_THEMES: ThemeInfo[] = [
     },
   },
   {
+    id: 'kanagawa-bones',
+    name: 'Kanagawa Bones',
+    builtIn: true,
+    modeSupport: 'dark-only',
+    colors: {
+      dark: { primary: '#7bc2df', secondary: '#3c3c51', accent: '#a98fd2', background: '#1f1f28', foreground: '#ddd8bb' },
+      light: { primary: '#7bc2df', secondary: '#3c3c51', accent: '#a98fd2', background: '#1f1f28', foreground: '#ddd8bb' },
+    },
+  },
+  {
+    id: 'kanagawa-dragon',
+    name: 'Kanagawa Dragon',
+    builtIn: true,
+    modeSupport: 'dark-only',
+    colors: {
+      dark: { primary: '#7fb4ca', secondary: '#2a2625', accent: '#7aa89f', background: '#181616', foreground: '#c8c093' },
+      light: { primary: '#7fb4ca', secondary: '#2a2625', accent: '#7aa89f', background: '#181616', foreground: '#c8c093' },
+    },
+  },
+  {
+    id: 'kanagawa-wave',
+    name: 'Kanagawa Wave',
+    builtIn: true,
+    modeSupport: 'dark-only',
+    colors: {
+      dark: { primary: '#7e9cd8', secondary: '#363646', accent: '#957fb8', background: '#1f1f28', foreground: '#dcd7ba' },
+      light: { primary: '#7e9cd8', secondary: '#363646', accent: '#957fb8', background: '#1f1f28', foreground: '#dcd7ba' },
+    },
+  },
+  {
     id: 'monokai-pro',
     name: 'Monokai Pro',
     builtIn: true,
@@ -226,36 +256,6 @@ export const BUILT_IN_THEMES: ThemeInfo[] = [
     colors: {
       dark: { primary: '#7aa2f7', secondary: '#414868', accent: '#7dcfff', background: '#24283b', foreground: '#c0caf5' },
       light: { primary: '#2e7de9', secondary: '#a1a6c5', accent: '#007197', background: '#e1e2e7', foreground: '#3760bf' },
-    },
-  },
-  {
-    id: 'kanagawa-dragon',
-    name: 'Kanagawa Dragon',
-    builtIn: true,
-    modeSupport: 'dark-only',
-    colors: {
-      dark: { primary: '#7fb4ca', secondary: '#2a2625', accent: '#7aa89f', background: '#181616', foreground: '#c8c093' },
-      light: { primary: '#7fb4ca', secondary: '#2a2625', accent: '#7aa89f', background: '#181616', foreground: '#c8c093' },
-    },
-  },
-  {
-    id: 'kanagawa-wave',
-    name: 'Kanagawa Wave',
-    builtIn: true,
-    modeSupport: 'dark-only',
-    colors: {
-      dark: { primary: '#7e9cd8', secondary: '#363646', accent: '#957fb8', background: '#1f1f28', foreground: '#dcd7ba' },
-      light: { primary: '#7e9cd8', secondary: '#363646', accent: '#957fb8', background: '#1f1f28', foreground: '#dcd7ba' },
-    },
-  },
-  {
-    id: 'kanagawa-bones',
-    name: 'Kanagawa Bones',
-    builtIn: true,
-    modeSupport: 'dark-only',
-    colors: {
-      dark: { primary: '#7bc2df', secondary: '#3c3c51', accent: '#a98fd2', background: '#1f1f28', foreground: '#ddd8bb' },
-      light: { primary: '#7bc2df', secondary: '#3c3c51', accent: '#a98fd2', background: '#1f1f28', foreground: '#ddd8bb' },
     },
   },
 ];

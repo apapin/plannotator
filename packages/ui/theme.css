@@ -13,14 +13,14 @@
 @import "./themes/doom-64.css";
 @import "./themes/dracula.css";
 @import "./themes/gruvbox.css";
+@import "./themes/kanagawa-bones.css";
+@import "./themes/kanagawa-dragon.css";
+@import "./themes/kanagawa-wave.css";
 @import "./themes/paulmillr.css";
 @import "./themes/quantum-rose.css";
 @import "./themes/solar-dusk.css";
 @import "./themes/terminal.css";
 @import "./themes/tokyo-night.css";
-@import "./themes/kanagawa-dragon.css";
-@import "./themes/kanagawa-wave.css";
-@import "./themes/kanagawa-bones.css";
 @import "./themes/tinacious.css";
 @import "./themes/cursor.css";
 @import "./themes/cursor-hc.css";

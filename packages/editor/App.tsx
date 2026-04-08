@@ -1655,7 +1655,7 @@ const App: React.FC = () => {
             onQuickCopy={async () => {
               await navigator.clipboard.writeText(wrapFeedbackForAgent(annotationsOutput));
             }}
-            onShare={() => { setInitialExportTab('share'); setShowExport(true); }}
+            onShare={() => { setIsPanelOpen(false); setInitialExportTab('share'); setShowExport(true); }}
             otherFileAnnotations={otherFileAnnotations}
             onOtherFileAnnotationsClick={handleFlashAnnotatedFiles}
           />

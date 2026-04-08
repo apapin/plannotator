@@ -31,6 +31,12 @@ import { useScrollViewport } from '../hooks/useScrollViewport';
 import type { EditorMode, InputMethod } from '../types';
 import type { PlanDiffStats } from '../utils/planDiffEngine';
 
+// Snap a measured pixel width to a 16px grid. ResizeObserver fires every
+// frame during a drag; without quantization the sticky bar would
+// re-render on every pixel. Hoisted to module scope so the effects
+// (which use [] deps) can't accidentally close over a stale instance.
+const snap = (n: number) => Math.round(n / 16) * 16;
+
 interface StickyHeaderLaneProps {
   // Toolstrip state
   inputMethod: InputMethod;
@@ -103,13 +109,6 @@ export const StickyHeaderLane: React.FC<StickyHeaderLaneProps> = ({
   // for an extra ~160px of width before stacking.
   const isToolstripIconOnly =
     measured && !isNarrow && availableForBar < WIDE_BAR_WIDTH;
-
-  // Both width measurements snap to a 16px grid before being committed to
-  // state. ResizeObserver fires every frame during a drag; without this
-  // quantization the sticky bar would re-render on every pixel and the
-  // ResizeObserver callback chain (wrapper → bar → maxWidth style) makes
-  // the whole drag feel laggy. 16px steps are visually imperceptible.
-  const snap = (n: number) => Math.round(n / 16) * 16;
 
   useEffect(() => {
     if (!wrapperRef.current) return;

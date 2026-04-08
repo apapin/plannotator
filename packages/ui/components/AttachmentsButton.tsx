@@ -214,6 +214,8 @@ export const AttachmentsButton: React.FC<AttachmentsButtonProps> = ({
         ref={buttonRef}
         type="button"
         onClick={() => setIsOpen(!isOpen)}
+        aria-label="Attachments"
+        title="Attachments"
         className="group relative flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
       >
         {/* Show stacked thumbnails if we have images */}

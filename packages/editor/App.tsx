@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { type Origin, getAgentName } from '@plannotator/shared/agents';
 import { parseMarkdownToBlocks, exportAnnotations, exportLinkedDocAnnotations, exportEditorAnnotations, extractFrontmatter, wrapFeedbackForAgent, Frontmatter } from '@plannotator/ui/utils/parser';
 import { Viewer, ViewerHandle } from '@plannotator/ui/components/Viewer';
@@ -110,15 +110,21 @@ const App: React.FC = () => {
   //   icon  → labels hidden                    — fallback below that
   const planAreaRef = useRef<HTMLDivElement>(null);
   const [actionsLabelMode, setActionsLabelMode] = useState<ActionsLabelMode>('full');
-  useEffect(() => {
-    if (!planAreaRef.current) return;
+  // useLayoutEffect + synchronous getBoundingClientRect so the initial
+  // bucket is set before the browser paints. Otherwise narrow viewports
+  // get a one-frame flash of "Global comment"/"Copy plan" labels before
+  // the ResizeObserver callback collapses them.
+  useLayoutEffect(() => {
+    const el = planAreaRef.current;
+    if (!el) return;
+    const bucket = (w: number): ActionsLabelMode =>
+      w >= 800 ? 'full' : w >= 680 ? 'short' : 'icon';
+    setActionsLabelMode(bucket(el.getBoundingClientRect().width));
     const ro = new ResizeObserver(([entry]) => {
-      const w = entry.contentRect.width;
-      const next: ActionsLabelMode =
-        w >= 800 ? 'full' : w >= 680 ? 'short' : 'icon';
+      const next = bucket(entry.contentRect.width);
       setActionsLabelMode((prev) => (prev === next ? prev : next));
     });
-    ro.observe(planAreaRef.current);
+    ro.observe(el);
     return () => ro.disconnect();
   }, []);
   const [isApiMode, setIsApiMode] = useState(false);

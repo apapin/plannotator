@@ -35,7 +35,10 @@ import type { PlanDiffStats } from '../utils/planDiffEngine';
 // frame during a drag; without quantization the sticky bar would
 // re-render on every pixel. Hoisted to module scope so the effects
 // (which use [] deps) can't accidentally close over a stale instance.
-const snap = (n: number) => Math.round(n / 16) * 16;
+// Floor (not round) so wrapper undershoots and actions overshoots — both
+// errors push toward a more cautious layout, avoiding a one-bucket overlap
+// flash right at the 300/460 thresholds during a slow drag.
+const snap = (n: number) => Math.floor(n / 16) * 16;
 
 // Layout geometry — static tuning constants, hoisted alongside `snap`.
 // LEFT_OFFSET: matches the bar's `md:left-5` (20px).
@@ -138,6 +141,10 @@ export const StickyHeaderLane: React.FC<StickyHeaderLaneProps> = ({
   // unmounts/remounts (e.g., linked-doc toggle) instead of leaving the
   // observer attached to a detached node.
   useEffect(() => {
+    // Reset to the unmeasured state so the bar falls back to the safe
+    // "no maxWidth cap" path for the one frame between Viewer remounting
+    // and the new observer firing its first callback.
+    setActionsWidth(0);
     const el = document.querySelector<HTMLElement>('[data-sticky-actions]');
     if (!el) return;
     const ro = new ResizeObserver(([entry]) => {

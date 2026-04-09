@@ -34,18 +34,6 @@ Visit <https://plannotator.ai> for more info.
 
 Send mail to <hello@plannotator.ai>.
 
-### HTML Entities
-
-Trademark symbol: &trade;
-
-Copyright: &copy; 2024
-
-Non-breaking space between these&nbsp;words.
-
-Ampersand: AT&amp;T
-
-Less-than sign: 2 &lt; 3
-
 ### Link Reference Definitions
 
 Here is a [link to the docs][docs] and another [link to the repo][repo].

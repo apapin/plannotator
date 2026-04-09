@@ -25,7 +25,7 @@ interface ListMarkerProps {
   onToggle?: () => void;
 }
 
-const BULLET_BY_LEVEL = ['\u2022', '\u25E6', '\u25AA'];
+const BULLET_BY_LEVEL = ['\u2022', '\u2022', '\u2022'];
 
 export const ListMarker: React.FC<ListMarkerProps> = ({
   level,

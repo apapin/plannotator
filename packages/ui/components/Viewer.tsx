@@ -1020,7 +1020,7 @@ const BlockRenderer: React.FC<{
       const isInteractive = isCheckbox && !!onToggleCheckbox;
       return (
         <div
-          className="flex gap-3 my-1.5"
+          className="flex items-start gap-3 my-1.5"
           data-block-id={block.id}
           style={{ marginLeft: `${indent}rem` }}
         >

@@ -748,6 +748,24 @@ const InlineMarkdown: React.FC<{ text: string; onOpenLinkedDoc?: (path: string) 
       continue;
     }
 
+    // Autolinks: <https://url> or <email@domain.com>
+    match = remaining.match(/^<(https?:\/\/[^>]+)>/);
+    if (match) {
+      const url = match[1];
+      parts.push(<a key={key++} href={url} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2 hover:text-primary/80">{url}</a>);
+      remaining = remaining.slice(match[0].length);
+      previousChar = '>';
+      continue;
+    }
+    match = remaining.match(/^<([^@>\s]+@[^>\s]+)>/);
+    if (match) {
+      const email = match[1];
+      parts.push(<a key={key++} href={`mailto:${email}`} className="text-primary underline underline-offset-2 hover:text-primary/80">{email}</a>);
+      remaining = remaining.slice(match[0].length);
+      previousChar = '>';
+      continue;
+    }
+
     // Strikethrough: ~~text~~
     match = remaining.match(/^~~([\s\S]+?)~~/);
     if (match) {
@@ -933,7 +951,7 @@ const InlineMarkdown: React.FC<{ text: string; onOpenLinkedDoc?: (path: string) 
     }
 
     // Find next special character or consume one regular character
-    const nextSpecial = remaining.slice(1).search(/[\*_`\[!~\\]/);
+    const nextSpecial = remaining.slice(1).search(/[\*_`\[!~\\<]/);
     if (nextSpecial === -1) {
       parts.push(remaining);
       previousChar = remaining[remaining.length - 1] || previousChar;

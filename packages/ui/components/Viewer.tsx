@@ -739,8 +739,26 @@ const InlineMarkdown: React.FC<{ text: string; onOpenLinkedDoc?: (path: string) 
   let previousChar = '';
 
   while (remaining.length > 0) {
+    // Strikethrough: ~~text~~
+    let match = remaining.match(/^~~([\s\S]+?)~~/);
+    if (match) {
+      parts.push(<del key={key++}><InlineMarkdown imageBaseDir={imageBaseDir} onImageClick={onImageClick} text={match[1]} onOpenLinkedDoc={onOpenLinkedDoc} /></del>);
+      remaining = remaining.slice(match[0].length);
+      previousChar = match[0][match[0].length - 1] || previousChar;
+      continue;
+    }
+
+    // Bold + italic: ***text***
+    match = remaining.match(/^\*\*\*([\s\S]+?)\*\*\*/);
+    if (match) {
+      parts.push(<strong key={key++} className="font-semibold"><em><InlineMarkdown imageBaseDir={imageBaseDir} onImageClick={onImageClick} text={match[1]} onOpenLinkedDoc={onOpenLinkedDoc} /></em></strong>);
+      remaining = remaining.slice(match[0].length);
+      previousChar = match[0][match[0].length - 1] || previousChar;
+      continue;
+    }
+
     // Bold: **text** ([\s\S]+? allows matching across hard line breaks)
-    let match = remaining.match(/^\*\*([\s\S]+?)\*\*/);
+    match = remaining.match(/^\*\*([\s\S]+?)\*\*/);
     if (match) {
       parts.push(<strong key={key++} className="font-semibold"><InlineMarkdown imageBaseDir={imageBaseDir} onImageClick={onImageClick} text={match[1]} onOpenLinkedDoc={onOpenLinkedDoc} /></strong>);
       remaining = remaining.slice(match[0].length);
@@ -906,7 +924,7 @@ const InlineMarkdown: React.FC<{ text: string; onOpenLinkedDoc?: (path: string) 
     }
 
     // Find next special character or consume one regular character
-    const nextSpecial = remaining.slice(1).search(/[\*_`\[!]/);
+    const nextSpecial = remaining.slice(1).search(/[\*_`\[!~]/);
     if (nextSpecial === -1) {
       parts.push(remaining);
       previousChar = remaining[remaining.length - 1] || previousChar;

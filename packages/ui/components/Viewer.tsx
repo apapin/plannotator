@@ -739,8 +739,17 @@ const InlineMarkdown: React.FC<{ text: string; onOpenLinkedDoc?: (path: string) 
   let previousChar = '';
 
   while (remaining.length > 0) {
+    // Backslash escaping: \* \_ \` \[ \~ etc. — emit literal char, hide backslash
+    let match = remaining.match(/^\\([*_`\[\]~!\\])/);
+    if (match) {
+      parts.push(match[1]);
+      remaining = remaining.slice(2);
+      previousChar = match[1];
+      continue;
+    }
+
     // Strikethrough: ~~text~~
-    let match = remaining.match(/^~~([\s\S]+?)~~/);
+    match = remaining.match(/^~~([\s\S]+?)~~/);
     if (match) {
       parts.push(<del key={key++}><InlineMarkdown imageBaseDir={imageBaseDir} onImageClick={onImageClick} text={match[1]} onOpenLinkedDoc={onOpenLinkedDoc} /></del>);
       remaining = remaining.slice(match[0].length);
@@ -924,7 +933,7 @@ const InlineMarkdown: React.FC<{ text: string; onOpenLinkedDoc?: (path: string) 
     }
 
     // Find next special character or consume one regular character
-    const nextSpecial = remaining.slice(1).search(/[\*_`\[!~]/);
+    const nextSpecial = remaining.slice(1).search(/[\*_`\[!~\\]/);
     if (nextSpecial === -1) {
       parts.push(remaining);
       previousChar = remaining[remaining.length - 1] || previousChar;

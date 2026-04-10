@@ -909,6 +909,7 @@ const ReviewApp: React.FC = () => {
       const nextFiles = parseDiffToFiles(data.rawPatch);
       dockApi?.getPanel(REVIEW_DIFF_PANEL_ID)?.api.close();
       needsInitialDiffPanel.current = true;
+      setDiffData(prev => prev ? { ...prev, rawPatch: data.rawPatch, gitRef: data.gitRef, diffType: data.diffType } : prev);
       setFiles(nextFiles);
       setDiffType(data.diffType);
       setActiveFileIndex(0);

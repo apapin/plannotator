@@ -24,19 +24,15 @@ const OPTIONS: { value: DefaultDiffType; label: string; description: string }[] 
 ];
 
 interface DiffTypeSetupDialogProps {
-  isOpen: boolean;
   onComplete: () => void;
 }
 
 export const DiffTypeSetupDialog: React.FC<DiffTypeSetupDialogProps> = ({
-  isOpen,
   onComplete,
 }) => {
   const [selected, setSelected] = useState<DefaultDiffType>(
     () => configStore.get('defaultDiffType') as DefaultDiffType
   );
-
-  if (!isOpen) return null;
 
   const handleDone = () => {
     configStore.set('defaultDiffType', selected);

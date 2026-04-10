@@ -364,6 +364,7 @@ const ReviewApp: React.FC = () => {
     };
   });
   const [showAISetup, setShowAISetup] = useState(false);
+  const [aiCheckComplete, setAiCheckComplete] = useState(false);
   const [showDiffTypeSetup, setShowDiffTypeSetup] = useState(false);
   const [diffTypeSetupPending, setDiffTypeSetupPending] = useState(false);
   const [sidebarTabOverride, setSidebarTabOverride] = useState<'ai' | undefined>(undefined);
@@ -387,8 +388,9 @@ const ReviewApp: React.FC = () => {
             setShowAISetup(true);
           }
         }
+        setAiCheckComplete(true);
       })
-      .catch(() => {});
+      .catch(() => { setAiCheckComplete(true); });
   }, []);
 
   const handleAIConfigChange = useCallback((config: { providerId?: string | null; model?: string | null }) => {
@@ -667,7 +669,7 @@ const ReviewApp: React.FC = () => {
         if (data.error) setDiffError(data.error);
         if (data.isWSL) setIsWSL(true);
         // Mark diff type setup as pending on first run (local mode only)
-        if (data.diffType && !data.prMetadata && needsDiffTypeSetup()) {
+        if (data.diffType && !data.prMetadata && data.gitContext?.vcsType !== 'p4' && needsDiffTypeSetup()) {
           setDiffTypeSetupPending(true);
         }
       })
@@ -686,11 +688,11 @@ const ReviewApp: React.FC = () => {
 
   // Show diff type setup dialog only after AI setup dialog is dismissed (avoid stacking)
   useEffect(() => {
-    if (diffTypeSetupPending && !showAISetup) {
+    if (diffTypeSetupPending && aiCheckComplete && !showAISetup) {
       setDiffTypeSetupPending(false);
       setShowDiffTypeSetup(true);
     }
-  }, [diffTypeSetupPending, showAISetup]);
+  }, [diffTypeSetupPending, aiCheckComplete, showAISetup]);
 
   const handleDiffStyleChange = useCallback((style: 'split' | 'unified') => {
     configStore.set('diffStyle', style);
@@ -1924,10 +1926,11 @@ const ReviewApp: React.FC = () => {
         />
 
         {/* Diff type setup dialog — first-run only */}
-        <DiffTypeSetupDialog
-          isOpen={showDiffTypeSetup}
-          onComplete={() => setShowDiffTypeSetup(false)}
-        />
+        {showDiffTypeSetup && (
+          <DiffTypeSetupDialog
+            onComplete={() => setShowDiffTypeSetup(false)}
+          />
+        )}
 
         {/* Completion overlay - shown after approve/feedback/exit */}
         <CompletionOverlay

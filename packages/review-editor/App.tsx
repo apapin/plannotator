@@ -19,6 +19,8 @@ import { getAgentSwitchSettings, getEffectiveAgentName } from '@plannotator/ui/u
 import { getAIProviderSettings, saveAIProviderSettings, getPreferredModel } from '@plannotator/ui/utils/aiProvider';
 import { AISetupDialog } from '@plannotator/ui/components/AISetupDialog';
 import { needsAISetup } from '@plannotator/ui/utils/aiSetup';
+import { DiffTypeSetupDialog } from '@plannotator/ui/components/DiffTypeSetupDialog';
+import { needsDiffTypeSetup } from '@plannotator/ui/utils/diffTypeSetup';
 import { CodeAnnotation, CodeAnnotationType, SelectedLineRange, TokenAnnotationMeta, ConventionalLabel, ConventionalDecoration } from '@plannotator/ui/types';
 import { useResizablePanel } from '@plannotator/ui/hooks/useResizablePanel';
 import { useCodeAnnotationDraft } from '@plannotator/ui/hooks/useCodeAnnotationDraft';
@@ -362,6 +364,8 @@ const ReviewApp: React.FC = () => {
     };
   });
   const [showAISetup, setShowAISetup] = useState(false);
+  const [showDiffTypeSetup, setShowDiffTypeSetup] = useState(false);
+  const [diffTypeSetupPending, setDiffTypeSetupPending] = useState(false);
   const [sidebarTabOverride, setSidebarTabOverride] = useState<'ai' | undefined>(undefined);
   const aiChat = useAIChat({
     patch: diffData?.rawPatch ?? '',
@@ -662,6 +666,10 @@ const ReviewApp: React.FC = () => {
         }
         if (data.error) setDiffError(data.error);
         if (data.isWSL) setIsWSL(true);
+        // Mark diff type setup as pending on first run (local mode only)
+        if (data.diffType && !data.prMetadata && needsDiffTypeSetup()) {
+          setDiffTypeSetupPending(true);
+        }
       })
       .catch(() => {
         // Not in API mode - use demo content
@@ -675,6 +683,14 @@ const ReviewApp: React.FC = () => {
       })
       .finally(() => setIsLoading(false));
   }, []);
+
+  // Show diff type setup dialog only after AI setup dialog is dismissed (avoid stacking)
+  useEffect(() => {
+    if (diffTypeSetupPending && !showAISetup) {
+      setDiffTypeSetupPending(false);
+      setShowDiffTypeSetup(true);
+    }
+  }, [diffTypeSetupPending, showAISetup]);
 
   const handleDiffStyleChange = useCallback((style: 'split' | 'unified') => {
     configStore.set('diffStyle', style);
@@ -1905,6 +1921,12 @@ const ReviewApp: React.FC = () => {
             setShowAISetup(false);
             handleAIConfigChange({ providerId });
           }}
+        />
+
+        {/* Diff type setup dialog — first-run only */}
+        <DiffTypeSetupDialog
+          isOpen={showDiffTypeSetup}
+          onComplete={() => setShowDiffTypeSetup(false)}
         />
 
         {/* Completion overlay - shown after approve/feedback/exit */}

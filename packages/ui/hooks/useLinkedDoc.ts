@@ -124,7 +124,11 @@ export function useLinkedDoc(options: UseLinkedDocOptions): UseLinkedDocReturn {
             selectedAnnotationId,
             globalAttachments: [...globalAttachments],
           };
-          setDocAnnotationCount(annotations.length + globalAttachments.length);
+          let total = annotations.length + globalAttachments.length;
+          for (const cached of docCache.current.values()) {
+            total += cached.annotations.length + cached.globalAttachments.length;
+          }
+          setDocAnnotationCount(total);
         } else if (linkedDoc) {
           // Already viewing a linked doc — cache its annotations before moving on
           docCache.current.set(linkedDoc.filepath, {
@@ -235,8 +239,8 @@ export function useLinkedDoc(options: UseLinkedDocOptions): UseLinkedDocReturn {
     // Include stashed original-file annotations when viewing a linked doc
     if (linkedDoc && savedPlanState.current && sourceFilePath) {
       result.set(sourceFilePath, {
-        annotations: savedPlanState.current.annotations,
-        globalAttachments: savedPlanState.current.globalAttachments,
+        annotations: [...savedPlanState.current.annotations],
+        globalAttachments: [...savedPlanState.current.globalAttachments],
       });
     }
     if (linkedDoc) {

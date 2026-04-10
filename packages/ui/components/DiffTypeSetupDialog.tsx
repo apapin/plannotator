@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
+import type { DefaultDiffType } from '@plannotator/shared/config';
 import { markDiffTypeSetupDone } from '../utils/diffTypeSetup';
 import { configStore } from '../config';
-
-type DefaultDiffType = 'uncommitted' | 'unstaged' | 'staged';
 
 const OPTIONS: { value: DefaultDiffType; label: string; description: string }[] = [
   {
@@ -24,20 +23,20 @@ const OPTIONS: { value: DefaultDiffType; label: string; description: string }[] 
 ];
 
 interface DiffTypeSetupDialogProps {
-  onComplete: () => void;
+  onComplete: (selected: DefaultDiffType) => void;
 }
 
 export const DiffTypeSetupDialog: React.FC<DiffTypeSetupDialogProps> = ({
   onComplete,
 }) => {
   const [selected, setSelected] = useState<DefaultDiffType>(
-    () => configStore.get('defaultDiffType') as DefaultDiffType
+    () => configStore.get('defaultDiffType')
   );
 
   const handleDone = () => {
     configStore.set('defaultDiffType', selected);
     markDiffTypeSetupDone();
-    onComplete();
+    onComplete(selected);
   };
 
   return createPortal(

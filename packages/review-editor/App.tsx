@@ -1928,7 +1928,10 @@ const ReviewApp: React.FC = () => {
         {/* Diff type setup dialog — first-run only */}
         {showDiffTypeSetup && (
           <DiffTypeSetupDialog
-            onComplete={() => setShowDiffTypeSetup(false)}
+            onComplete={(selected) => {
+              setShowDiffTypeSetup(false);
+              if (selected !== diffType) handleDiffSwitch(selected);
+            }}
           />
         )}
 

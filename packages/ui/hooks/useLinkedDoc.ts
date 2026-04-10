@@ -125,7 +125,8 @@ export function useLinkedDoc(options: UseLinkedDocOptions): UseLinkedDocReturn {
             globalAttachments: [...globalAttachments],
           };
           let total = annotations.length + globalAttachments.length;
-          for (const cached of docCache.current.values()) {
+          for (const [fp, cached] of docCache.current.entries()) {
+            if (fp === data.filepath!) continue; // destination becomes active — don't double-count
             total += cached.annotations.length + cached.globalAttachments.length;
           }
           setDocAnnotationCount(total);
@@ -136,7 +137,8 @@ export function useLinkedDoc(options: UseLinkedDocOptions): UseLinkedDocReturn {
             globalAttachments: [...globalAttachments],
           });
           let total = 0;
-          for (const cached of docCache.current.values()) {
+          for (const [fp, cached] of docCache.current.entries()) {
+            if (fp === data.filepath!) continue; // destination becomes active — don't double-count
             total += cached.annotations.length + cached.globalAttachments.length;
           }
           if (savedPlanState.current) {

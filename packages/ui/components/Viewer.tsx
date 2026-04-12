@@ -907,11 +907,11 @@ const InlineMarkdown: React.FC<{ text: string; onOpenLinkedDoc?: (path: string) 
         continue;
       }
 
-      const isLocalMd = /\.md(x?)$/i.test(linkUrl) &&
+      const isLocalDoc = /\.(mdx?|html?)$/i.test(linkUrl) &&
         !linkUrl.startsWith('http://') &&
         !linkUrl.startsWith('https://');
 
-      if (isLocalMd && onOpenLinkedDoc) {
+      if (isLocalDoc && onOpenLinkedDoc) {
         parts.push(
           <a
             key={key++}
@@ -929,7 +929,7 @@ const InlineMarkdown: React.FC<{ text: string; onOpenLinkedDoc?: (path: string) 
             </svg>
           </a>
         );
-      } else if (isLocalMd) {
+      } else if (isLocalDoc) {
         // No handler — render as plain link (e.g., in shared/portal views)
         parts.push(
           <a

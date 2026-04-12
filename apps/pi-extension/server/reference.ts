@@ -64,10 +64,6 @@ export function handleDocRequest(res: Res, url: URL): void {
 		/\.(mdx?|html?)$/i.test(requestedPath)
 	) {
 		const fromBase = resolvePath(base, requestedPath);
-		if (/\.html?$/i.test(requestedPath) && !isWithinProjectRoot(fromBase, process.cwd())) {
-			json(res, { error: "Access denied: path is outside project root" }, 403);
-			return;
-		}
 		try {
 			if (existsSync(fromBase)) {
 				const raw = readFileSync(fromBase, "utf-8");

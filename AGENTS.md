@@ -157,7 +157,7 @@ Approve → "LGTM" sent to agent session
 User runs /plannotator-annotate <file.md | file.html | https://... | folder/>
         ↓
 Claude Code: plannotator annotate subcommand runs
-Pi: event handler intercepts command (OpenCode: not yet implemented)
+OpenCode/Pi: event handler intercepts command
         ↓
 Input type detected:
   .md/.mdx   → file read from disk

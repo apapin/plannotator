@@ -11,5 +11,6 @@
     "moduleDetection": "force",
     "types": ["node"]
   },
+  "include": ["**/*.ts", "declarations.d.ts"],
   "exclude": ["**/*.test.ts"]
 }

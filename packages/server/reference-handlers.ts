@@ -31,6 +31,9 @@ export async function handleDoc(req: Request): Promise<Response> {
 		/\.(mdx?|html?)$/i.test(requestedPath)
 	) {
 		const fromBase = resolve(base, requestedPath);
+		if (/\.html?$/i.test(requestedPath) && !isWithinProjectRoot(fromBase, process.cwd())) {
+			return Response.json({ error: "Access denied: path is outside project root" }, { status: 403 });
+		}
 		try {
 			const file = Bun.file(fromBase);
 			if (await file.exists()) {

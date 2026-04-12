@@ -68,7 +68,7 @@ function createTurndownService(): TurndownService {
 /** Wrap cell content in pipe-table delimiters. */
 function cell(content: string, node: HTMLElement): string {
   const parent = node.parentNode as HTMLElement | null;
-  const siblings = parent?.children || parent?.childNodes;
+  const siblings = parent?.children;
   const idx = siblings ? Array.prototype.indexOf.call(siblings, node) : 0;
   return (idx === 0 ? "| " : " ") + content + " |";
 }

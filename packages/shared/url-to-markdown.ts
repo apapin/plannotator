@@ -20,7 +20,7 @@ export interface UrlToMarkdownResult {
 const FETCH_TIMEOUT_MS = 30_000;
 
 /** Skip Jina for local/private URLs — fetch them directly instead. */
-const PRIVATE_IPV4 = /^(10\.\d{1,3}|192\.168|172\.(1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}$/;
+const PRIVATE_IPV4 = /^(10\.\d{1,3}|192\.168|172\.(1[6-9]|2\d|3[01])|169\.254)\.\d{1,3}\.\d{1,3}$/;
 function isLocalUrl(url: string): boolean {
   try {
     const { hostname } = new URL(url);
@@ -28,7 +28,6 @@ function isLocalUrl(url: string): boolean {
       hostname === "localhost" ||
       hostname === "127.0.0.1" ||
       hostname === "::1" ||
-      hostname === "[::1]" ||
       hostname === "0.0.0.0" ||
       hostname.endsWith(".local") ||
       PRIVATE_IPV4.test(hostname)

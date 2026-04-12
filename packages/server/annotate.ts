@@ -176,9 +176,10 @@ export async function startAnnotateServer(
           }
 
           // API: Serve a linked markdown document
-          // Inject source file's directory as base for relative path resolution
+          // Inject source file's directory as base for relative path resolution.
+          // Skip base injection for URL annotations — there's no local directory to resolve against.
           if (url.pathname === "/api/doc" && req.method === "GET") {
-            if (!url.searchParams.has("base")) {
+            if (!url.searchParams.has("base") && !/^https?:\/\//i.test(filePath)) {
               const docUrl = new URL(req.url);
               docUrl.searchParams.set("base", dirname(filePath));
               return handleDoc(new Request(docUrl.toString()));

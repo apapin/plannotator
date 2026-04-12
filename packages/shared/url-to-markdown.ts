@@ -93,8 +93,12 @@ export async function urlToMarkdown(
 /** Read response body with a size limit. Throws if the body exceeds MAX_BODY_BYTES. */
 async function readBodyWithLimit(res: Response): Promise<string> {
   const contentLength = res.headers.get("content-length");
-  if (contentLength && parseInt(contentLength, 10) > MAX_BODY_BYTES) {
-    throw new Error(`Response too large (${Math.round(parseInt(contentLength, 10) / 1024 / 1024)}MB, max 10MB)`);
+  if (contentLength) {
+    const bytes = parseInt(contentLength, 10);
+    if (bytes > MAX_BODY_BYTES) {
+      res.body?.cancel();
+      throw new Error(`Response too large (${Math.round(bytes / 1024 / 1024)}MB, max 10MB)`);
+    }
   }
   const reader = res.body?.getReader();
   if (!reader) {
@@ -200,6 +204,7 @@ async function fetchViaTurndown(url: string): Promise<string> {
       !contentType.includes("application/xhtml+xml") &&
       !contentType.includes("text/plain")
     ) {
+      res.body?.cancel();
       throw new Error(
         `Not an HTML page (content-type: ${contentType})`,
       );

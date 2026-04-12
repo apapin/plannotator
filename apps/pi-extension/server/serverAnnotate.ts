@@ -111,8 +111,9 @@ export async function startAnnotateServer(options: {
 		} else if (url.pathname === "/api/draft") {
 			await handleDraftRequest(req, res, draftKey);
 		} else if (url.pathname === "/api/doc" && req.method === "GET") {
-			// Inject source file's directory as base for relative path resolution
-			if (!url.searchParams.has("base") && options.filePath) {
+			// Inject source file's directory as base for relative path resolution.
+			// Skip for URL annotations — there's no local directory to resolve against.
+			if (!url.searchParams.has("base") && options.filePath && !/^https?:\/\//i.test(options.filePath)) {
 				url.searchParams.set("base", dirname(resolvePath(options.filePath)));
 			}
 			handleDocRequest(res, url);

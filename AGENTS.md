@@ -253,7 +253,7 @@ During normal plan review, an Archive sidebar tab provides the same browsing via
 
 | Endpoint              | Method | Purpose                                    |
 | --------------------- | ------ | ------------------------------------------ |
-| `/api/plan`           | GET    | Returns `{ plan, origin, mode: "annotate", filePath }` |
+| `/api/plan`           | GET    | Returns `{ plan, origin, mode: "annotate", filePath, sourceInfo? }` |
 | `/api/feedback`       | POST   | Submit annotations (body: feedback, annotations) |
 | `/api/image`          | GET    | Serve image by path query param            |
 | `/api/upload`         | POST   | Upload image, returns `{ path, originalName }` |

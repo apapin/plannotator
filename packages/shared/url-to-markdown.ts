@@ -142,6 +142,7 @@ async function fetchViaJina(url: string): Promise<string> {
   try {
     const res = await fetch(jinaUrl, { headers, signal: controller.signal });
     if (!res.ok) {
+      res.body?.cancel();
       throw new Error(`HTTP ${res.status} ${res.statusText}`);
     }
     return await readBodyWithLimit(res);
@@ -186,9 +187,11 @@ async function fetchViaTurndown(url: string): Promise<string> {
     }
 
     if (REDIRECT_STATUSES.has(res.status)) {
+      res.body?.cancel();
       throw new Error("Too many redirects");
     }
     if (!res.ok) {
+      res.body?.cancel();
       throw new Error(`HTTP ${res.status} ${res.statusText}`);
     }
     const contentType = res.headers.get("content-type") || "";

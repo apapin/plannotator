@@ -6,6 +6,7 @@
  */
 
 import TurndownService from "turndown";
+// @ts-expect-error — @joplin/turndown-plugin-gfm ships JS only, no .d.ts (see declarations.d.ts for local types)
 import { gfm } from "@joplin/turndown-plugin-gfm";
 
 const td = new TurndownService({

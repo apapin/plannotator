@@ -56,7 +56,11 @@ export function handleDocRequest(res: Res, url: URL): void {
 		return;
 	}
 
-	// Try resolving relative to base directory first (used by annotate mode)
+	// Try resolving relative to base directory first (used by annotate mode).
+	// No isWithinProjectRoot check here — intentional, matches pre-existing
+	// markdown behavior. The base param is set server-side by the annotate
+	// server (see serverAnnotate.ts /api/doc route). The standalone HTML
+	// block below (no base) retains its cwd-based containment check.
 	const base = url.searchParams.get("base");
 	if (
 		base &&

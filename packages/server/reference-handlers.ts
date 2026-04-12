@@ -23,7 +23,11 @@ export async function handleDoc(req: Request): Promise<Response> {
 	}
 
 	// If a base directory is provided, try resolving relative to it first
-	// (used by annotate mode to resolve paths relative to the source file)
+	// (used by annotate mode to resolve paths relative to the source file).
+	// No isWithinProjectRoot check here — intentional, matches pre-existing
+	// markdown behavior. The base param is set server-side by the annotate
+	// server (see annotate.ts /api/doc route). The standalone HTML block
+	// below (no base) retains its cwd-based containment check.
 	const base = url.searchParams.get("base");
 	if (
 		base &&

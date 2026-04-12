@@ -20,7 +20,19 @@ export interface UrlToMarkdownResult {
 const FETCH_TIMEOUT_MS = 30_000;
 const MAX_BODY_BYTES = 10 * 1024 * 1024; // 10 MB — matches local HTML file guard
 
-/** Skip Jina for local/private URLs — fetch them directly instead. */
+/**
+ * Skip Jina for local/private URLs — fetch them directly instead.
+ *
+ * Note on IPv6: new URL("http://[::1]:3000").hostname returns "[::1]"
+ * WITH brackets in both Bun and Node (verified empirically). The WHATWG
+ * URL spec's hostname getter preserves brackets for IPv6. Both bracketed
+ * and unbracketed forms are checked defensively.
+ *
+ * Note on base-relative /api/doc: the base-relative block in handleDoc
+ * intentionally has no isWithinProjectRoot check for EITHER markdown or
+ * HTML — this matches the pre-existing markdown behavior. The standalone
+ * HTML block (no base param) retains its cwd-based containment check.
+ */
 const PRIVATE_IPV4 = /^(10\.\d{1,3}|192\.168|172\.(1[6-9]|2\d|3[01])|169\.254)\.\d{1,3}\.\d{1,3}$/;
 function isLocalUrl(url: string): boolean {
   try {
@@ -28,6 +40,7 @@ function isLocalUrl(url: string): boolean {
     return (
       hostname === "localhost" ||
       hostname === "::1" ||
+      hostname === "[::1]" ||
       hostname === "0.0.0.0" ||
       hostname.endsWith(".local") ||
       /^127\./.test(hostname) ||
@@ -71,7 +84,15 @@ async function readBodyWithLimit(res: Response): Promise<string> {
     throw new Error(`Response too large (${Math.round(parseInt(contentLength, 10) / 1024 / 1024)}MB, max 10MB)`);
   }
   const reader = res.body?.getReader();
-  if (!reader) return await res.text();
+  if (!reader) {
+    // Null body is rare (e.g. manually constructed Response). Still enforce
+    // the size limit via the text result length as a best-effort fallback.
+    const text = await res.text();
+    if (text.length > MAX_BODY_BYTES) {
+      throw new Error(`Response too large (>${Math.round(MAX_BODY_BYTES / 1024 / 1024)}MB, max 10MB)`);
+    }
+    return text;
+  }
 
   const chunks: Uint8Array[] = [];
   let totalBytes = 0;

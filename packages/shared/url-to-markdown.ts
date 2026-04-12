@@ -96,23 +96,42 @@ async function fetchViaJina(url: string): Promise<string> {
   }
 }
 
-/** Fetch raw HTML and convert via Turndown. */
+const MAX_REDIRECTS = 10;
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+
+/** Fetch raw HTML and convert via Turndown. Follows redirects manually to validate each hop. */
 async function fetchViaTurndown(url: string): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
   try {
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (compatible; Plannotator/1.0; +https://plannotator.ai)",
-        Accept: "text/html,application/xhtml+xml",
-      },
-      redirect: "follow",
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status} ${res.statusText}`);
+    let currentUrl = url;
+    let res: Response;
+
+    for (let i = 0; i <= MAX_REDIRECTS; i++) {
+      res = await fetch(currentUrl, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (compatible; Plannotator/1.0; +https://plannotator.ai)",
+          Accept: "text/html,application/xhtml+xml",
+        },
+        redirect: "manual",
+        signal: controller.signal,
+      });
+
+      if (!REDIRECT_STATUSES.has(res.status)) break;
+
+      const location = res.headers.get("location");
+      if (!location) break;
+
+      currentUrl = new URL(location, currentUrl).href;
+      if (isLocalUrl(currentUrl)) {
+        throw new Error(`Redirect to private/local URL blocked: ${currentUrl}`);
+      }
+    }
+
+    if (!res!.ok) {
+      throw new Error(`HTTP ${res!.status} ${res!.statusText}`);
     }
     const contentType = res.headers.get("content-type") || "";
     if (

@@ -750,8 +750,8 @@ const InlineMarkdown: React.FC<{ text: string; onOpenLinkedDoc?: (path: string) 
   let previousChar = '';
 
   while (remaining.length > 0) {
-    // Backslash escaping: \* \_ \` \[ \~ etc. — emit literal char, hide backslash
-    let match = remaining.match(/^\\([*_`\[\]~!\\])/);
+    // Backslash escaping: \. \* \_ \` \[ \~ etc. — emit literal char, hide backslash
+    let match = remaining.match(/^\\([\\*_`\[\]~!.)\-#>+|{}&])/);
     if (match) {
       parts.push(match[1]);
       remaining = remaining.slice(2);

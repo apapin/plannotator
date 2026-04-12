@@ -24,7 +24,7 @@ import { loadConfig, resolveDefaultDiffType, resolveUseJina } from "@plannotator
 import { resolveMarkdownFile } from "@plannotator/shared/resolve-file";
 import { htmlToMarkdown } from "@plannotator/shared/html-to-markdown";
 import { urlToMarkdown } from "@plannotator/shared/url-to-markdown";
-import { existsSync, statSync } from "fs";
+import { statSync } from "fs";
 import path from "path";
 
 /** Shared dependencies injected by the plugin */
@@ -182,11 +182,13 @@ export async function handleAnnotateCommand(
 
     if (/\.html?$/i.test(resolvedArg)) {
       // HTML file annotation — convert to markdown via Turndown
-      if (!existsSync(resolvedArg)) {
+      let fileSize: number;
+      try {
+        fileSize = statSync(resolvedArg).size;
+      } catch {
         client.app.log({ level: "error", message: `File not found: ${filePath}` });
         return;
       }
-      const fileSize = statSync(resolvedArg).size;
       if (fileSize > 10 * 1024 * 1024) {
         client.app.log({ level: "error", message: `File too large (${Math.round(fileSize / 1024 / 1024)}MB, max 10MB)` });
         return;

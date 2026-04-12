@@ -14,7 +14,7 @@ export interface UrlToMarkdownOptions {
 
 export interface UrlToMarkdownResult {
   markdown: string;
-  source: "jina" | "fetch+turndown";
+  source: "jina" | "fetch+turndown" | "fetch-raw";
 }
 
 const FETCH_TIMEOUT_MS = 30_000;
@@ -75,6 +75,13 @@ export async function urlToMarkdown(
   url: string,
   options: UrlToMarkdownOptions,
 ): Promise<UrlToMarkdownResult> {
+  // URLs pointing to markdown files — fetch raw, no conversion needed
+  const urlPath = url.split("?")[0].split("#")[0];
+  if (/\.mdx?$/i.test(urlPath)) {
+    const text = await fetchRawText(url);
+    return { markdown: text, source: "fetch-raw" };
+  }
+
   if (options.useJina && !isLocalUrl(url)) {
     try {
       const markdown = await fetchViaJina(url);
@@ -124,6 +131,30 @@ async function readBodyWithLimit(res: Response): Promise<string> {
     chunks.push(value);
   }
   return new TextDecoder().decode(Buffer.concat(chunks));
+}
+
+/** Fetch a URL as raw text — for .md/.mdx URLs that are already markdown. */
+async function fetchRawText(url: string): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; Plannotator/1.0; +https://plannotator.ai)" },
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      res.body?.cancel();
+      throw new Error(`HTTP ${res.status} ${res.statusText}`);
+    }
+    return await readBodyWithLimit(res);
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error(`Timed out fetching ${url}`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Fetch via Jina Reader — returns markdown directly. */
@@ -201,8 +232,7 @@ async function fetchViaTurndown(url: string): Promise<string> {
     const contentType = res.headers.get("content-type") || "";
     if (
       !contentType.includes("text/html") &&
-      !contentType.includes("application/xhtml+xml") &&
-      !contentType.includes("text/plain")
+      !contentType.includes("application/xhtml+xml")
     ) {
       res.body?.cancel();
       throw new Error(

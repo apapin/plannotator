@@ -841,7 +841,7 @@ const InlineMarkdown: React.FC<{ text: string; onOpenLinkedDoc?: (path: string) 
     if (match) {
       const target = match[1].trim();
       const display = match[2]?.trim() || target;
-      const targetPath = /\.mdx?$/i.test(target) ? target : `${target}.md`;
+      const targetPath = /\.(mdx?|html?)$/i.test(target) ? target : `${target}.md`;
 
       if (onOpenLinkedDoc) {
         parts.push(

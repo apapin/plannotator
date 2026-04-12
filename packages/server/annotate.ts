@@ -48,6 +48,8 @@ export interface AnnotateServerOptions {
   shareBaseUrl?: string;
   /** Base URL of the paste service API for short URL sharing */
   pasteApiUrl?: string;
+  /** Source attribution: original URL or filename (e.g. "https://..." or "index.html") */
+  sourceInfo?: string;
   /** Called when server starts with the URL, remote status, and port */
   onReady?: (url: string, isRemote: boolean, port: number) => void;
 }
@@ -92,6 +94,7 @@ export async function startAnnotateServer(
     origin,
     mode = "annotate",
     folderPath,
+    sourceInfo,
     sharingEnabled = true,
     shareBaseUrl,
     pasteApiUrl,
@@ -140,6 +143,7 @@ export async function startAnnotateServer(
               origin,
               mode,
               filePath,
+              sourceInfo,
               sharingEnabled,
               shareBaseUrl,
               pasteApiUrl,

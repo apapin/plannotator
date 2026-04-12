@@ -10,6 +10,7 @@ import { resolve } from "path";
 import { buildFileTree, FILE_BROWSER_EXCLUDED } from "@plannotator/shared/reference-common";
 import { detectObsidianVaults } from "./integrations";
 import { resolveMarkdownFile } from "@plannotator/shared/resolve-file";
+import { htmlToMarkdown } from "@plannotator/shared/html-to-markdown";
 
 // --- Route handlers ---
 
@@ -27,13 +28,14 @@ export async function handleDoc(req: Request): Promise<Response> {
 	if (
 		base &&
 		!requestedPath.startsWith("/") &&
-		/\.mdx?$/i.test(requestedPath)
+		/\.(mdx?|html?)$/i.test(requestedPath)
 	) {
 		const fromBase = resolve(base, requestedPath);
 		try {
 			const file = Bun.file(fromBase);
 			if (await file.exists()) {
-				const markdown = await file.text();
+				const raw = await file.text();
+				const markdown = /\.html?$/i.test(requestedPath) ? htmlToMarkdown(raw) : raw;
 				return Response.json({ markdown, filepath: fromBase });
 			}
 		} catch {
@@ -41,7 +43,21 @@ export async function handleDoc(req: Request): Promise<Response> {
 		}
 	}
 
+	// HTML files: resolve directly (not via resolveMarkdownFile which only handles .md/.mdx)
 	const projectRoot = process.cwd();
+	if (/\.html?$/i.test(requestedPath)) {
+		const resolvedHtml = resolve(base || projectRoot, requestedPath);
+		try {
+			const file = Bun.file(resolvedHtml);
+			if (await file.exists()) {
+				const html = await file.text();
+				const markdown = htmlToMarkdown(html);
+				return Response.json({ markdown, filepath: resolvedHtml });
+			}
+		} catch { /* fall through */ }
+		return Response.json({ error: `File not found: ${requestedPath}` }, { status: 404 });
+	}
+
 	const result = resolveMarkdownFile(requestedPath, projectRoot);
 
 	if (result.kind === "ambiguous") {
@@ -203,7 +219,7 @@ export async function handleFileBrowserFiles(req: Request): Promise<Response> {
 	}
 
 	try {
-		const glob = new Bun.Glob("**/*.{md,mdx}");
+		const glob = new Bun.Glob("**/*.{md,mdx,html,htm}");
 		const files: string[] = [];
 		for await (const match of glob.scan({
 			cwd: resolvedDir,

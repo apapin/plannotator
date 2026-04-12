@@ -411,8 +411,8 @@ export default function plannotator(pi: ExtensionAPI): void {
 			let mode: "annotate" | "annotate-folder" | undefined;
 
 			if (isFolder) {
-				if (!hasMarkdownFiles(absolutePath, FILE_BROWSER_EXCLUDED)) {
-					ctx.ui.notify(`No markdown files found in ${absolutePath}`, "error");
+				if (!hasMarkdownFiles(absolutePath, FILE_BROWSER_EXCLUDED, /\.(mdx?|html?)$/i)) {
+					ctx.ui.notify(`No markdown or HTML files found in ${absolutePath}`, "error");
 					return;
 				}
 				markdown = "";

@@ -23,18 +23,23 @@ const MAX_BODY_BYTES = 10 * 1024 * 1024; // 10 MB — matches local HTML file gu
 /**
  * Skip Jina for local/private URLs — fetch them directly instead.
  *
- * Handles both plain IPv4 and IPv4-mapped IPv6 representations.
- * new URL("http://[::ffff:192.168.0.1]/").hostname returns "[::ffff:c0a8:1]"
- * (hex-encoded, bracketed). We extract the embedded IPv4 from ::ffff: mapped
- * addresses and re-check against the private range regex.
+ * IMPORTANT — IPv6 hostname format (verified empirically in Bun 1.3.11 and Node 22):
+ * The WHATWG URL `hostname` getter returns IPv6 addresses WITH brackets.
+ * This is why PRIVATE_IPV6 uses `^\[` — it matches the actual runtime output.
  *
- * IPv6 hostnames: new URL("http://[::1]:3000").hostname returns "[::1]"
- * WITH brackets in both Bun and Node (verified empirically). Both bracketed
- * and unbracketed forms are checked.
+ * Verified outputs (both Bun and Node return identical results):
+ *   new URL("http://[::1]:3000/").hostname          → "[::1]"
+ *   new URL("http://[fe80::1]/").hostname            → "[fe80::1]"
+ *   new URL("http://[fc00::1]/").hostname            → "[fc00::1]"
+ *   new URL("http://[fd12::1]/").hostname            → "[fd12::1]"
+ *   new URL("http://[::ffff:192.168.0.1]/").hostname → "[::ffff:c0a8:1]"
+ *   new URL("http://[::ffff:169.254.169.254]/").hostname → "[::ffff:a9fe:a9fe]"
+ *
+ * The unbracketed "::1" check (line below) covers the edge case defensively.
  */
 const PRIVATE_IPV4 = /^(10\.\d{1,3}|192\.168|172\.(1[6-9]|2\d|3[01])|169\.254)\.\d{1,3}\.\d{1,3}$/;
-// IPv6 private/reserved prefixes (bracketed, as returned by WHATWG URL hostname getter)
-// fc00::/7 = fc00:: through fdff::, so match [fc or [fd prefix
+// Bracketed IPv6 private/reserved prefixes (matches WHATWG URL hostname getter output).
+// fc00::/7 covers fc00:: through fdff::, so match [fc or [fd prefix.
 const PRIVATE_IPV6 = /^\[(::1|::ffff:|fe80:|fc[0-9a-f]{2}:|fd[0-9a-f]{2}:)/i;
 function isLocalUrl(url: string): boolean {
   try {

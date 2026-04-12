@@ -154,16 +154,20 @@ Approve → "LGTM" sent to agent session
 ## Annotate Flow
 
 ```
-User runs /plannotator-annotate <file.md> command
+User runs /plannotator-annotate <file.md | file.html | https://... | folder/>
         ↓
 Claude Code: plannotator annotate subcommand runs
-OpenCode: event handler intercepts command
+OpenCode/Pi: event handler intercepts command
         ↓
-Markdown file read from disk
+Input type detected:
+  .md/.mdx   → file read from disk
+  .html/.htm → file read, converted to markdown via Turndown
+  https://   → fetched via Jina Reader (default) or fetch+Turndown (--no-jina)
+  folder/    → file browser opened, files converted on demand
         ↓
 Annotate server starts (reuses plan editor HTML with mode:"annotate")
         ↓
-User annotates markdown, provides feedback
+User annotates content, provides feedback
         ↓
 Send Annotations → feedback sent to agent session
 ```

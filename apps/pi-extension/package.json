@@ -39,7 +39,8 @@
     "prepublishOnly": "cd ../.. && bun run build:pi"
   },
   "dependencies": {
-    "turndown": "^7.2.4"
+    "turndown": "^7.2.4",
+    "turndown-plugin-gfm": "^1.0.2"
   },
   "peerDependencies": {
     "@mariozechner/pi-coding-agent": ">=0.53.0"

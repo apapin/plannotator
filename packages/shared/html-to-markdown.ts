@@ -6,7 +6,6 @@
  */
 
 import TurndownService from "turndown";
-// @ts-expect-error — @joplin/turndown-plugin-gfm has no shipped type declarations
 import { gfm } from "@joplin/turndown-plugin-gfm";
 
 const td = new TurndownService({

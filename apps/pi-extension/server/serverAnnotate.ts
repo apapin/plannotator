@@ -42,6 +42,7 @@ export async function startAnnotateServer(options: {
 	sharingEnabled?: boolean;
 	shareBaseUrl?: string;
 	pasteApiUrl?: string;
+	sourceInfo?: string;
 }): Promise<AnnotateServerResult> {
 	const gitUser = detectGitUser();
 	const sharingEnabled =
@@ -83,6 +84,7 @@ export async function startAnnotateServer(options: {
 				origin: options.origin ?? "pi",
 				mode: options.mode || "annotate",
 				filePath: options.filePath,
+				sourceInfo: options.sourceInfo,
 				sharingEnabled,
 				shareBaseUrl,
 				pasteApiUrl,

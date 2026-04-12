@@ -22,11 +22,12 @@ import {
 	FILE_BROWSER_EXCLUDED,
 } from "../generated/reference-common.js";
 import { detectObsidianVaults } from "../generated/integrations-common.js";
-import { resolveMarkdownFile } from "../generated/resolve-file.js";
+import { resolveMarkdownFile, isWithinProjectRoot } from "../generated/resolve-file.js";
+import { htmlToMarkdown } from "../generated/html-to-markdown.js";
 
 type Res = ServerResponse;
 
-/** Recursively walk a directory collecting markdown files, skipping ignored dirs. */
+/** Recursively walk a directory collecting markdown and HTML files, skipping ignored dirs. */
 function walkMarkdownFiles(dir: string, root: string, results: string[]): void {
 	let entries: Dirent[];
 	try {
@@ -38,7 +39,7 @@ function walkMarkdownFiles(dir: string, root: string, results: string[]): void {
 		if (entry.isDirectory()) {
 			if (FILE_BROWSER_EXCLUDED.includes(entry.name + "/")) continue;
 			walkMarkdownFiles(join(dir, entry.name), root, results);
-		} else if (entry.isFile() && /\.mdx?$/i.test(entry.name)) {
+		} else if (entry.isFile() && /\.(mdx?|html?)$/i.test(entry.name)) {
 			const relative = join(dir, entry.name)
 				.slice(root.length + 1)
 				.replace(/\\/g, "/");
@@ -60,12 +61,13 @@ export function handleDocRequest(res: Res, url: URL): void {
 	if (
 		base &&
 		!requestedPath.startsWith("/") &&
-		/\.mdx?$/i.test(requestedPath)
+		/\.(mdx?|html?)$/i.test(requestedPath)
 	) {
 		const fromBase = resolvePath(base, requestedPath);
 		try {
 			if (existsSync(fromBase)) {
-				const markdown = readFileSync(fromBase, "utf-8");
+				const raw = readFileSync(fromBase, "utf-8");
+				const markdown = /\.html?$/i.test(requestedPath) ? htmlToMarkdown(raw) : raw;
 				json(res, { markdown, filepath: fromBase });
 				return;
 			}
@@ -74,7 +76,23 @@ export function handleDocRequest(res: Res, url: URL): void {
 		}
 	}
 
+	// HTML files: resolve directly (not via resolveMarkdownFile which only handles .md/.mdx)
 	const projectRoot = process.cwd();
+	if (/\.html?$/i.test(requestedPath)) {
+		const resolvedHtml = resolvePath(base || projectRoot, requestedPath);
+		if (!isWithinProjectRoot(resolvedHtml, projectRoot)) {
+			json(res, { error: "Access denied: path is outside project root" }, 403);
+			return;
+		}
+		if (existsSync(resolvedHtml)) {
+			const html = readFileSync(resolvedHtml, "utf-8");
+			json(res, { markdown: htmlToMarkdown(html), filepath: resolvedHtml });
+			return;
+		}
+		json(res, { error: `File not found: ${requestedPath}` }, 404);
+		return;
+	}
+
 	const result = resolveMarkdownFile(requestedPath, projectRoot);
 
 	if (result.kind === "ambiguous") {

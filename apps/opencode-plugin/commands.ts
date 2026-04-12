@@ -166,7 +166,7 @@ export async function handleAnnotateCommand(
 
   if (isUrl) {
     const useJina = resolveUseJina(false, loadConfig());
-    client.app.log({ level: "info", message: `Fetching: ${filePath}${useJina ? " (via Jina Reader)" : ""}...` });
+    client.app.log({ level: "info", message: `Fetching: ${filePath}${useJina ? " (via Jina Reader)" : " (via fetch+Turndown)"}...` });
     try {
       const result = await urlToMarkdown(filePath, { useJina });
       markdown = result.markdown;

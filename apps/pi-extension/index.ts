@@ -406,7 +406,7 @@ export default function plannotator(pi: ExtensionAPI): void {
 
 			if (isUrl) {
 				const useJina = resolveUseJina(false, loadConfig());
-				ctx.ui.notify(`Fetching: ${filePath}${useJina ? " (via Jina Reader)" : ""}...`, "info");
+				ctx.ui.notify(`Fetching: ${filePath}${useJina ? " (via Jina Reader)" : " (via fetch+Turndown)"}...`, "info");
 				try {
 					const result = await urlToMarkdown(filePath, { useJina });
 					markdown = result.markdown;

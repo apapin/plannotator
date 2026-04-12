@@ -27,10 +27,10 @@ function isLocalUrl(url: string): boolean {
     const { hostname } = new URL(url);
     return (
       hostname === "localhost" ||
-      hostname === "127.0.0.1" ||
       hostname === "::1" ||
       hostname === "0.0.0.0" ||
       hostname.endsWith(".local") ||
+      /^127\./.test(hostname) ||
       PRIVATE_IPV4.test(hostname)
     );
   } catch {
@@ -147,6 +147,7 @@ async function fetchViaTurndown(url: string): Promise<string> {
       if (isLocalUrl(currentUrl)) {
         throw new Error(`Redirect to private/local URL blocked: ${currentUrl}`);
       }
+      res.body?.cancel();
       res = await fetch(currentUrl, { headers, redirect: "manual", signal: controller.signal });
     }
 

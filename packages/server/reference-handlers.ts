@@ -9,7 +9,7 @@ import { existsSync, statSync } from "fs";
 import { resolve } from "path";
 import { buildFileTree, FILE_BROWSER_EXCLUDED } from "@plannotator/shared/reference-common";
 import { detectObsidianVaults } from "./integrations";
-import { resolveMarkdownFile } from "@plannotator/shared/resolve-file";
+import { resolveMarkdownFile, isWithinProjectRoot } from "@plannotator/shared/resolve-file";
 import { htmlToMarkdown } from "@plannotator/shared/html-to-markdown";
 
 // --- Route handlers ---
@@ -47,6 +47,9 @@ export async function handleDoc(req: Request): Promise<Response> {
 	const projectRoot = process.cwd();
 	if (/\.html?$/i.test(requestedPath)) {
 		const resolvedHtml = resolve(base || projectRoot, requestedPath);
+		if (!isWithinProjectRoot(resolvedHtml, projectRoot)) {
+			return Response.json({ error: "Access denied: path is outside project root" }, { status: 403 });
+		}
 		try {
 			const file = Bun.file(resolvedHtml);
 			if (await file.exists()) {

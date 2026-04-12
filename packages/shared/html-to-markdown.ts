@@ -34,7 +34,7 @@ function createTurndownService(): TurndownService {
       let border = "";
       if (isFirstTHeadRow(node as HTMLElement)) {
         const el = node as HTMLElement;
-        const cols = el.children || el.childNodes;
+        const cols = el.children;
         for (let i = 0; i < cols.length; i++) {
           border += cell("---", cols[i] as HTMLElement);
         }

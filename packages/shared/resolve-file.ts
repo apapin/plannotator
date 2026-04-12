@@ -46,7 +46,7 @@ function normalizeComparablePath(input: string): string {
 	return stripTrailingSlashes(normalizeSeparators(resolve(input)));
 }
 
-function isWithinProjectRoot(candidate: string, projectRoot: string): boolean {
+export function isWithinProjectRoot(candidate: string, projectRoot: string): boolean {
 	const normalizedCandidate = normalizeComparablePath(candidate);
 	const normalizedProjectRoot = normalizeComparablePath(projectRoot);
 	return (

@@ -13,6 +13,7 @@
 import React from 'react';
 import { PlanDiffBadge } from './plan-diff/PlanDiffBadge';
 import type { PlanDiffStats } from '../utils/planDiffEngine';
+import { hostnameOrFallback } from '@plannotator/shared/project';
 
 export interface DocBadgesProps {
   layout: 'column' | 'row';
@@ -88,7 +89,7 @@ export const DocBadges: React.FC<DocBadgesProps> = ({
           title={sourceInfo}
         >
           {/^https?:\/\//i.test(sourceInfo)
-            ? (() => { try { return new URL(sourceInfo).hostname; } catch { return sourceInfo; } })()
+            ? hostnameOrFallback(sourceInfo)
             : sourceInfo}
         </span>
       )}

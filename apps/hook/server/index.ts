@@ -77,6 +77,7 @@ import { parseRemoteUrl } from "@plannotator/shared/repo";
 import { registerSession, unregisterSession, listSessions } from "@plannotator/server/sessions";
 import { openBrowser } from "@plannotator/server/browser";
 import { detectProjectName } from "@plannotator/server/project";
+import { hostnameOrFallback } from "@plannotator/shared/project";
 import { planDenyFeedback } from "@plannotator/shared/feedback-templates";
 import { readImprovementHook } from "@plannotator/shared/improvement-hooks";
 import type { Origin } from "@plannotator/shared/agents";
@@ -590,7 +591,7 @@ if (args[0] === "sessions") {
     startedAt: new Date().toISOString(),
     label: folderPath
       ? `annotate-${path.basename(folderPath)}`
-      : `annotate-${isUrl ? (() => { try { return new URL(absolutePath).hostname; } catch { return absolutePath; } })() : path.basename(absolutePath)}`,
+      : `annotate-${isUrl ? hostnameOrFallback(absolutePath) : path.basename(absolutePath)}`,
   });
 
   // Wait for user feedback

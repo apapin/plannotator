@@ -18,6 +18,7 @@ export interface UrlToMarkdownResult {
 }
 
 const FETCH_TIMEOUT_MS = 30_000;
+const MAX_BODY_BYTES = 10 * 1024 * 1024; // 10 MB — matches local HTML file guard
 
 /** Skip Jina for local/private URLs — fetch them directly instead. */
 const PRIVATE_IPV4 = /^(10\.\d{1,3}|192\.168|172\.(1[6-9]|2\d|3[01])|169\.254)\.\d{1,3}\.\d{1,3}$/;
@@ -63,6 +64,30 @@ export async function urlToMarkdown(
   return { markdown, source: "fetch+turndown" };
 }
 
+/** Read response body with a size limit. Throws if the body exceeds MAX_BODY_BYTES. */
+async function readBodyWithLimit(res: Response): Promise<string> {
+  const contentLength = res.headers.get("content-length");
+  if (contentLength && parseInt(contentLength, 10) > MAX_BODY_BYTES) {
+    throw new Error(`Response too large (${Math.round(parseInt(contentLength, 10) / 1024 / 1024)}MB, max 10MB)`);
+  }
+  const reader = res.body?.getReader();
+  if (!reader) return await res.text();
+
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    totalBytes += value.byteLength;
+    if (totalBytes > MAX_BODY_BYTES) {
+      reader.cancel();
+      throw new Error(`Response too large (>${Math.round(MAX_BODY_BYTES / 1024 / 1024)}MB, max 10MB)`);
+    }
+    chunks.push(value);
+  }
+  return new TextDecoder().decode(Buffer.concat(chunks));
+}
+
 /** Fetch via Jina Reader — returns markdown directly. */
 async function fetchViaJina(url: string): Promise<string> {
   // Strip fragment (never sent to server) and encode for Jina's path-based API
@@ -85,7 +110,7 @@ async function fetchViaJina(url: string): Promise<string> {
     if (!res.ok) {
       throw new Error(`HTTP ${res.status} ${res.statusText}`);
     }
-    return await res.text();
+    return await readBodyWithLimit(res);
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
       throw new Error("timed out");
@@ -125,6 +150,9 @@ async function fetchViaTurndown(url: string): Promise<string> {
       res = await fetch(currentUrl, { headers, redirect: "manual", signal: controller.signal });
     }
 
+    if (REDIRECT_STATUSES.has(res.status)) {
+      throw new Error("Too many redirects");
+    }
     if (!res.ok) {
       throw new Error(`HTTP ${res.status} ${res.statusText}`);
     }
@@ -138,7 +166,7 @@ async function fetchViaTurndown(url: string): Promise<string> {
         `Not an HTML page (content-type: ${contentType})`,
       );
     }
-    const html = await res.text();
+    const html = await readBodyWithLimit(res);
     return htmlToMarkdown(html);
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {

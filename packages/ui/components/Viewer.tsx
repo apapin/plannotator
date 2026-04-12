@@ -733,8 +733,8 @@ const ImageLightbox: React.FC<{ src: string; alt: string; onClose: () => void }>
   );
 };
 
-/** Block dangerous link protocols (javascript:, data:, vbscript:). Returns null for blocked URLs. */
-const DANGEROUS_PROTOCOL = /^\s*(javascript|data|vbscript)\s*:/i;
+/** Block dangerous link protocols (javascript:, data:, vbscript:, file:). Returns null for blocked URLs. */
+const DANGEROUS_PROTOCOL = /^\s*(javascript|data|vbscript|file)\s*:/i;
 function sanitizeLinkUrl(url: string): string | null {
   if (DANGEROUS_PROTOCOL.test(url)) return null;
   return url;

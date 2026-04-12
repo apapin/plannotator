@@ -104,23 +104,17 @@ async function fetchViaTurndown(url: string): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
+  const headers = {
+    "User-Agent":
+      "Mozilla/5.0 (compatible; Plannotator/1.0; +https://plannotator.ai)",
+    Accept: "text/html,application/xhtml+xml",
+  };
+
   try {
     let currentUrl = url;
-    let res: Response;
+    let res = await fetch(currentUrl, { headers, redirect: "manual", signal: controller.signal });
 
-    for (let i = 0; i <= MAX_REDIRECTS; i++) {
-      res = await fetch(currentUrl, {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (compatible; Plannotator/1.0; +https://plannotator.ai)",
-          Accept: "text/html,application/xhtml+xml",
-        },
-        redirect: "manual",
-        signal: controller.signal,
-      });
-
-      if (!REDIRECT_STATUSES.has(res.status)) break;
-
+    for (let i = 0; i < MAX_REDIRECTS && REDIRECT_STATUSES.has(res.status); i++) {
       const location = res.headers.get("location");
       if (!location) break;
 
@@ -128,10 +122,11 @@ async function fetchViaTurndown(url: string): Promise<string> {
       if (isLocalUrl(currentUrl)) {
         throw new Error(`Redirect to private/local URL blocked: ${currentUrl}`);
       }
+      res = await fetch(currentUrl, { headers, redirect: "manual", signal: controller.signal });
     }
 
-    if (!res!.ok) {
-      throw new Error(`HTTP ${res!.status} ${res!.statusText}`);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status} ${res.statusText}`);
     }
     const contentType = res.headers.get("content-type") || "";
     if (

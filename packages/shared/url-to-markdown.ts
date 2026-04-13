@@ -75,11 +75,15 @@ export async function urlToMarkdown(
   url: string,
   options: UrlToMarkdownOptions,
 ): Promise<UrlToMarkdownResult> {
-  // URLs pointing to markdown files — fetch raw, no conversion needed
+  // URLs pointing to markdown files — fetch raw if the server returns plain text.
+  // If the server returns HTML (e.g. GitHub's .md viewer), fall through to Jina/Turndown.
   const urlPath = url.split("?")[0].split("#")[0];
   if (/\.mdx?$/i.test(urlPath)) {
     const text = await fetchRawText(url);
-    return { markdown: text, source: "fetch-raw" };
+    if (text !== null) {
+      return { markdown: text, source: "fetch-raw" };
+    }
+    // Server returned HTML for this .md URL — fall through to normal conversion
   }
 
   if (options.useJina && !isLocalUrl(url)) {
@@ -133,8 +137,12 @@ async function readBodyWithLimit(res: Response): Promise<string> {
   return new TextDecoder().decode(Buffer.concat(chunks));
 }
 
-/** Fetch a URL as raw text — for .md/.mdx URLs that are already markdown. */
-async function fetchRawText(url: string): Promise<string> {
+/**
+ * Fetch a URL as raw text — for .md/.mdx URLs that are already markdown.
+ * Returns null if the server returns HTML (e.g. GitHub's viewer page for
+ * a .md file), signaling the caller to fall through to Jina/Turndown.
+ */
+async function fetchRawText(url: string): Promise<string | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
@@ -145,6 +153,13 @@ async function fetchRawText(url: string): Promise<string> {
     if (!res.ok) {
       res.body?.cancel();
       throw new Error(`HTTP ${res.status} ${res.statusText}`);
+    }
+    // If server returns HTML (e.g. GitHub's .md viewer), signal caller to
+    // fall through to Jina/Turndown instead of using raw content
+    const ct = res.headers.get("content-type") || "";
+    if (ct.includes("text/html") || ct.includes("application/xhtml+xml")) {
+      res.body?.cancel();
+      return null;
     }
     return await readBodyWithLimit(res);
   } catch (err) {

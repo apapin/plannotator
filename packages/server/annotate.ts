@@ -51,7 +51,7 @@ export interface AnnotateServerOptions {
   /** Source attribution: original URL or filename (e.g. "https://..." or "index.html") */
   sourceInfo?: string;
   /** Called when server starts with the URL, remote status, and port */
-  onReady?: (url: string, isRemote: boolean, port: number) => void;
+  onReady?: (url: string, isRemote: boolean, port: number) => void | Promise<void>;
 }
 
 export interface AnnotateServerResult {
@@ -306,7 +306,7 @@ export async function startAnnotateServer(
 
   // Notify caller that server is ready
   if (onReady) {
-    onReady(serverUrl, isRemote, port);
+    await onReady(serverUrl, isRemote, port);
   }
 
   return {

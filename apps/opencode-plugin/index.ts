@@ -39,15 +39,13 @@ if (_proto?.constructor && _proto.constructor !== Response && _proto.constructor
 }
 import {
   startPlannotatorServer,
-  handleServerReady,
+  openBrowser,
 } from "@plannotator/server";
 import {
   startReviewServer,
-  handleReviewServerReady,
 } from "@plannotator/server/review";
 import {
   startAnnotateServer,
-  handleAnnotateServerReady,
 } from "@plannotator/server/annotate";
 import {
   handleReviewCommand,
@@ -432,7 +430,10 @@ Do NOT proceed with implementation until your plan is approved.`);
             htmlContent: getPlanHtml(),
             opencodeClient: ctx.client,
             onReady: async (url, isRemote, port) => {
-              handleServerReady(url, isRemote, port);
+              const opened = await openBrowser(url, { isRemote });
+              if (!opened) {
+                console.error(`[Plannotator] Could not open browser. Visit: ${url}`);
+              }
             },
           });
 

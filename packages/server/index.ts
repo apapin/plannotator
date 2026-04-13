@@ -72,7 +72,7 @@ export interface ServerOptions {
   /** Base URL of the paste service API for short URL sharing */
   pasteApiUrl?: string;
   /** Called when server starts with the URL, remote status, and port */
-  onReady?: (url: string, isRemote: boolean, port: number) => void;
+  onReady?: (url: string, isRemote: boolean, port: number) => void | Promise<void>;
   /** OpenCode client for querying available agents (OpenCode only) */
   opencodeClient?: OpencodeClient;
   /** When set to "archive", server runs in read-only archive browser mode */
@@ -573,7 +573,7 @@ export async function startPlannotatorServer(
 
   // Notify caller that server is ready
   if (onReady) {
-    onReady(serverUrl, isRemote, port);
+    await onReady(serverUrl, isRemote, port);
   }
 
   return {

@@ -8,15 +8,13 @@
 
 import {
   startPlannotatorServer,
-  handleServerReady,
+  openBrowser,
 } from "@plannotator/server";
 import {
   startReviewServer,
-  handleReviewServerReady,
 } from "@plannotator/server/review";
 import {
   startAnnotateServer,
-  handleAnnotateServerReady,
 } from "@plannotator/server/annotate";
 import { getGitContext, runGitDiffWithContext } from "@plannotator/server/git";
 import { parsePRUrl, checkPRAuth, fetchPR, getCliName, getMRLabel, getMRNumberLabel, getDisplayRepo } from "@plannotator/server/pr";
@@ -103,7 +101,12 @@ export async function handleReviewCommand(
     shareBaseUrl: getShareBaseUrl(),
     htmlContent: reviewHtmlContent,
     opencodeClient: client,
-    onReady: handleReviewServerReady,
+    onReady: async (url, isRemote, port) => {
+      const opened = await openBrowser(url, { isRemote });
+      if (!opened) {
+        client.app.log({ level: "info", message: `Could not open browser. Visit: ${url}` });
+      }
+    },
   });
 
   const result = await server.waitForDecision();
@@ -229,7 +232,12 @@ export async function handleAnnotateCommand(
     sharingEnabled: await getSharingEnabled(),
     shareBaseUrl: getShareBaseUrl(),
     htmlContent,
-    onReady: handleAnnotateServerReady,
+    onReady: async (url, isRemote, port) => {
+      const opened = await openBrowser(url, { isRemote });
+      if (!opened) {
+        client.app.log({ level: "info", message: `Could not open browser. Visit: ${url}` });
+      }
+    },
   });
 
   const result = await server.waitForDecision();
@@ -318,7 +326,12 @@ export async function handleAnnotateLastCommand(
     sharingEnabled: await getSharingEnabled(),
     shareBaseUrl: getShareBaseUrl(),
     htmlContent,
-    onReady: handleAnnotateServerReady,
+    onReady: async (url, isRemote, port) => {
+      const opened = await openBrowser(url, { isRemote });
+      if (!opened) {
+        client.app.log({ level: "info", message: `Could not open browser. Visit: ${url}` });
+      }
+    },
   });
 
   const result = await server.waitForDecision();
@@ -347,7 +360,12 @@ export async function handleArchiveCommand(
     sharingEnabled: await getSharingEnabled(),
     shareBaseUrl: getShareBaseUrl(),
     htmlContent,
-    onReady: handleServerReady,
+    onReady: async (url, isRemote, port) => {
+      const opened = await openBrowser(url, { isRemote });
+      if (!opened) {
+        client.app.log({ level: "info", message: `Could not open browser. Visit: ${url}` });
+      }
+    },
   });
 
   if (server.waitForDone) {

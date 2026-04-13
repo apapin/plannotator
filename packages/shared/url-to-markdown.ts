@@ -141,15 +141,33 @@ async function readBodyWithLimit(res: Response): Promise<string> {
  * Fetch a URL as raw text — for .md/.mdx URLs that are already markdown.
  * Returns null if the server returns HTML (e.g. GitHub's viewer page for
  * a .md file), signaling the caller to fall through to Jina/Turndown.
+ *
+ * Uses redirect: "manual" with isLocalUrl validation on each hop —
+ * same SSRF protection as fetchViaTurndown.
  */
 async function fetchRawText(url: string): Promise<string | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const headers = { "User-Agent": "Mozilla/5.0 (compatible; Plannotator/1.0; +https://plannotator.ai)" };
   try {
-    const res = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; Plannotator/1.0; +https://plannotator.ai)" },
-      signal: controller.signal,
-    });
+    let currentUrl = url;
+    let res = await fetch(currentUrl, { headers, redirect: "manual", signal: controller.signal });
+
+    for (let i = 0; i < MAX_REDIRECTS && REDIRECT_STATUSES.has(res.status); i++) {
+      const location = res.headers.get("location");
+      if (!location) break;
+      currentUrl = new URL(location, currentUrl).href;
+      if (isLocalUrl(currentUrl)) {
+        throw new Error(`Redirect to private/local URL blocked: ${currentUrl}`);
+      }
+      res.body?.cancel();
+      res = await fetch(currentUrl, { headers, redirect: "manual", signal: controller.signal });
+    }
+
+    if (REDIRECT_STATUSES.has(res.status)) {
+      res.body?.cancel();
+      throw new Error("Too many redirects");
+    }
     if (!res.ok) {
       res.body?.cancel();
       throw new Error(`HTTP ${res.status} ${res.statusText}`);

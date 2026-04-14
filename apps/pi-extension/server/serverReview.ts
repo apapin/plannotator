@@ -6,7 +6,7 @@ import os from "node:os";
 import { Readable } from "node:stream";
 
 import { contentHash, deleteDraft } from "../generated/draft.js";
-import { saveConfig, detectGitUser, getServerConfig } from "../generated/config.js";
+import { saveConfig, detectGitUser, getServerConfig, isSafeCustomPath } from "../generated/config.js";
 
 export type {
 	DiffOption,
@@ -592,11 +592,18 @@ export async function startReviewServer(options: {
 			json(res, { error: "No file access available" }, 400);
 		} else if (url.pathname === "/api/config" && req.method === "POST") {
 			try {
-				const body = (await parseBody(req)) as { displayName?: string; diffOptions?: Record<string, unknown>; conventionalComments?: boolean };
+				const body = (await parseBody(req)) as { displayName?: string; diffOptions?: Record<string, unknown>; conventionalComments?: boolean; planSave?: { enabled?: boolean; customPath?: string | null; saveOnArrival?: boolean } };
 				const toSave: Record<string, unknown> = {};
 				if (body.displayName !== undefined) toSave.displayName = body.displayName;
 				if (body.diffOptions !== undefined) toSave.diffOptions = body.diffOptions;
 				if (body.conventionalComments !== undefined) toSave.conventionalComments = body.conventionalComments;
+				if (body.planSave !== undefined) {
+					if (body.planSave.customPath !== undefined && !isSafeCustomPath(body.planSave.customPath)) {
+						json(res, { error: "Invalid planSave.customPath" }, 400);
+						return;
+					}
+					toSave.planSave = body.planSave;
+				}
 				if (Object.keys(toSave).length > 0) saveConfig(toSave as Parameters<typeof saveConfig>[0]);
 				json(res, { ok: true });
 			} catch {

@@ -27,7 +27,7 @@ import { getBearSettings } from '@plannotator/ui/utils/bear';
 import { getOctarineSettings, isOctarineConfigured } from '@plannotator/ui/utils/octarine';
 import { getDefaultNotesApp } from '@plannotator/ui/utils/defaultNotesApp';
 import { getAgentSwitchSettings, getEffectiveAgentName } from '@plannotator/ui/utils/agentSwitch';
-import { getPlanSaveSettings } from '@plannotator/ui/utils/planSave';
+import { getPlanSaveSettings, type ServerPlanSave } from '@plannotator/ui/utils/planSave';
 import { getUIPreferences, type UIPreferences, type PlanWidth } from '@plannotator/ui/utils/uiPreferences';
 import { getEditorMode, saveEditorMode } from '@plannotator/ui/utils/editorMode';
 import { getInputMethod, saveInputMethod } from '@plannotator/ui/utils/inputMethod';
@@ -130,6 +130,7 @@ const App: React.FC = () => {
   const [isApiMode, setIsApiMode] = useState(false);
   const [origin, setOrigin] = useState<Origin | null>(null);
   const [gitUser, setGitUser] = useState<string | undefined>();
+  const [serverPlanSave, setServerPlanSave] = useState<ServerPlanSave | undefined>();
   const [isWSL, setIsWSL] = useState(false);
   const [globalAttachments, setGlobalAttachments] = useState<ImageAttachment[]>([]);
   const [annotateMode, setAnnotateMode] = useState(false);
@@ -227,6 +228,7 @@ const App: React.FC = () => {
   const archive = useArchive({
     markdown, viewerRef, linkedDocHook,
     setMarkdown, setAnnotations, setSelectedAnnotationId, setSubmitted,
+    serverPlanSave,
   });
 
   // Markdown file browser (also handles vault dirs via isVault flag)
@@ -526,16 +528,21 @@ const App: React.FC = () => {
         if (!res.ok) throw new Error('Not in API mode');
         return res.json();
       })
-      .then((data: { plan: string; origin?: Origin; mode?: 'annotate' | 'annotate-last' | 'annotate-folder' | 'archive'; filePath?: string; sourceInfo?: string; sharingEnabled?: boolean; shareBaseUrl?: string; pasteApiUrl?: string; repoInfo?: { display: string; branch?: string }; previousPlan?: string | null; versionInfo?: { version: number; totalVersions: number; project: string }; archivePlans?: ArchivedPlan[]; projectRoot?: string; isWSL?: boolean; serverConfig?: { displayName?: string; gitUser?: string } }) => {
+      .then((data: { plan: string; origin?: Origin; mode?: 'annotate' | 'annotate-last' | 'annotate-folder' | 'archive'; filePath?: string; sourceInfo?: string; sharingEnabled?: boolean; shareBaseUrl?: string; pasteApiUrl?: string; repoInfo?: { display: string; branch?: string }; previousPlan?: string | null; versionInfo?: { version: number; totalVersions: number; project: string }; archivePlans?: ArchivedPlan[]; projectRoot?: string; isWSL?: boolean; serverConfig?: { displayName?: string; gitUser?: string; planSave?: ServerPlanSave } }) => {
         // Initialize config store with server-provided values (config file > cookie > default)
         configStore.init(data.serverConfig);
         // gitUser drives the "Use git name" button in Settings; stays undefined (button hidden) when unavailable
         setGitUser(data.serverConfig?.gitUser);
+        // planSave is authoritative source for plan save preferences (config.json > cookie legacy)
+        setServerPlanSave(data.serverConfig?.planSave);
         if (data.mode === 'archive') {
-          // Archive mode: show first archived plan or clear demo content
+          // Archive mode: show first archived plan or clear demo content.
+          // /api/plan already delivered the archivePlans list and first plan
+          // content using the server-side customPath; don't call
+          // archive.fetchPlans() here — it would race with setServerPlanSave
+          // above and re-fetch against the default directory.
           setMarkdown(data.plan || '');
           if (data.archivePlans) archive.init(data.archivePlans);
-          archive.fetchPlans();
           setSharingEnabled(false);
           sidebar.open('archive');
         } else if (data.mode === 'annotate-folder') {
@@ -761,13 +768,13 @@ const App: React.FC = () => {
       const bearSettings = getBearSettings();
       const octarineSettings = getOctarineSettings();
       const agentSwitchSettings = getAgentSwitchSettings();
-      const planSaveSettings = getPlanSaveSettings();
+      const planSaveSettings = getPlanSaveSettings(serverPlanSave);
       const autoSaveResults = bearSettings.autoSave && autoSavePromiseRef.current
         ? await autoSavePromiseRef.current
         : autoSaveResultsRef.current;
 
       // Build request body - include integrations if enabled
-      const body: { obsidian?: object; bear?: object; octarine?: object; feedback?: string; agentSwitch?: string; planSave?: { enabled: boolean; customPath?: string }; permissionMode?: string } = {};
+      const body: { obsidian?: object; bear?: object; octarine?: object; feedback?: string; agentSwitch?: string; planSave?: { enabled: boolean; customPath: string | null }; permissionMode?: string } = {};
 
       // Include permission mode for Claude Code
       if (origin === 'claude-code') {
@@ -780,10 +787,12 @@ const App: React.FC = () => {
         body.agentSwitch = effectiveAgent;
       }
 
-      // Include plan save settings
+      // Include plan save settings. Always send customPath explicitly (string
+      // or null) — the server merges this over config, so omitting would let
+      // a stale config path survive when the user just cleared it.
       body.planSave = {
         enabled: planSaveSettings.enabled,
-        ...(planSaveSettings.customPath && { customPath: planSaveSettings.customPath }),
+        customPath: planSaveSettings.customPath,
       };
 
       const effectiveVaultPath = getEffectiveVaultPath(obsidianSettings);
@@ -837,15 +846,17 @@ const App: React.FC = () => {
   const handleDeny = async () => {
     setIsSubmitting(true);
     try {
-      const planSaveSettings = getPlanSaveSettings();
+      const planSaveSettings = getPlanSaveSettings(serverPlanSave);
       await fetch('/api/deny', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           feedback: annotationsOutput,
+          // Always send customPath explicitly (string or null) so a cleared
+          // path doesn't leave a stale config path winning the server merge.
           planSave: {
             enabled: planSaveSettings.enabled,
-            ...(planSaveSettings.customPath && { customPath: planSaveSettings.customPath }),
+            customPath: planSaveSettings.customPath,
           },
         })
       });
@@ -1400,6 +1411,8 @@ const App: React.FC = () => {
                 externalOpen={mobileSettingsOpen}
                 onExternalClose={() => setMobileSettingsOpen(false)}
                 gitUser={gitUser}
+                serverPlanSave={serverPlanSave}
+                onServerPlanSaveChange={setServerPlanSave}
               />
             </div>
 

@@ -35,6 +35,7 @@ import {
   getPlanSaveSettings,
   savePlanSaveSettings,
   type PlanSaveSettings,
+  type ServerPlanSave,
 } from '../utils/planSave';
 import {
   getUIPreferences,
@@ -86,6 +87,10 @@ interface SettingsProps {
   aiProviders?: Array<{ id: string; name: string; capabilities: Record<string, boolean> }>;
   /** Git user name from `git config user.name`, for quick identity set */
   gitUser?: string;
+  /** Plan save config from /api/plan serverConfig — authoritative source over legacy cookies */
+  serverPlanSave?: ServerPlanSave;
+  /** Notify the parent when the user changes plan-save settings, so App state stays in sync and approve/deny sees the latest values. */
+  onServerPlanSaveChange?: (updated: ServerPlanSave) => void;
 }
 
 // --- Review-mode Display tab (diff display options) ---
@@ -542,7 +547,7 @@ const CommentsTab: React.FC = () => {
   );
 };
 
-export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange, onIdentityChange, origin, mode = 'plan', onUIPreferencesChange, externalOpen, onExternalClose, aiProviders = [], gitUser }) => {
+export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange, onIdentityChange, origin, mode = 'plan', onUIPreferencesChange, externalOpen, onExternalClose, aiProviders = [], gitUser, serverPlanSave, onServerPlanSaveChange }) => {
   const [showDialog, setShowDialog] = useState(false);
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const [identity, setIdentity] = useState('');
@@ -625,7 +630,7 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
       setBear(getBearSettings());
       setOctarine(getOctarineSettings());
       setAgent(getAgentSwitchSettings());
-      setPlanSave(getPlanSaveSettings());
+      setPlanSave(getPlanSaveSettings(serverPlanSave));
       setUiPrefs(getUIPreferences());
       setPermissionMode(getPermissionModeSettings().mode);
       setAutoCloseDelayState(getAutoCloseDelay());
@@ -639,7 +644,7 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
         setAgentWarning(getAgentWarning());
       }
     }
-  }, [showDialog, availableAgents, origin, getAgentWarning]);
+  }, [showDialog, availableAgents, origin, getAgentWarning, serverPlanSave]);
 
   useEffect(() => {
     if (!showDialog) return;
@@ -726,6 +731,13 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
     const newSettings = { ...planSave, ...updates };
     setPlanSave(newSettings);
     savePlanSaveSettings(newSettings);
+    // Keep parent App state in sync so approve/deny and the archive browser
+    // pick up mid-session changes without waiting for a reload.
+    onServerPlanSaveChange?.({
+      ...serverPlanSave,
+      enabled: newSettings.enabled,
+      customPath: newSettings.customPath,
+    });
   };
 
   const handleUIPrefsChange = (updates: Partial<UIPreferences>) => {

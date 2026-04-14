@@ -10,7 +10,7 @@ import type { ArchivedPlan } from "@plannotator/shared/storage";
 import type { UseLinkedDocReturn } from "./useLinkedDoc";
 import type { ViewerHandle } from "../components/Viewer";
 import type { Annotation } from "../types";
-import { getPlanSaveSettings } from "../utils/planSave";
+import { getPlanSaveSettings, type ServerPlanSave } from "../utils/planSave";
 
 export interface UseArchiveOptions {
   markdown: string;
@@ -20,6 +20,8 @@ export interface UseArchiveOptions {
   setAnnotations: (anns: Annotation[]) => void;
   setSelectedAnnotationId: (id: string | null) => void;
   setSubmitted: (s: "approved" | "denied" | null) => void;
+  /** serverConfig.planSave delivered via /api/plan — source of truth for customPath */
+  serverPlanSave?: ServerPlanSave;
 }
 
 export interface UseArchiveReturn {
@@ -56,6 +58,7 @@ export function useArchive(options: UseArchiveOptions): UseArchiveReturn {
     setAnnotations,
     setSelectedAnnotationId,
     setSubmitted,
+    serverPlanSave,
   } = options;
 
   const [archiveMode, setArchiveMode] = useState(false);
@@ -64,7 +67,10 @@ export function useArchive(options: UseArchiveOptions): UseArchiveReturn {
   const [isLoading, setIsLoading] = useState(false);
   const hasFetched = useRef(false);
 
-  const customPath = useMemo(() => getPlanSaveSettings().customPath || undefined, []);
+  const customPath = useMemo(
+    () => getPlanSaveSettings(serverPlanSave).customPath || undefined,
+    [serverPlanSave],
+  );
 
   const currentInfo = useMemo(() => {
     if (!selectedFile) return null;
@@ -75,6 +81,10 @@ export function useArchive(options: UseArchiveOptions): UseArchiveReturn {
   const init = useCallback((archivePlans: ArchivedPlan[]) => {
     setArchiveMode(true);
     setPlans(archivePlans);
+    // /api/plan already returned the list using the server-side customPath,
+    // so block any later fetchPlans() call from re-requesting with a stale
+    // closure (would race with setServerPlanSave and clobber with defaults).
+    hasFetched.current = true;
     if (archivePlans.length > 0) {
       setSelectedFile(archivePlans[0].filename);
     }

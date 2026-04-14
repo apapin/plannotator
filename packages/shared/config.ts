@@ -31,6 +31,24 @@ export interface CCLabelConfig {
   blocking: boolean;
 }
 
+/**
+ * Plan save preferences. Controls whether plans are written to
+ * ~/.plannotator/plans/ (or a custom directory) both on arrival (server
+ * startup) and on approve/deny decisions.
+ *
+ * Migrated from browser cookies (`plannotator-save-enabled`,
+ * `plannotator-save-path`) to config.json so the server can honor user
+ * preferences during arrival save — before the UI has made any request.
+ */
+export interface PlanSaveConfig {
+  /** Master switch. When false, no decision snapshots are written. Default: true. */
+  enabled?: boolean;
+  /** Custom directory for plan saves. null/undefined = default ~/.plannotator/plans/. */
+  customPath?: string | null;
+  /** When true, writes plain {slug}.md on server startup. Default: true. */
+  saveOnArrival?: boolean;
+}
+
 export interface PlannotatorConfig {
   displayName?: string;
   diffOptions?: DiffOptions;
@@ -52,6 +70,8 @@ export interface PlannotatorConfig {
    * Set to false to always use plain fetch + Turndown.
    */
   jina?: boolean;
+  /** Plan save preferences (migrated from browser cookies). */
+  planSave?: PlanSaveConfig;
 }
 
 const CONFIG_DIR = join(homedir(), ".plannotator");
@@ -83,7 +103,15 @@ export function saveConfig(partial: Partial<PlannotatorConfig>): void {
     const mergedDiffOptions = (current.diffOptions || partial.diffOptions)
       ? { ...current.diffOptions, ...partial.diffOptions }
       : undefined;
-    const merged = { ...current, ...partial, diffOptions: mergedDiffOptions };
+    const mergedPlanSave = (current.planSave || partial.planSave)
+      ? { ...current.planSave, ...partial.planSave }
+      : undefined;
+    const merged = {
+      ...current,
+      ...partial,
+      diffOptions: mergedDiffOptions,
+      planSave: mergedPlanSave,
+    };
     mkdirSync(CONFIG_DIR, { recursive: true });
     writeFileSync(CONFIG_PATH, JSON.stringify(merged, null, 2) + "\n", "utf-8");
   } catch (e) {
@@ -114,6 +142,7 @@ export function getServerConfig(gitUser: string | null): {
   gitUser?: string;
   conventionalComments?: boolean;
   conventionalLabels?: CCLabelConfig[] | null;
+  planSave?: PlanSaveConfig;
 } {
   const cfg = loadConfig();
   return {
@@ -122,6 +151,7 @@ export function getServerConfig(gitUser: string | null): {
     gitUser: gitUser ?? undefined,
     ...(cfg.conventionalComments !== undefined && { conventionalComments: cfg.conventionalComments }),
     ...(cfg.conventionalLabels !== undefined && { conventionalLabels: cfg.conventionalLabels }),
+    ...(cfg.planSave !== undefined && { planSave: cfg.planSave }),
   };
 }
 
@@ -154,4 +184,55 @@ export function resolveUseJina(cliNoJina: boolean, config: PlannotatorConfig): b
 
   // Default: enabled
   return true;
+}
+
+function parseBoolEnv(value: string | undefined): boolean | undefined {
+  if (value === undefined) return undefined;
+  return value === "1" || value.toLowerCase() === "true";
+}
+
+/**
+ * Reject unsafe custom plan-save paths at the `/api/config` boundary.
+ *
+ * Rejects strings containing `..` path segments — defense-in-depth against a
+ * local process POSTing a traversal path that would later be read back via
+ * `loadConfig()` and used by the arrival save. The server binds to loopback
+ * by default so this is not a remote-reachable sink, but the two-step
+ * (write → restart → use) pattern warrants a boundary check.
+ *
+ * Returns true for `null` (reset to default) and for strings without `..`
+ * segments. Non-strings are rejected. Absolute paths and `~` are allowed —
+ * users can legitimately pick any directory they have write access to.
+ */
+export function isSafeCustomPath(value: unknown): value is string | null {
+  if (value === null) return true;
+  if (typeof value !== "string") return false;
+  const segments = value.replace(/\\/g, "/").split("/");
+  return !segments.some((s) => s === "..");
+}
+
+/**
+ * Resolve effective plan-save settings from config + environment.
+ *
+ * Priority (highest wins):
+ *   PLANNOTATOR_PLAN_SAVE / PLANNOTATOR_PLAN_SAVE_ON_ARRIVAL env vars
+ *     → config.json planSave.{enabled, customPath, saveOnArrival}
+ *       → defaults (enabled: true, customPath: null, saveOnArrival: true)
+ *
+ * customPath has no env var override (paths are too user-specific; config.json
+ * is the one source). Session-level overrides happen via the approve/deny
+ * request body, handled by the caller.
+ */
+export function resolvePlanSave(config: PlannotatorConfig): {
+  enabled: boolean;
+  customPath: string | null;
+  saveOnArrival: boolean;
+} {
+  const envEnabled = parseBoolEnv(process.env.PLANNOTATOR_PLAN_SAVE);
+  const envOnArrival = parseBoolEnv(process.env.PLANNOTATOR_PLAN_SAVE_ON_ARRIVAL);
+  return {
+    enabled: envEnabled ?? config.planSave?.enabled ?? true,
+    customPath: config.planSave?.customPath ?? null,
+    saveOnArrival: envOnArrival ?? config.planSave?.saveOnArrival ?? true,
+  };
 }

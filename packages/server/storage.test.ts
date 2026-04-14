@@ -8,7 +8,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { generateSlug, getPlanDir, savePlan, saveToHistory, getPlanVersion, getVersionCount, listVersions } from "./storage";
+import { generateSlug, getPlanDir, savePlan, saveFinalSnapshot, saveToHistory, getPlanVersion, getVersionCount, listVersions, listArchivedPlans } from "./storage";
 
 const tempDirs: string[] = [];
 
@@ -83,6 +83,26 @@ describe("savePlan", () => {
     const path = savePlan("test-slug", "# Content", dir);
     expect(path).toBe(join(dir, "test-slug.md"));
     expect(readFileSync(path, "utf-8")).toBe("# Content");
+  });
+
+  test("arrival-save {slug}.md coexists with -approved.md snapshot", () => {
+    // Simulates: server starts → savePlan (arrival) → user approves →
+    // saveFinalSnapshot (decision). Both files should exist side by side,
+    // and listArchivedPlans should return only the decision snapshot.
+    const dir = makeTempDir();
+    const slug = `coexist-${Date.now()}`;
+    const arrivalPath = savePlan(slug, "# Arrival", dir);
+    const approvedPath = saveFinalSnapshot(slug, "approved", "# Arrival", "feedback", dir);
+
+    expect(readFileSync(arrivalPath, "utf-8")).toBe("# Arrival");
+    expect(readFileSync(approvedPath, "utf-8")).toContain("# Arrival");
+    expect(readFileSync(approvedPath, "utf-8")).toContain("feedback");
+
+    const archived = listArchivedPlans(dir);
+    expect(archived.length).toBe(1);
+    expect(archived[0].status).toBe("approved");
+    // Plain {slug}.md should be invisible to archive listing
+    expect(archived.find(p => p.filename === `${slug}.md`)).toBeUndefined();
   });
 });
 

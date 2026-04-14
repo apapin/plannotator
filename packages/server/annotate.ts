@@ -18,7 +18,7 @@ import { handleImage, handleUpload, handleServerReady, handleDraftSave, handleDr
 import { handleDoc, handleFileBrowserFiles, handleObsidianVaults, handleObsidianFiles, handleObsidianDoc } from "./reference-handlers";
 import { contentHash, deleteDraft } from "./draft";
 import { createExternalAnnotationHandler } from "./external-annotations";
-import { saveConfig, detectGitUser, getServerConfig } from "./config";
+import { saveConfig, detectGitUser, getServerConfig, isSafeCustomPath } from "./config";
 import { dirname } from "path";
 import { isWSL } from "./browser";
 
@@ -158,12 +158,18 @@ export async function startAnnotateServer(
           // API: Update user config (write-back to ~/.plannotator/config.json)
           if (url.pathname === "/api/config" && req.method === "POST") {
             try {
-              const body = (await req.json()) as { displayName?: string; diffOptions?: Record<string, unknown>; conventionalComments?: boolean; conventionalLabels?: unknown[] | null };
+              const body = (await req.json()) as { displayName?: string; diffOptions?: Record<string, unknown>; conventionalComments?: boolean; conventionalLabels?: unknown[] | null; planSave?: { enabled?: boolean; customPath?: string | null; saveOnArrival?: boolean } };
               const toSave: Record<string, unknown> = {};
               if (body.displayName !== undefined) toSave.displayName = body.displayName;
               if (body.diffOptions !== undefined) toSave.diffOptions = body.diffOptions;
               if (body.conventionalComments !== undefined) toSave.conventionalComments = body.conventionalComments;
               if (body.conventionalLabels !== undefined) toSave.conventionalLabels = body.conventionalLabels;
+              if (body.planSave !== undefined) {
+                if (body.planSave.customPath !== undefined && !isSafeCustomPath(body.planSave.customPath)) {
+                  return Response.json({ error: "Invalid planSave.customPath" }, { status: 400 });
+                }
+                toSave.planSave = body.planSave;
+              }
               if (Object.keys(toSave).length > 0) saveConfig(toSave as Parameters<typeof saveConfig>[0]);
               return Response.json({ ok: true });
             } catch {

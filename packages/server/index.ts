@@ -38,7 +38,7 @@ import {
 } from "./storage";
 import { getRepoInfo } from "./repo";
 import { detectProjectName } from "./project";
-import { saveConfig, detectGitUser, getServerConfig } from "./config";
+import { loadConfig, saveConfig, detectGitUser, getServerConfig, resolvePlanSave, isSafeCustomPath, type PlanSaveConfig, type PlannotatorConfig } from "./config";
 import { handleImage, handleUpload, handleAgents, handleServerReady, handleDraftSave, handleDraftLoad, handleDraftDelete, handleFavicon, type OpencodeClient } from "./shared-handlers";
 import { contentHash, deleteDraft } from "./draft";
 import { handleDoc, handleObsidianVaults, handleObsidianFiles, handleObsidianDoc, handleFileBrowserFiles } from "./reference-handlers";
@@ -176,6 +176,20 @@ export async function startPlannotatorServer(
     project = (await detectProjectName()) ?? "_unknown";
     const historyResult = saveToHistory(project, slug, plan);
     currentPlanPath = historyResult.path;
+
+    // Arrival save: write a plain {slug}.md to ~/.plannotator/plans/ (or
+    // custom path) before the UI opens. Respects user preferences from
+    // config.json — not cookies — because no HTTP request has arrived yet.
+    // Wrapped in try/catch so filesystem errors never block server startup.
+    try {
+      const planSaveCfg = resolvePlanSave(loadConfig());
+      if (planSaveCfg.enabled && planSaveCfg.saveOnArrival) {
+        savePlan(slug, plan, planSaveCfg.customPath);
+      }
+    } catch (e) {
+      process.stderr.write(`[plannotator] Arrival save failed: ${e instanceof Error ? e.message : String(e)}\n`);
+    }
+
     previousPlan =
       historyResult.version > 1
         ? getPlanVersion(project, slug, historyResult.version - 1)
@@ -285,12 +299,18 @@ export async function startPlannotatorServer(
           // API: Update user config (write-back to ~/.plannotator/config.json)
           if (url.pathname === "/api/config" && req.method === "POST") {
             try {
-              const body = (await req.json()) as { displayName?: string; diffOptions?: Record<string, unknown>; conventionalComments?: boolean; conventionalLabels?: unknown[] | null };
+              const body = (await req.json()) as { displayName?: string; diffOptions?: Record<string, unknown>; conventionalComments?: boolean; conventionalLabels?: unknown[] | null; planSave?: PlanSaveConfig };
               const toSave: Record<string, unknown> = {};
               if (body.displayName !== undefined) toSave.displayName = body.displayName;
               if (body.diffOptions !== undefined) toSave.diffOptions = body.diffOptions;
               if (body.conventionalComments !== undefined) toSave.conventionalComments = body.conventionalComments;
               if (body.conventionalLabels !== undefined) toSave.conventionalLabels = body.conventionalLabels;
+              if (body.planSave !== undefined) {
+                if (body.planSave.customPath !== undefined && !isSafeCustomPath(body.planSave.customPath)) {
+                  return Response.json({ error: "Invalid planSave.customPath" }, { status: 400 });
+                }
+                toSave.planSave = body.planSave;
+              }
               if (Object.keys(toSave).length > 0) saveConfig(toSave as Parameters<typeof saveConfig>[0]);
               return Response.json({ ok: true });
             } catch {
@@ -414,44 +434,37 @@ export async function startPlannotatorServer(
 
           // API: Approve plan
           if (url.pathname === "/api/approve" && req.method === "POST") {
-            // Check for note integrations and optional feedback
-            let feedback: string | undefined;
-            let agentSwitch: string | undefined;
-            let requestedPermissionMode: string | undefined;
-            let planSaveEnabled = true; // default to enabled for backwards compat
-            let planSaveCustomPath: string | undefined;
+            // Parse body first so we can treat body.planSave as a config
+            // override feeding into resolvePlanSave. That keeps the precedence
+            // chain intact: env var > body > config.json > defaults. A client
+            // default payload can't silently re-enable saves when the operator
+            // set PLANNOTATOR_PLAN_SAVE=false.
+            let body: {
+              obsidian?: ObsidianConfig;
+              bear?: BearConfig;
+              octarine?: OctarineConfig;
+              feedback?: string;
+              agentSwitch?: string;
+              planSave?: { enabled: boolean; customPath?: string | null };
+              permissionMode?: string;
+            } = {};
             try {
-              const body = (await req.json().catch(() => ({}))) as {
-                obsidian?: ObsidianConfig;
-                bear?: BearConfig;
-                octarine?: OctarineConfig;
-                feedback?: string;
-                agentSwitch?: string;
-                planSave?: { enabled: boolean; customPath?: string };
-                permissionMode?: string;
-              };
+              body = (await req.json()) as typeof body;
+            } catch { /* empty body → use config/env defaults */ }
 
-              // Capture feedback if provided (for "approve with notes")
-              if (body.feedback) {
-                feedback = body.feedback;
-              }
+            const feedback = body.feedback;
+            const agentSwitch = body.agentSwitch;
+            const requestedPermissionMode = body.permissionMode;
 
-              // Capture agent switch setting for OpenCode
-              if (body.agentSwitch) {
-                agentSwitch = body.agentSwitch;
-              }
+            const cfg = loadConfig();
+            const effectiveCfg: PlannotatorConfig = body.planSave !== undefined
+              ? { ...cfg, planSave: { ...cfg.planSave, ...body.planSave } }
+              : cfg;
+            const planSaveResolved = resolvePlanSave(effectiveCfg);
+            const planSaveEnabled = planSaveResolved.enabled;
+            const planSaveCustomPath: string | undefined = planSaveResolved.customPath ?? undefined;
 
-              // Capture permission mode from client request (Claude Code)
-              if (body.permissionMode) {
-                requestedPermissionMode = body.permissionMode;
-              }
-
-              // Capture plan save settings
-              if (body.planSave !== undefined) {
-                planSaveEnabled = body.planSave.enabled;
-                planSaveCustomPath = body.planSave.customPath;
-              }
-
+            try {
               // Run integrations in parallel — they're independent
               const integrationResults: Record<string, IntegrationResult> = {};
               const integrationPromises: Promise<void>[] = [];
@@ -497,24 +510,23 @@ export async function startPlannotatorServer(
 
           // API: Deny with feedback
           if (url.pathname === "/api/deny" && req.method === "POST") {
-            let feedback = "Plan rejected by user";
-            let planSaveEnabled = true; // default to enabled for backwards compat
-            let planSaveCustomPath: string | undefined;
+            let body: {
+              feedback?: string;
+              planSave?: { enabled: boolean; customPath?: string | null };
+            } = {};
             try {
-              const body = (await req.json()) as {
-                feedback?: string;
-                planSave?: { enabled: boolean; customPath?: string };
-              };
-              feedback = body.feedback || feedback;
+              body = (await req.json()) as typeof body;
+            } catch { /* empty body */ }
+            const feedback = body.feedback || "Plan rejected by user";
 
-              // Capture plan save settings
-              if (body.planSave !== undefined) {
-                planSaveEnabled = body.planSave.enabled;
-                planSaveCustomPath = body.planSave.customPath;
-              }
-            } catch {
-              // Use default feedback
-            }
+            // See /api/approve for precedence rationale: env var > body > config.
+            const cfg = loadConfig();
+            const effectiveCfg: PlannotatorConfig = body.planSave !== undefined
+              ? { ...cfg, planSave: { ...cfg.planSave, ...body.planSave } }
+              : cfg;
+            const planSaveResolved = resolvePlanSave(effectiveCfg);
+            const planSaveEnabled = planSaveResolved.enabled;
+            const planSaveCustomPath: string | undefined = planSaveResolved.customPath ?? undefined;
 
             // Save annotations and final snapshot (if enabled)
             let savedPath: string | undefined;

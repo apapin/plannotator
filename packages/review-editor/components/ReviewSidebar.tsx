@@ -55,7 +55,7 @@ interface ReviewSidebarProps {
   // Agent props
   agentJobs?: AgentJobInfo[];
   agentCapabilities?: AgentCapabilities | null;
-  onAgentLaunch?: (params: { provider?: string; command?: string[]; label?: string }) => void;
+  onAgentLaunch?: (params: { provider?: string; command?: string[]; label?: string; engine?: string; model?: string }) => void;
   onAgentKillJob?: (id: string) => void;
   onAgentKillAll?: () => void;
   externalAnnotations?: Array<{ source?: string }>;

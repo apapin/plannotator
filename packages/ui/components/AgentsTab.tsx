@@ -6,7 +6,7 @@ import { ReviewAgentsIcon } from './ReviewAgentsIcon';
 interface AgentsTabProps {
   jobs: AgentJobInfo[];
   capabilities: AgentCapabilities | null;
-  onLaunch: (params: { provider?: string; command?: string[]; label?: string }) => void;
+  onLaunch: (params: { provider?: string; command?: string[]; label?: string; engine?: string; model?: string }) => void;
   onKillJob: (id: string) => void;
   onKillAll: () => void;
   externalAnnotations: Array<{ source?: string }>;
@@ -80,13 +80,21 @@ function StatusBadge({ status }: { status: AgentJobInfo['status'] }) {
 
 // --- Provider badge ---
 
-function ProviderBadge({ provider }: { provider: string }) {
-  const label =
-    provider === 'claude' ? 'Claude' :
-    provider === 'codex' ? 'Codex' :
-    'Shell';
+function ProviderBadge({ provider, engine, model }: { provider: string; engine?: string; model?: string }) {
+  let label: string;
+  if (provider === 'tour') {
+    const engineLabel = engine === 'codex' ? 'Codex' : 'Claude';
+    label = model && engine !== 'codex' ? `Tour · ${engineLabel} ${model.charAt(0).toUpperCase() + model.slice(1)}` : `Tour · ${engineLabel}`;
+  } else {
+    label =
+      provider === 'claude' ? 'Claude' :
+      provider === 'codex' ? 'Codex' :
+      'Shell';
+  }
   return (
-    <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+    <span className={`text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+      provider === 'tour' ? 'bg-accent/10 text-accent' : 'bg-muted text-muted-foreground'
+    }`}>
       {label}
     </span>
   );
@@ -122,7 +130,7 @@ function JobCard({
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <ProviderBadge provider={job.provider} />
+          <ProviderBadge provider={job.provider} engine={job.engine} model={job.model} />
           <span className="text-xs text-foreground/80 truncate">{job.label}</span>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -185,6 +193,8 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
 }) => {
   const [selectedProvider, setSelectedProvider] = useState<string>('');
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
+  const [tourEngine, setTourEngine] = useState<'claude' | 'codex'>('claude');
+  const [tourModel, setTourModel] = useState<string>('sonnet');
   const initializedRef = useRef(false);
 
   // Set default provider once capabilities load
@@ -195,6 +205,10 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
         setSelectedProvider(firstAvailable.id);
         initializedRef.current = true;
       }
+      // Default tour engine to first available CLI
+      const hasClaude = capabilities.providers.some((p) => p.id === 'claude' && p.available);
+      const hasCodex = capabilities.providers.some((p) => p.id === 'codex' && p.available);
+      if (!hasClaude && hasCodex) { setTourEngine('codex'); setTourModel(''); }
     }
   }, [capabilities]);
 
@@ -229,9 +243,24 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
     [jobs],
   );
 
+  // Detect which engines are available for tour config
+  const claudeAvailable = capabilities?.providers.some((p) => p.id === 'claude' && p.available) ?? false;
+  const codexAvailable = capabilities?.providers.some((p) => p.id === 'codex' && p.available) ?? false;
+
   const handleLaunch = () => {
     if (!selectedProvider) return;
     const provider = availableProviders.find((p) => p.id === selectedProvider);
+
+    if (selectedProvider === 'tour') {
+      onLaunch({
+        provider: 'tour',
+        label: 'Code Tour',
+        engine: tourEngine,
+        model: tourModel || undefined,
+      });
+      return;
+    }
+
     onLaunch({
       provider: selectedProvider,
       label: provider ? `${provider.name} Review` : selectedProvider,
@@ -269,6 +298,62 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
               Run
             </button>
           </div>
+
+          {/* Tour engine/model config — only shown when tour is selected */}
+          {selectedProvider === 'tour' && (
+            <div className="mt-2 space-y-1.5">
+              {/* Engine selector */}
+              {claudeAvailable && codexAvailable && (
+                <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                  <span className="font-medium">Engine</span>
+                  <label className="flex items-center gap-1 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="tour-engine"
+                      checked={tourEngine === 'claude'}
+                      onChange={() => { setTourEngine('claude'); setTourModel('sonnet'); }}
+                      className="w-3 h-3 accent-primary"
+                    />
+                    <span className={tourEngine === 'claude' ? 'text-foreground' : ''}>Claude</span>
+                  </label>
+                  <label className="flex items-center gap-1 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="tour-engine"
+                      checked={tourEngine === 'codex'}
+                      onChange={() => { setTourEngine('codex'); setTourModel(''); }}
+                      className="w-3 h-3 accent-primary"
+                    />
+                    <span className={tourEngine === 'codex' ? 'text-foreground' : ''}>Codex</span>
+                  </label>
+                </div>
+              )}
+
+              {/* Model selector — engine-specific options */}
+              <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                <span className="font-medium">Model</span>
+                <select
+                  value={tourModel}
+                  onChange={(e) => setTourModel(e.target.value)}
+                  className="text-[10px] px-1.5 py-0.5 rounded bg-muted/50 border border-border/40 text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
+                >
+                  {tourEngine === 'claude' ? (
+                    <>
+                      <option value="sonnet">Sonnet (fast)</option>
+                      <option value="opus">Opus (thorough)</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="">Default</option>
+                      <option value="gpt-5.3-codex">GPT-5.3 Codex</option>
+                      <option value="gpt-5.4">GPT-5.4</option>
+                      <option value="gpt-5.4-mini">GPT-5.4 Mini</option>
+                    </>
+                  )}
+                </select>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

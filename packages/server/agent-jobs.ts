@@ -62,7 +62,7 @@ export interface AgentJobHandlerOptions {
    * Return an object with the command to spawn (and optional output path for result ingestion).
    * Return null to reject or fall through to frontend-supplied command.
    */
-  buildCommand?: (provider: string) => Promise<{
+  buildCommand?: (provider: string, config?: Record<string, unknown>) => Promise<{
     command: string[];
     outputPath?: string;
     captureStdout?: boolean;
@@ -71,6 +71,10 @@ export interface AgentJobHandlerOptions {
     label?: string;
     /** The full prompt text for display in the detail panel. */
     prompt?: string;
+    /** Underlying engine used (e.g., "claude" or "codex"). Stored on AgentJobInfo for UI display. */
+    engine?: string;
+    /** Model used (e.g., "sonnet", "opus"). Stored on AgentJobInfo for UI display. */
+    model?: string;
   } | null>;
   /**
    * Called after a job process exits with exit code 0.
@@ -93,6 +97,7 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions): AgentJob
   const capabilities: AgentCapability[] = [
     { id: "claude", name: "Claude Code", available: !!Bun.which("claude") },
     { id: "codex", name: "Codex CLI", available: !!Bun.which("codex") },
+    { id: "tour", name: "Code Tour", available: !!Bun.which("claude") || !!Bun.which("codex") },
   ];
   const capabilitiesResponse: AgentCapabilities = {
     mode,
@@ -119,7 +124,7 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions): AgentJob
     command: string[],
     label: string,
     outputPath?: string,
-    spawnOptions?: { captureStdout?: boolean; stdinPrompt?: string; cwd?: string; prompt?: string },
+    spawnOptions?: { captureStdout?: boolean; stdinPrompt?: string; cwd?: string; prompt?: string; engine?: string; model?: string },
   ): AgentJobInfo {
     const id = crypto.randomUUID();
     const source = jobSource(id);
@@ -133,6 +138,8 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions): AgentJob
       startedAt: Date.now(),
       command,
       cwd: getCwd(),
+      ...(spawnOptions?.engine && { engine: spawnOptions.engine }),
+      ...(spawnOptions?.model && { model: spawnOptions.model }),
     };
 
     let proc: ReturnType<typeof Bun.spawn> | null = null;
@@ -423,8 +430,14 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions): AgentJob
           let stdinPrompt: string | undefined;
           let spawnCwd: string | undefined;
           let promptText: string | undefined;
+          let jobEngine: string | undefined;
+          let jobModel: string | undefined;
           if (options.buildCommand) {
-            const built = await options.buildCommand(provider);
+            // Thread config from POST body (engine, model) to buildCommand
+            const config: Record<string, unknown> = {};
+            if (typeof body.engine === "string") config.engine = body.engine;
+            if (typeof body.model === "string") config.model = body.model;
+            const built = await options.buildCommand(provider, Object.keys(config).length > 0 ? config : undefined);
             if (built) {
               command = built.command;
               outputPath = built.outputPath;
@@ -433,6 +446,8 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions): AgentJob
               spawnCwd = built.cwd;
               promptText = built.prompt;
               if (built.label) label = built.label;
+              jobEngine = built.engine;
+              jobModel = built.model;
             }
           }
 
@@ -448,6 +463,8 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions): AgentJob
             stdinPrompt,
             cwd: spawnCwd,
             prompt: promptText,
+            engine: jobEngine,
+            model: jobModel,
           });
           return Response.json({ job }, { status: 201 });
         } catch {

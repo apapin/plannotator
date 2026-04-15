@@ -1,0 +1,476 @@
+/**
+ * Code Tour Agent — prompt, command builders, and output parsers.
+ *
+ * Generates a guided walkthrough of a changeset at the product-owner level.
+ * Supports both Claude (via stdin/JSONL) and Codex (via file output) backends.
+ * The review server (review.ts) calls into this module via agent-jobs callbacks.
+ */
+
+import { join } from "node:path";
+import { homedir, tmpdir } from "node:os";
+import { mkdir, writeFile, readFile, unlink } from "node:fs/promises";
+import { existsSync } from "node:fs";
+
+// ---------------------------------------------------------------------------
+// Types — shared with UI
+// ---------------------------------------------------------------------------
+
+export interface TourDiffAnchor {
+  /** Relative file path within the repo. */
+  file: string;
+  /** Start line in the new file (post-change). */
+  line: number;
+  /** End line in the new file. */
+  end_line: number;
+  /** Raw unified diff hunk for this anchor. */
+  hunk: string;
+  /** One-line chip label, e.g. "Add retry logic". */
+  label: string;
+}
+
+export interface TourKeyTakeaway {
+  /** One sentence — the takeaway. */
+  text: string;
+  /** Severity for visual styling. */
+  severity: "info" | "important" | "warning";
+}
+
+export interface TourStop {
+  /** Short chapter title, friendly tone. */
+  title: string;
+  /** ONE sentence — the headline for this stop. Scannable without expanding. */
+  gist: string;
+  /** 2-3 sentences of additional context. Only shown when expanded. */
+  detail: string;
+  /** Connective phrase to the next stop, e.g. "Building on that..." (empty for last stop). */
+  transition: string;
+  /** Diff anchors — the code locations this stop references. */
+  anchors: TourDiffAnchor[];
+}
+
+export interface TourQAItem {
+  /** Product-level verification question. */
+  question: string;
+  /** Indices into stops[] that this question relates to. */
+  stop_indices: number[];
+}
+
+export interface CodeTourOutput {
+  /** One-line title for the entire tour. */
+  title: string;
+  /** 1-2 sentence friendly greeting + summary. Conversational, not formal. */
+  greeting: string;
+  /** 1-3 sentences: why this changeset exists — the motivation/problem being solved. */
+  intent: string;
+  /** What things looked like before this changeset — one sentence. */
+  before: string;
+  /** What things look like after — one sentence. */
+  after: string;
+  /** 3-5 key takeaways — the most critical info, scannable at a glance. */
+  key_takeaways: TourKeyTakeaway[];
+  /** Ordered tour stops — the detailed walk-through. */
+  stops: TourStop[];
+  /** Product-level QA checklist. */
+  qa_checklist: TourQAItem[];
+}
+
+// ---------------------------------------------------------------------------
+// Schema
+// ---------------------------------------------------------------------------
+
+export const TOUR_SCHEMA_JSON = JSON.stringify({
+  type: "object",
+  properties: {
+    title: { type: "string" },
+    greeting: { type: "string" },
+    intent: { type: "string" },
+    before: { type: "string" },
+    after: { type: "string" },
+    key_takeaways: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          text: { type: "string" },
+          severity: { type: "string", enum: ["info", "important", "warning"] },
+        },
+        required: ["text", "severity"],
+        additionalProperties: false,
+      },
+    },
+    stops: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          title: { type: "string" },
+          gist: { type: "string" },
+          detail: { type: "string" },
+          transition: { type: "string" },
+          anchors: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                file: { type: "string" },
+                line: { type: "integer" },
+                end_line: { type: "integer" },
+                hunk: { type: "string" },
+                label: { type: "string" },
+              },
+              required: ["file", "line", "end_line", "hunk", "label"],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ["title", "gist", "detail", "transition", "anchors"],
+        additionalProperties: false,
+      },
+    },
+    qa_checklist: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          question: { type: "string" },
+          stop_indices: { type: "array", items: { type: "integer" } },
+        },
+        required: ["question", "stop_indices"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["title", "greeting", "intent", "before", "after", "key_takeaways", "stops", "qa_checklist"],
+  additionalProperties: false,
+});
+
+// ---------------------------------------------------------------------------
+// Tour prompt
+// ---------------------------------------------------------------------------
+
+export const TOUR_REVIEW_PROMPT = `# Code Tour Narrator
+
+## Identity
+You are a colleague giving a casual, warm tour of work you understand well.
+Think of it like sitting down next to someone and saying: "Hey Mike, here's
+the PR. Let me walk you through it." The whole voice is conversational, not
+documentary. You're telling the story of what changed and why.
+
+The arguments (like "here's why we did it this way" or "we picked X instead
+of Y") live INSIDE the stop details, where they belong. The framing (the
+greeting, intent, before/after, transitions between stops) stays warm and
+human, the way a coworker actually talks over coffee.
+
+You are NOT finding bugs. You are NOT writing a technical report.
+
+## Tone
+- Conversational throughout. You're talking to a coworker, not writing docs.
+- Use "we" and "you". "Here's what we changed." "You'll notice that..."
+- A couple of sentences of context is fine, even for small PRs. If a
+  colleague was describing a one-line change, they wouldn't just say "I
+  changed a line." They'd say "Oh yeah, I bumped the TTL from 7 days to 24
+  hours because the audit flagged it last month." A little color is good.
+- Each stop should feel like a colleague pausing to point at something:
+  "Okay, look at this part. Here's why it's interesting."
+- **Do NOT use em-dashes (—) anywhere.** They're a dead giveaway of
+  AI-generated prose. Use commas, colons, semicolons, or separate sentences
+  instead. If you want to add an aside, use parentheses or start a new
+  sentence. Never an em-dash.
+- No emoji anywhere. The UI handles all visual labeling deterministically.
+
+## Output structure
+
+### greeting
+2-4 sentences welcoming the reviewer and setting the scene. Not a headline,
+more like how you'd actually open a conversation. "Hey, so this PR does X
+and Y. Grab a coffee; I'll walk you through it." A bit of warmth and context,
+even for small changes.
+Example: "Hey, so this PR tightens the auth session lifetime from a week down
+to 24 hours. It's small in line count but it's the fix the security team has
+been asking for since Q1. Let me walk you through it."
+
+### intent
+1-3 sentences explaining WHY this changeset exists. What problem is being
+solved? What motivated the work? Keep it conversational; you're giving
+context, not writing a ticket.
+
+To determine intent:
+- If a PR/MR URL was provided, read the PR description (gh pr view or
+  equivalent). Look for motivation, linked issues, and context the author
+  provided.
+- If the PR body references a GitHub issue (e.g. "Fixes #123", "Closes
+  owner/repo#456") or GitLab issue, read that specific issue for deeper
+  context.
+- If no PR is provided, infer intent from commit messages, branch name, and
+  the nature of the changes themselves.
+- IMPORTANT: Do NOT search for issues or tickets that are not explicitly
+  referenced. Do not browse all open issues. Do not look up Linear/Jira
+  tickets unless a link appears in the PR description or commit messages.
+  Only follow what is given.
+
+Example: "Closes SEC-412, the overly-permissive session TTL flagged by the
+security team during the Q1 audit. It also lays some groundwork for the
+offline-first work shipping next sprint."
+
+### before / after
+One to two sentences each. Paint the picture of the world before and after
+this change. Focus on user or system behavior, not code structure.
+Example before: "Sessions lasted 7 days, with no refresh contract, so a
+stolen token was dangerous for a full week."
+Example after: "Sessions now expire in 24 hours with a clean refresh path,
+and mobile clients poll every 15 minutes to stay fresh."
+
+### key_takeaways
+3 to 5 bullet points. These are the MOST IMPORTANT things a reviewer needs to
+know at a glance. Each is ONE sentence. No emoji, no prefix, just the text.
+
+Severity guide (drives visual styling automatically; pick honestly, don't inflate):
+- "info": neutral context, good to know.
+- "important": a key change that affects users or system behavior.
+- "warning": a potential risk, edge case, or thing that could break.
+
+### stops
+Each stop is the colleague pausing at a specific change to explain it.
+
+#### How to ORDER stops
+Order by READING FLOW, the order the colleague would walk you through the
+change to make it understandable. NOT by blast radius or criticality.
+
+Lead with the entry point: the file or function that, if understood alone,
+unlocks the rest. Then walk outward:
+- Definitions before consumers (types/interfaces/schemas before usage).
+- Cause before effect (the change that motivated downstream changes comes first).
+- Verification last (tests and migrations after the code they exercise).
+
+#### How to CHUNK stops
+A stop is a logical change, NOT a file. If three files changed for one reason,
+that's ONE stop with three anchors. If one file has two unrelated changes,
+that's two stops. Never "one-stop-per-file" by default; let logic decide.
+
+#### Stop fields
+- **title**: Short, friendly. "Token refresh flow", not "Changes to auth/refresh.ts".
+- **gist**: ONE sentence. The headline. A reviewer who reads nothing else should
+  understand this stop from the gist alone.
+- **detail**: This is where the colleague pauses to explain. Supports basic markdown.
+  - Start with 1-2 sentences describing the situation or problem this stop addresses.
+  - Then make the argument: WHY did we change this? WHY does the new code look the
+    way it does? If a non-obvious choice was made (data structure, error strategy,
+    sync vs async, where the logic lives), surface it. "We did X instead of Y
+    because Z" is exactly what the reviewer wants.
+  - Use ### headings (e.g. "### Why this shape") to highlight critical sub-sections.
+  - Use > [!IMPORTANT], > [!WARNING], or > [!NOTE] callout blocks for things the
+    reviewer must not miss (security implications, breaking changes, gotchas).
+  - Use - bullet points for multi-part changes or parallel considerations.
+  - Keep total length reasonable, around 3-6 sentences equivalent. Don't write
+    an essay.
+- **transition**: A short connective phrase to the next stop, in the colleague's
+  voice. Examples: "Building on that...", "On a related note...", "To support
+  that change...". Empty string for the last stop.
+- **anchors**: The specific diff hunks shown inline below the detail narrative.
+  Each anchor MUST have a non-empty "hunk" field containing the actual unified
+  diff text extracted from the changeset. The hunk must include the @@ line.
+
+  Valid hunk format (REQUIRED; every anchor needs this):
+
+    @@ -42,7 +42,9 @@
+     function processRequest(req) {
+    -  const result = await fetch(url);
+    -  return result.json();
+    +  const result = await fetch(url, { timeout: 5000 });
+    +  if (!result.ok) throw new Error("HTTP " + result.status);
+    +  return result.json();
+     }
+
+  The label should be a substantive 1-sentence explanation of what this code
+  section does or why it matters, not a filename paraphrase.
+  E.g. "Adds a 5-second timeout and explicit error check to prevent silent hangs",
+  not "Changes to request.ts".
+
+### qa_checklist
+4 to 8 verification questions a HUMAN can actually answer. Two valid channels:
+
+1. By READING the code (e.g., "Did we update both call sites of \`legacyAuth()\`?",
+   "Are all uses of the old token format migrated?", "Does the error handler
+   cover the new throw paths?").
+2. By manually USING the product (e.g., "Sign in, restart the browser, and
+   confirm the session persists.", "Trigger a 503 from the API and confirm the
+   retry banner appears.").
+
+NOT machine-runnable test ideas. NOT generic "smoke test" framing. The reviewer
+is a person; what would THEY do to gain confidence?
+
+Reference which stops each question relates to via stop_indices. Every question
+should reference at least one stop.
+
+## Pipeline
+
+1. Read the full diff (git diff or inlined patch).
+2. Read CLAUDE.md and README.md for project context.
+3. Read commit messages (git log --oneline) and PR title/body if available.
+4. Identify logical groupings of change (cross-file when appropriate). These
+   become stops.
+5. Determine reading flow order: entry point first, then outward. Definitions
+   before consumers, cause before effect.
+6. Write the greeting, intent, before/after, takeaways, stops, and checklist
+   in the voice of a coworker walking you through the work.
+7. Return structured JSON matching the schema.
+
+## Hard constraints
+- Every anchor MUST have a non-empty "hunk" field. An anchor with an empty hunk
+  is broken; it will show "diff not available" to the reviewer. Extract the
+  real unified diff text from the input patch. Do not leave hunk blank.
+- Never fabricate line numbers. Extract them from the diff.
+- Gist must be ONE sentence. Not two. Not a run-on. One.
+- Detail supports markdown. Use it when it makes the explanation clearer, not
+  for decoration. Plain prose is fine when the change is simple.
+- Anchor labels must explain the code's purpose or the change's impact, not
+  just describe the filename.
+- key_takeaways: 3 to 5 items, each ONE sentence.
+- Stops are LOGICAL units, not files. Cross-file grouping is expected.
+- Stop ORDER is reading flow: entry point first, definitions before consumers,
+  cause before effect, verification last.
+- Combine trivial changes (renames, imports, formatting) into one "Housekeeping"
+  stop at the end, or omit entirely.
+- QA questions must be answerable by a human, either by reading code or by
+  using the product. Never frame them as automated tests.
+- NEVER use em-dashes (—) anywhere in the output. Use commas, colons,
+  semicolons, parentheses, or separate sentences. This is a hard constraint.`;
+
+// ---------------------------------------------------------------------------
+// Claude command builder
+// ---------------------------------------------------------------------------
+
+export interface TourClaudeCommandResult {
+  command: string[];
+  stdinPrompt: string;
+}
+
+export function buildTourClaudeCommand(prompt: string, model: string = "sonnet"): TourClaudeCommandResult {
+  const allowedTools = [
+    "Agent", "Read", "Glob", "Grep",
+    "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)",
+    "Bash(git show:*)", "Bash(git blame:*)", "Bash(git branch:*)",
+    "Bash(git grep:*)", "Bash(git ls-remote:*)", "Bash(git ls-tree:*)",
+    "Bash(git merge-base:*)", "Bash(git remote:*)", "Bash(git rev-parse:*)",
+    "Bash(git show-ref:*)",
+    "Bash(gh pr view:*)", "Bash(gh pr diff:*)", "Bash(gh pr list:*)",
+    "Bash(gh api repos/*/*/pulls/*)", "Bash(gh api repos/*/*/pulls/*/files*)",
+    "Bash(glab mr view:*)", "Bash(glab mr diff:*)",
+    "Bash(wc:*)",
+  ].join(",");
+
+  const disallowedTools = [
+    "Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch",
+    "Bash(python:*)", "Bash(python3:*)", "Bash(node:*)", "Bash(npx:*)",
+    "Bash(bun:*)", "Bash(bunx:*)", "Bash(sh:*)", "Bash(bash:*)", "Bash(zsh:*)",
+    "Bash(curl:*)", "Bash(wget:*)",
+  ].join(",");
+
+  return {
+    command: [
+      "claude", "-p",
+      "--permission-mode", "dontAsk",
+      "--output-format", "stream-json",
+      "--verbose",
+      "--json-schema", TOUR_SCHEMA_JSON,
+      "--no-session-persistence",
+      "--model", model,
+      "--tools", "Agent,Bash,Read,Glob,Grep",
+      "--allowedTools", allowedTools,
+      "--disallowedTools", disallowedTools,
+    ],
+    stdinPrompt: prompt,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Codex command builder
+// ---------------------------------------------------------------------------
+
+const TOUR_SCHEMA_DIR = join(homedir(), ".plannotator");
+const TOUR_SCHEMA_FILE = join(TOUR_SCHEMA_DIR, "tour-schema.json");
+let tourSchemaMaterialized = false;
+
+async function ensureTourSchemaFile(): Promise<string> {
+  if (!tourSchemaMaterialized) {
+    await mkdir(TOUR_SCHEMA_DIR, { recursive: true });
+    await writeFile(TOUR_SCHEMA_FILE, TOUR_SCHEMA_JSON);
+    tourSchemaMaterialized = true;
+  }
+  return TOUR_SCHEMA_FILE;
+}
+
+export function generateTourOutputPath(): string {
+  return join(tmpdir(), `plannotator-tour-${crypto.randomUUID()}.json`);
+}
+
+export async function buildTourCodexCommand(options: {
+  cwd: string;
+  outputPath: string;
+  prompt: string;
+  model?: string;
+}): Promise<string[]> {
+  const { cwd, outputPath, prompt, model } = options;
+  const schemaPath = await ensureTourSchemaFile();
+
+  const command = [
+    "codex",
+    // Model flag is global — goes before the subcommand
+    ...(model ? ["-m", model] : []),
+    "exec",
+    "--output-schema", schemaPath,
+    "-o", outputPath,
+    "--full-auto", "--ephemeral",
+    "-C", cwd,
+    prompt,
+  ];
+
+  return command;
+}
+
+// ---------------------------------------------------------------------------
+// Output parsers
+// ---------------------------------------------------------------------------
+
+export function parseTourStreamOutput(stdout: string): CodeTourOutput | null {
+  if (!stdout.trim()) return null;
+
+  const lines = stdout.trim().split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    try {
+      const event = JSON.parse(line);
+      if (event.type === 'result') {
+        if (event.is_error) return null;
+        const output = event.structured_output;
+        // A tour with no stops isn't a tour — treat as invalid so the UI
+        // error state fires instead of rendering an empty walkthrough.
+        if (!output || !Array.isArray(output.stops) || output.stops.length === 0) return null;
+        return output as CodeTourOutput;
+      }
+    } catch {
+      // Not valid JSON — skip
+    }
+  }
+
+  return null;
+}
+
+export async function parseTourFileOutput(outputPath: string): Promise<CodeTourOutput | null> {
+  try {
+    if (!existsSync(outputPath)) return null;
+    const text = await readFile(outputPath, "utf-8");
+    try { await unlink(outputPath); } catch { /* ignore */ }
+    if (!text.trim()) return null;
+    const parsed = JSON.parse(text);
+    // A tour with no stops isn't a tour — treat as invalid so the UI
+    // error state fires instead of rendering an empty walkthrough.
+    if (!parsed || !Array.isArray(parsed.stops) || parsed.stops.length === 0) return null;
+    return parsed as CodeTourOutput;
+  } catch {
+    try { await unlink(outputPath); } catch { /* ignore */ }
+    return null;
+  }
+}

@@ -189,7 +189,6 @@ export const TourStopCard: React.FC<TourStopCardProps> = ({
   dimmed = false,
 }) => {
   const isLast = index === total - 1;
-  const setOpen = (_v: boolean | ((prev: boolean) => boolean)) => onToggle();
 
   return (
     <div
@@ -207,7 +206,7 @@ export const TourStopCard: React.FC<TourStopCardProps> = ({
       </div>
 
       {/* Trigger */}
-      <button className="w-full text-left group cursor-pointer" onClick={() => setOpen((v) => !v)}>
+      <button className="w-full text-left group cursor-pointer" onClick={onToggle}>
         <div className="flex items-start gap-2">
           <div className="flex-1 min-w-0">
             <span className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors duration-150">

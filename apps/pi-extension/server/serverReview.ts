@@ -429,7 +429,7 @@ export async function startReviewServer(options: {
 		const url = requestUrl(req);
 
 		// API: Get tour result
-		if (url.pathname.startsWith("/api/tour/") && req.method === "GET" && !url.pathname.endsWith("/checklist")) {
+		if (url.pathname.startsWith("/api/tour/") && req.method === "GET" && !url.pathname.includes("/", "/api/tour/".length)) {
 			const jobId = url.pathname.slice("/api/tour/".length);
 			const result = tour.getTour(jobId);
 			if (!result) {

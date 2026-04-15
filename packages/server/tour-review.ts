@@ -474,3 +474,122 @@ export async function parseTourFileOutput(outputPath: string): Promise<CodeTourO
     return null;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Tour session factory — runtime-agnostic lifecycle shared by Bun + Pi servers
+//
+// Encapsulates everything that was previously duplicated in each server:
+//   - in-memory tour + checklist state
+//   - provider's buildCommand logic (engine/model defaults, Claude vs Codex
+//     command construction)
+//   - onJobComplete ingestion (parse stdout or file output, store, summarize)
+//   - route-handler helpers (getTour, saveChecklist)
+//
+// Each server instantiates one session per review server and wires the
+// methods into its existing agent-jobs pipeline. Route handlers translate
+// the returned shapes to the server's native HTTP response primitives.
+// ---------------------------------------------------------------------------
+
+export interface TourSessionBuildCommandOptions {
+  cwd: string;
+  userMessage: string;
+  config?: Record<string, unknown>;
+}
+
+export interface TourSessionBuildCommandResult {
+  command: string[];
+  outputPath?: string;
+  captureStdout?: boolean;
+  stdinPrompt?: string;
+  cwd?: string;
+  label?: string;
+  prompt?: string;
+  engine: "claude" | "codex";
+  model: string;
+}
+
+export interface TourSessionJobSummary {
+  correctness: string;
+  explanation: string;
+  confidence: number;
+}
+
+export interface TourSessionJobRef {
+  id: string;
+  engine?: string;
+}
+
+export interface TourSessionOnJobCompleteOptions {
+  job: TourSessionJobRef;
+  meta: { outputPath?: string; stdout?: string };
+}
+
+export interface TourSession {
+  tourResults: Map<string, CodeTourOutput>;
+  tourChecklists: Map<string, boolean[]>;
+  buildCommand(opts: TourSessionBuildCommandOptions): Promise<TourSessionBuildCommandResult>;
+  onJobComplete(opts: TourSessionOnJobCompleteOptions): Promise<{ summary: TourSessionJobSummary | null }>;
+  getTour(jobId: string): (CodeTourOutput & { checklist: boolean[] }) | null;
+  saveChecklist(jobId: string, checked: boolean[]): void;
+}
+
+export function createTourSession(): TourSession {
+  const tourResults = new Map<string, CodeTourOutput>();
+  const tourChecklists = new Map<string, boolean[]>();
+
+  return {
+    tourResults,
+    tourChecklists,
+
+    async buildCommand({ cwd, userMessage, config }) {
+      const engine = (typeof config?.engine === "string" ? config.engine : "claude") as "claude" | "codex";
+      const explicitModel = typeof config?.model === "string" && config.model ? config.model : null;
+      // Default per engine. "sonnet" is a Claude model, so we must NOT pass
+      // it to Codex when no model is explicitly selected. Leave Codex model
+      // blank and let its own CLI default pick.
+      const model = explicitModel ?? (engine === "codex" ? "" : "sonnet");
+      const prompt = TOUR_REVIEW_PROMPT + "\n\n---\n\n" + userMessage;
+
+      if (engine === "codex") {
+        const outputPath = generateTourOutputPath();
+        const command = await buildTourCodexCommand({ cwd, outputPath, prompt, model: model || undefined });
+        return { command, outputPath, prompt, label: "Code Tour", engine: "codex", model };
+      }
+
+      const { command, stdinPrompt } = buildTourClaudeCommand(prompt, model);
+      return { command, stdinPrompt, prompt, cwd, label: "Code Tour", captureStdout: true, engine: "claude", model };
+    },
+
+    async onJobComplete({ job, meta }) {
+      let output: CodeTourOutput | null = null;
+      if (job.engine === "codex" && meta.outputPath) {
+        output = await parseTourFileOutput(meta.outputPath);
+      } else if (meta.stdout) {
+        output = parseTourStreamOutput(meta.stdout);
+      }
+
+      if (!output) {
+        console.error(`[tour] Failed to parse output for job ${job.id}`);
+        return { summary: null };
+      }
+
+      tourResults.set(job.id, output);
+      const summary: TourSessionJobSummary = {
+        correctness: "Tour Generated",
+        explanation: `${output.stops.length} stop${output.stops.length !== 1 ? "s" : ""}, ${output.qa_checklist.length} QA item${output.qa_checklist.length !== 1 ? "s" : ""}`,
+        confidence: 1.0,
+      };
+      return { summary };
+    },
+
+    getTour(jobId) {
+      const tour = tourResults.get(jobId);
+      if (!tour) return null;
+      return { ...tour, checklist: tourChecklists.get(jobId) ?? [] };
+    },
+
+    saveChecklist(jobId, checked) {
+      tourChecklists.set(jobId, checked);
+    },
+  };
+}

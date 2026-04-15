@@ -32,15 +32,7 @@ import {
   parseClaudeStreamOutput,
   transformClaudeFindings,
 } from "./claude-review";
-import {
-  type CodeTourOutput,
-  TOUR_REVIEW_PROMPT,
-  buildTourClaudeCommand,
-  buildTourCodexCommand,
-  generateTourOutputPath,
-  parseTourStreamOutput,
-  parseTourFileOutput,
-} from "./tour-review";
+import { createTourSession } from "./tour-review";
 import { saveConfig, detectGitUser, getServerConfig } from "./config";
 import { type PRMetadata, type PRReviewFileComment, fetchPRFileContent, fetchPRContext, submitPRReview, fetchPRViewedFiles, markPRFilesViewed, getPRUser, prRefFromMetadata, getDisplayRepo, getMRLabel, getMRNumberLabel } from "./pr";
 import { createAIEndpoints, ProviderRegistry, SessionManager, createProvider, type AIEndpoints, type PiSDKConfig } from "@plannotator/ai";
@@ -129,9 +121,9 @@ export async function startReviewServer(
   const editorAnnotations = createEditorAnnotationHandler();
   const externalAnnotations = createExternalAnnotationHandler("review");
 
-  // Tour results — in-memory storage for the session lifetime
-  const tourResults = new Map<string, CodeTourOutput>();
-  const tourChecklists = new Map<string, boolean[]>();
+  // Tour session — encapsulates in-memory state, provider lifecycle, and
+  // route-handler helpers. See createTourSession in tour-review.ts.
+  const tour = createTourSession();
 
   // Mutable state for diff switching
   let currentPatch = options.rawPatch;
@@ -173,23 +165,7 @@ export async function startReviewServer(
       }
 
       if (provider === "tour") {
-        const engine = (typeof config?.engine === "string" ? config.engine : "claude") as "claude" | "codex";
-        const explicitModel = typeof config?.model === "string" && config.model ? config.model : null;
-        // Default per engine — "sonnet" is a Claude model, we must NOT pass
-        // it to Codex when no model is explicitly selected. Leave Codex
-        // undefined so its own CLI default picks.
-        const model = explicitModel ?? (engine === "codex" ? "" : "sonnet");
-        const prompt = TOUR_REVIEW_PROMPT + "\n\n---\n\n" + userMessage;
-
-        if (engine === "codex") {
-          const outputPath = generateTourOutputPath();
-          const command = await buildTourCodexCommand({ cwd, outputPath, prompt, model: model || undefined });
-          return { command, outputPath, prompt, label: "Code Tour", engine: "codex", model };
-        }
-
-        // Default: Claude engine
-        const { command, stdinPrompt } = buildTourClaudeCommand(prompt, model);
-        return { command, stdinPrompt, prompt, cwd, label: "Code Tour", captureStdout: true, engine: "claude", model };
+        return tour.buildCommand({ cwd, userMessage, config });
       }
 
       return null;
@@ -245,25 +221,8 @@ export async function startReviewServer(
 
       // --- Tour path ---
       if (job.provider === "tour") {
-        let output: CodeTourOutput | null = null;
-
-        if (job.engine === "codex" && meta.outputPath) {
-          output = await parseTourFileOutput(meta.outputPath);
-        } else if (meta.stdout) {
-          output = parseTourStreamOutput(meta.stdout);
-        }
-
-        if (!output) {
-          console.error(`[tour] Failed to parse output`);
-          return;
-        }
-
-        tourResults.set(job.id, output);
-        job.summary = {
-          correctness: "Tour Generated",
-          explanation: `${output.stops.length} stop${output.stops.length !== 1 ? "s" : ""}, ${output.qa_checklist.length} QA item${output.qa_checklist.length !== 1 ? "s" : ""}`,
-          confidence: 1.0,
-        };
+        const { summary } = await tour.onJobComplete({ job, meta });
+        if (summary) job.summary = summary;
         return;
       }
     },
@@ -413,9 +372,9 @@ export async function startReviewServer(
           // API: Get tour result
           if (url.pathname.startsWith("/api/tour/") && req.method === "GET" && !url.pathname.includes("/", "/api/tour/".length)) {
             const jobId = url.pathname.slice("/api/tour/".length);
-            const tour = tourResults.get(jobId);
-            if (!tour) return Response.json({ error: "Tour not found" }, { status: 404 });
-            return Response.json({ ...tour, checklist: tourChecklists.get(jobId) ?? [] });
+            const result = tour.getTour(jobId);
+            if (!result) return Response.json({ error: "Tour not found" }, { status: 404 });
+            return Response.json(result);
           }
 
           // API: Save tour checklist state
@@ -423,9 +382,7 @@ export async function startReviewServer(
             const jobId = url.pathname.split("/")[3];
             try {
               const body = await req.json() as { checked: boolean[] };
-              if (Array.isArray(body.checked)) {
-                tourChecklists.set(jobId, body.checked);
-              }
+              if (Array.isArray(body.checked)) tour.saveChecklist(jobId, body.checked);
               return Response.json({ ok: true });
             } catch {
               return Response.json({ error: "Invalid JSON" }, { status: 400 });

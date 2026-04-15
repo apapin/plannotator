@@ -12,7 +12,7 @@ for f in feedback-templates review-core storage draft project pr-provider pr-git
 done
 
 # Vendor review agent modules from packages/server/ — rewrite imports for generated/ layout
-for f in codex-review claude-review path-utils; do
+for f in codex-review claude-review tour-review path-utils; do
   src="../../packages/server/$f.ts"
   printf '// @generated — DO NOT EDIT. Source: packages/server/%s.ts\n' "$f" | cat - "$src" \
     | sed 's|from "./vcs"|from "./review-core.js"|' \

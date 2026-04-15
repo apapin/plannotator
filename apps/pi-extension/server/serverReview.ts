@@ -71,6 +71,7 @@ import {
 	parseClaudeStreamOutput,
 	transformClaudeFindings,
 } from "../generated/claude-review.js";
+import { createTourSession } from "../generated/tour-review.js";
 
 /** Detect if running inside WSL (Windows Subsystem for Linux) */
 function detectWSL(): boolean {
@@ -202,12 +203,17 @@ export async function startReviewServer(options: {
 		}
 		return options.gitContext?.cwd ?? process.cwd();
 	}
+	// Tour session — shared factory encapsulates in-memory state, provider
+	// lifecycle, and route-handler helpers. See createTourSession in
+	// packages/server/tour-review.ts (vendored into generated/).
+	const tour = createTourSession();
+
 	const agentJobs = createAgentJobHandler({
 		mode: "review",
 		getServerUrl: () => serverUrl,
 		getCwd: resolveAgentCwd,
 
-		async buildCommand(provider) {
+		async buildCommand(provider, config) {
 			const cwd = resolveAgentCwd();
 			const hasAgentLocalAccess = !!options.agentCwd || !!options.gitContext;
 			const userMessage = buildCodexReviewUserMessage(
@@ -228,6 +234,10 @@ export async function startReviewServer(options: {
 				const prompt = CLAUDE_REVIEW_PROMPT + "\n\n---\n\n" + userMessage;
 				const { command, stdinPrompt } = buildClaudeCommand(prompt);
 				return { command, stdinPrompt, prompt, cwd, label: "Claude Code Review", captureStdout: true };
+			}
+
+			if (provider === "tour") {
+				return tour.buildCommand({ cwd, userMessage, config });
 			}
 
 			return null;
@@ -273,6 +283,12 @@ export async function startReviewServer(options: {
 					const result = externalAnnotations.addAnnotations({ annotations });
 					if ("error" in result) console.error(`[claude-review] addAnnotations error:`, result.error);
 				}
+				return;
+			}
+
+			if (job.provider === "tour") {
+				const { summary } = await tour.onJobComplete({ job, meta });
+				if (summary) job.summary = summary;
 				return;
 			}
 		},
@@ -411,6 +427,31 @@ export async function startReviewServer(options: {
 
 	const server = createServer(async (req, res) => {
 		const url = requestUrl(req);
+
+		// API: Get tour result
+		if (url.pathname.startsWith("/api/tour/") && req.method === "GET" && !url.pathname.endsWith("/checklist")) {
+			const jobId = url.pathname.slice("/api/tour/".length);
+			const result = tour.getTour(jobId);
+			if (!result) {
+				json(res, { error: "Tour not found" }, 404);
+				return;
+			}
+			json(res, result);
+			return;
+		}
+
+		// API: Save tour checklist state
+		if (url.pathname.match(/^\/api\/tour\/[^/]+\/checklist$/) && req.method === "PUT") {
+			const jobId = url.pathname.split("/")[3];
+			try {
+				const body = await parseBody(req) as { checked: boolean[] };
+				if (Array.isArray(body.checked)) tour.saveChecklist(jobId, body.checked);
+				json(res, { ok: true });
+			} catch {
+				json(res, { error: "Invalid JSON" }, 400);
+			}
+			return;
+		}
 
 		if (url.pathname === "/api/diff" && req.method === "GET") {
 			json(res, {

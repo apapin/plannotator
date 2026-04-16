@@ -152,16 +152,21 @@ export async function startReviewServer(
       );
 
       if (provider === "codex") {
+        const model = typeof config?.model === "string" && config.model ? config.model : undefined;
+        const reasoningEffort = typeof config?.reasoningEffort === "string" && config.reasoningEffort ? config.reasoningEffort : undefined;
+        const fastMode = config?.fastMode === true;
         const outputPath = generateOutputPath();
         const prompt = CODEX_REVIEW_SYSTEM_PROMPT + "\n\n---\n\n" + userMessage;
-        const command = await buildCodexCommand({ cwd, outputPath, prompt });
-        return { command, outputPath, prompt, label: "Codex Review" };
+        const command = await buildCodexCommand({ cwd, outputPath, prompt, model, reasoningEffort, fastMode });
+        return { command, outputPath, prompt, label: "Codex Review", model, reasoningEffort, fastMode: fastMode || undefined };
       }
 
       if (provider === "claude") {
+        const model = typeof config?.model === "string" && config.model ? config.model : undefined;
+        const effort = typeof config?.effort === "string" && config.effort ? config.effort : undefined;
         const prompt = CLAUDE_REVIEW_PROMPT + "\n\n---\n\n" + userMessage;
-        const { command, stdinPrompt } = buildClaudeCommand(prompt);
-        return { command, stdinPrompt, prompt, cwd, label: "Claude Code Review", captureStdout: true };
+        const { command, stdinPrompt } = buildClaudeCommand(prompt, model, effort);
+        return { command, stdinPrompt, prompt, cwd, label: "Claude Code Review", captureStdout: true, model };
       }
 
       if (provider === "tour") {

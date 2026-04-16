@@ -25,6 +25,10 @@ export interface AgentJobInfo {
   engine?: string;
   /** Model used (e.g., "sonnet", "opus"). Set when provider is "tour" with Claude engine. */
   model?: string;
+  /** Codex reasoning effort level (e.g., "high", "medium"). */
+  reasoningEffort?: string;
+  /** Whether Codex fast mode (service_tier=fast) was enabled. */
+  fastMode?: boolean;
   /** Human-readable label for the job. */
   label: string;
   /** Current lifecycle status. */

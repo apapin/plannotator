@@ -3,10 +3,55 @@ import type { AgentJobInfo, AgentCapabilities } from '../types';
 import { isTerminalStatus } from '@plannotator/shared/agent-jobs';
 import { ReviewAgentsIcon } from './ReviewAgentsIcon';
 
+// --- Agent option catalogs (shared across provider + tour-engine dropdowns) ---
+
+const CLAUDE_MODELS: Array<{ value: string; label: string }> = [
+  { value: 'claude-opus-4-7', label: 'Opus 4.7' },
+  { value: 'claude-opus-4-6', label: 'Opus 4.6' },
+  { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
+];
+
+const CLAUDE_EFFORT: Array<{ value: string; label: string }> = [
+  { value: '', label: 'Default' },
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' },
+  { value: 'xhigh', label: 'XHigh' },
+  { value: 'max', label: 'Max' },
+];
+
+const CODEX_MODELS: Array<{ value: string; label: string }> = [
+  { value: '', label: 'Default' },
+  { value: 'gpt-5.4', label: 'GPT-5.4' },
+  { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex' },
+  { value: 'gpt-5.3-codex-spark', label: 'GPT-5.3 Codex Spark' },
+  { value: 'gpt-5.2-codex', label: 'GPT-5.2 Codex' },
+  { value: 'gpt-5.2', label: 'GPT-5.2' },
+  { value: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max' },
+  { value: 'gpt-5.1-codex-mini', label: 'GPT-5.1 Codex Mini' },
+  { value: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' },
+];
+
+const CODEX_REASONING: Array<{ value: string; label: string }> = [
+  { value: '', label: 'Default' },
+  { value: 'none', label: 'None' },
+  { value: 'minimal', label: 'Minimal' },
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' },
+  { value: 'xhigh', label: 'XHigh' },
+];
+
+// Tour Claude reuses the same effort levels but offers a different model set.
+const TOUR_CLAUDE_MODELS: Array<{ value: string; label: string }> = [
+  { value: 'sonnet', label: 'Sonnet (fast)' },
+  { value: 'opus', label: 'Opus (thorough)' },
+];
+
 interface AgentsTabProps {
   jobs: AgentJobInfo[];
   capabilities: AgentCapabilities | null;
-  onLaunch: (params: { provider?: string; command?: string[]; label?: string; engine?: string; model?: string }) => void;
+  onLaunch: (params: { provider?: string; command?: string[]; label?: string; engine?: string; model?: string; reasoningEffort?: string; effort?: string; fastMode?: boolean }) => void;
   onKillJob: (id: string) => void;
   onKillAll: () => void;
   externalAnnotations: Array<{ source?: string }>;
@@ -80,16 +125,25 @@ function StatusBadge({ status }: { status: AgentJobInfo['status'] }) {
 
 // --- Provider badge ---
 
-function ProviderBadge({ provider, engine, model }: { provider: string; engine?: string; model?: string }) {
+function ProviderBadge({ provider, engine, model, reasoningEffort, fastMode }: { provider: string; engine?: string; model?: string; reasoningEffort?: string; fastMode?: boolean }) {
   let label: string;
   if (provider === 'tour') {
     const engineLabel = engine === 'codex' ? 'Codex' : 'Claude';
-    label = model && engine !== 'codex' ? `Tour · ${engineLabel} ${model.charAt(0).toUpperCase() + model.slice(1)}` : `Tour · ${engineLabel}`;
+    const parts = [`Tour · ${engineLabel}`];
+    if (model && (engine === 'codex' || model !== 'sonnet')) {
+      parts.push(model.startsWith('gpt-') ? model : model.charAt(0).toUpperCase() + model.slice(1));
+    }
+    if (reasoningEffort) parts.push(reasoningEffort.charAt(0).toUpperCase() + reasoningEffort.slice(1));
+    if (fastMode) parts.push('Fast');
+    label = parts.join(' · ');
+  } else if (provider === 'codex') {
+    const parts = ['Codex'];
+    if (model) parts.push(model);
+    if (reasoningEffort) parts.push(reasoningEffort.charAt(0).toUpperCase() + reasoningEffort.slice(1));
+    if (fastMode) parts.push('Fast');
+    label = parts.join(' · ');
   } else {
-    label =
-      provider === 'claude' ? 'Claude' :
-      provider === 'codex' ? 'Codex' :
-      'Shell';
+    label = provider === 'claude' ? 'Claude' : 'Shell';
   }
   return (
     <span className={`text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded ${
@@ -130,7 +184,7 @@ function JobCard({
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <ProviderBadge provider={job.provider} engine={job.engine} model={job.model} />
+          <ProviderBadge provider={job.provider} engine={job.engine} model={job.model} reasoningEffort={job.reasoningEffort} fastMode={job.fastMode} />
           <span className="text-xs text-foreground/80 truncate">{job.label}</span>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -195,6 +249,14 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
   const [tourEngine, setTourEngine] = useState<'claude' | 'codex'>('claude');
   const [tourModel, setTourModel] = useState<string>('sonnet');
+  const [claudeModel, setClaudeModel] = useState<string>('claude-opus-4-7');
+  const [claudeEffort, setClaudeEffort] = useState<string>('');
+  const [tourClaudeEffort, setTourClaudeEffort] = useState<string>('');
+  const [tourCodexReasoning, setTourCodexReasoning] = useState<string>('');
+  const [tourCodexFastMode, setTourCodexFastMode] = useState<boolean>(false);
+  const [codexModel, setCodexModel] = useState<string>('');
+  const [codexReasoning, setCodexReasoning] = useState<string>('');
+  const [codexFastMode, setCodexFastMode] = useState<boolean>(false);
   const initializedRef = useRef(false);
 
   // Set default provider once capabilities load
@@ -257,6 +319,9 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
         label: 'Code Tour',
         engine: tourEngine,
         model: tourModel || undefined,
+        ...(tourEngine === 'claude' && tourClaudeEffort ? { effort: tourClaudeEffort } : {}),
+        ...(tourEngine === 'codex' && tourCodexReasoning ? { reasoningEffort: tourCodexReasoning } : {}),
+        ...(tourEngine === 'codex' && tourCodexFastMode ? { fastMode: true } : {}),
       });
       return;
     }
@@ -264,6 +329,11 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
     onLaunch({
       provider: selectedProvider,
       label: provider ? `${provider.name} Review` : selectedProvider,
+      ...(selectedProvider === 'claude' && claudeModel ? { model: claudeModel } : {}),
+      ...(selectedProvider === 'claude' && claudeEffort ? { effort: claudeEffort } : {}),
+      ...(selectedProvider === 'codex' && codexModel ? { model: codexModel } : {}),
+      ...(selectedProvider === 'codex' && codexReasoning ? { reasoningEffort: codexReasoning } : {}),
+      ...(selectedProvider === 'codex' && codexFastMode ? { fastMode: true } : {}),
     });
   };
 
@@ -299,13 +369,77 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
             </button>
           </div>
 
+          {/* Claude model + effort config */}
+          {selectedProvider === 'claude' && (
+            <div className="mt-2 space-y-1.5">
+              <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                <span className="font-medium w-14">Model</span>
+                <select
+                  value={claudeModel}
+                  onChange={(e) => setClaudeModel(e.target.value)}
+                  className="flex-1 text-[10px] px-1.5 py-0.5 rounded bg-muted/50 border border-border/40 text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
+                >
+                  {CLAUDE_MODELS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+              <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                <span className="font-medium w-14">Effort</span>
+                <select
+                  value={claudeEffort}
+                  onChange={(e) => setClaudeEffort(e.target.value)}
+                  className="flex-1 text-[10px] px-1.5 py-0.5 rounded bg-muted/50 border border-border/40 text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
+                >
+                  {CLAUDE_EFFORT.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+            </div>
+          )}
+
+          {/* Codex model + reasoning + fast mode config */}
+          {selectedProvider === 'codex' && (
+            <div className="mt-2 space-y-1.5">
+              <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                <span className="font-medium w-14">Model</span>
+                <select
+                  value={codexModel}
+                  onChange={(e) => setCodexModel(e.target.value)}
+                  className="flex-1 text-[10px] px-1.5 py-0.5 rounded bg-muted/50 border border-border/40 text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
+                >
+                  {CODEX_MODELS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+              <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                <span className="font-medium w-14">Reasoning</span>
+                <select
+                  value={codexReasoning}
+                  onChange={(e) => setCodexReasoning(e.target.value)}
+                  className="flex-1 text-[10px] px-1.5 py-0.5 rounded bg-muted/50 border border-border/40 text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
+                >
+                  {CODEX_REASONING.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+              <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                <span className="font-medium w-14">Fast</span>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={codexFastMode}
+                    onChange={(e) => setCodexFastMode(e.target.checked)}
+                    className="w-3 h-3 accent-primary"
+                  />
+                  <span className={codexFastMode ? 'text-foreground' : ''}>Fast mode</span>
+                </label>
+              </div>
+            </div>
+          )}
+
           {/* Tour engine/model config — only shown when tour is selected */}
           {selectedProvider === 'tour' && (
             <div className="mt-2 space-y-1.5">
               {/* Engine selector */}
               {claudeAvailable && codexAvailable && (
                 <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                  <span className="font-medium">Engine</span>
+                  <span className="font-medium w-14">Engine</span>
                   <label className="flex items-center gap-1 cursor-pointer">
                     <input
                       type="radio"
@@ -331,27 +465,59 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
 
               {/* Model selector — engine-specific options */}
               <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                <span className="font-medium">Model</span>
+                <span className="font-medium w-14">Model</span>
                 <select
                   value={tourModel}
                   onChange={(e) => setTourModel(e.target.value)}
-                  className="text-[10px] px-1.5 py-0.5 rounded bg-muted/50 border border-border/40 text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
+                  className="flex-1 text-[10px] px-1.5 py-0.5 rounded bg-muted/50 border border-border/40 text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
                 >
-                  {tourEngine === 'claude' ? (
-                    <>
-                      <option value="sonnet">Sonnet (fast)</option>
-                      <option value="opus">Opus (thorough)</option>
-                    </>
-                  ) : (
-                    <>
-                      <option value="">Default</option>
-                      <option value="gpt-5.3-codex">GPT-5.3 Codex</option>
-                      <option value="gpt-5.4">GPT-5.4</option>
-                      <option value="gpt-5.4-mini">GPT-5.4 Mini</option>
-                    </>
-                  )}
+                  {(tourEngine === 'claude' ? TOUR_CLAUDE_MODELS : CODEX_MODELS).map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
                 </select>
               </div>
+
+              {/* Claude-only: effort level */}
+              {tourEngine === 'claude' && (
+                <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                  <span className="font-medium w-14">Effort</span>
+                  <select
+                    value={tourClaudeEffort}
+                    onChange={(e) => setTourClaudeEffort(e.target.value)}
+                    className="flex-1 text-[10px] px-1.5 py-0.5 rounded bg-muted/50 border border-border/40 text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
+                  >
+                    {CLAUDE_EFFORT.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </div>
+              )}
+
+              {/* Codex-only: reasoning effort + fast mode */}
+              {tourEngine === 'codex' && (
+                <>
+                  <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                    <span className="font-medium w-14">Reasoning</span>
+                    <select
+                      value={tourCodexReasoning}
+                      onChange={(e) => setTourCodexReasoning(e.target.value)}
+                      className="flex-1 text-[10px] px-1.5 py-0.5 rounded bg-muted/50 border border-border/40 text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
+                    >
+                      {CODEX_REASONING.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                    <span className="font-medium w-14">Fast</span>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={tourCodexFastMode}
+                        onChange={(e) => setTourCodexFastMode(e.target.checked)}
+                        className="w-3 h-3 accent-primary"
+                      />
+                      <span className={tourCodexFastMode ? 'text-foreground' : ''}>Fast mode</span>
+                    </label>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>

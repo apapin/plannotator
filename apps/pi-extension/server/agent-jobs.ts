@@ -67,6 +67,10 @@ export interface AgentJobHandlerOptions {
 		engine?: string;
 		/** Model used (e.g., "sonnet", "opus"). Stored on AgentJobInfo for UI display. */
 		model?: string;
+		/** Codex reasoning effort level. */
+		reasoningEffort?: string;
+		/** Whether Codex fast mode was enabled. */
+		fastMode?: boolean;
 	} | null>;
 	/** Called when a job completes successfully — parse results and push annotations. */
 	onJobComplete?: (job: AgentJobInfo, meta: { outputPath?: string; stdout?: string; cwd?: string }) => void | Promise<void>;
@@ -112,7 +116,7 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions) {
 		command: string[],
 		label: string,
 		outputPath?: string,
-		spawnOptions?: { captureStdout?: boolean; stdinPrompt?: string; cwd?: string; prompt?: string; engine?: string; model?: string },
+		spawnOptions?: { captureStdout?: boolean; stdinPrompt?: string; cwd?: string; prompt?: string; engine?: string; model?: string; reasoningEffort?: string; fastMode?: boolean },
 	): AgentJobInfo {
 		const id = crypto.randomUUID();
 		const source = jobSource(id);
@@ -128,6 +132,8 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions) {
 			cwd: getCwd(),
 			...(spawnOptions?.engine && { engine: spawnOptions.engine }),
 			...(spawnOptions?.model && { model: spawnOptions.model }),
+			...(spawnOptions?.reasoningEffort && { reasoningEffort: spawnOptions.reasoningEffort }),
+			...(spawnOptions?.fastMode && { fastMode: spawnOptions.fastMode }),
 		};
 
 		let proc: ChildProcess | null = null;
@@ -406,11 +412,16 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions) {
 					let promptText: string | undefined;
 					let jobEngine: string | undefined;
 					let jobModel: string | undefined;
+					let jobReasoningEffort: string | undefined;
+					let jobFastMode: boolean | undefined;
 					if (options.buildCommand) {
-						// Thread config from POST body (engine, model) to buildCommand
+						// Thread config from POST body to buildCommand
 						const config: Record<string, unknown> = {};
 						if (typeof body.engine === "string") config.engine = body.engine;
 						if (typeof body.model === "string") config.model = body.model;
+						if (typeof body.reasoningEffort === "string") config.reasoningEffort = body.reasoningEffort;
+						if (typeof body.effort === "string") config.effort = body.effort;
+						if (body.fastMode === true) config.fastMode = true;
 						const built = await options.buildCommand(provider, Object.keys(config).length > 0 ? config : undefined);
 						if (built) {
 							command = built.command;
@@ -422,6 +433,8 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions) {
 							if (built.label) label = built.label;
 							jobEngine = built.engine;
 							jobModel = built.model;
+							jobReasoningEffort = built.reasoningEffort;
+							jobFastMode = built.fastMode;
 						}
 					}
 
@@ -437,6 +450,8 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions) {
 						prompt: promptText,
 						engine: jobEngine,
 						model: jobModel,
+						reasoningEffort: jobReasoningEffort,
+						fastMode: jobFastMode,
 					});
 					json(res, { job }, 201);
 				} catch {

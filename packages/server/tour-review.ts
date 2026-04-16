@@ -221,13 +221,17 @@ Example after: "Sessions now expire in 24 hours with a clean refresh path,
 and mobile clients poll every 15 minutes to stay fresh."
 
 ### key_takeaways
-3 to 5 bullet points. These are the MOST IMPORTANT things a reviewer needs to
-know at a glance. Each is ONE sentence. No emoji, no prefix, just the text.
+3 to 5 bullet points. These are the MOST IMPORTANT things someone needs to
+know at a glance about what this changeset DOES. Focus on what changes in
+behavior, functionality, or developer experience. Each is ONE sentence. No
+emoji, no prefix, just the text.
 
 Severity guide (drives visual styling automatically; pick honestly, don't inflate):
 - "info": neutral context, good to know.
-- "important": a key change that affects users or system behavior.
-- "warning": a potential risk, edge case, or thing that could break.
+- "important": a meaningful change in behavior, capability, or system contract.
+- "warning": a behavioral shift worth watching, something that changes how
+  the system works in a way someone could miss. NOT code smells or style
+  nits. A clean changeset with no warnings is perfectly normal.
 
 ### stops
 Each stop is the colleague pausing at a specific change to explain it.
@@ -258,8 +262,10 @@ that's two stops. Never "one-stop-per-file" by default; let logic decide.
     sync vs async, where the logic lives), surface it. "We did X instead of Y
     because Z" is exactly what the reviewer wants.
   - Use ### headings (e.g. "### Why this shape") to highlight critical sub-sections.
-  - Use > [!IMPORTANT], > [!WARNING], or > [!NOTE] callout blocks for things the
-    reviewer must not miss (security implications, breaking changes, gotchas).
+  - Use > [!IMPORTANT], > [!WARNING], or > [!NOTE] callout blocks for context
+    that helps the reader understand non-obvious decisions or behavioral shifts
+    (e.g., a new default value, a changed error path, a contract that callers
+    now depend on). These are not for flagging code smells.
   - Use - bullet points for multi-part changes or parallel considerations.
   - Keep total length reasonable, around 3-6 sentences equivalent. Don't write
     an essay.
@@ -334,7 +340,17 @@ should reference at least one stop.
 - QA questions must be answerable by a human, either by reading code or by
   using the product. Never frame them as automated tests.
 - NEVER use em-dashes (—) anywhere in the output. Use commas, colons,
-  semicolons, parentheses, or separate sentences. This is a hard constraint.`;
+  semicolons, parentheses, or separate sentences. This is a hard constraint.
+
+## Calibration: tour, not review
+Your job is to EXPLAIN the changeset, not to critique it. If you genuinely
+spot a real bug or a meaningful behavioral concern while reading the code,
+surface it naturally in the relevant stop detail or as a warning takeaway.
+That's the colleague noticing something worth mentioning. But don't hunt for
+problems. Most clean changesets should have zero warnings and zero [!WARNING]
+callouts. The primary question is "what does this change do and why?" not
+"what's wrong with this code?"`;
+
 
 // ---------------------------------------------------------------------------
 // Claude command builder
@@ -345,7 +361,7 @@ export interface TourClaudeCommandResult {
   stdinPrompt: string;
 }
 
-export function buildTourClaudeCommand(prompt: string, model: string = "sonnet"): TourClaudeCommandResult {
+export function buildTourClaudeCommand(prompt: string, model: string = "sonnet", effort?: string): TourClaudeCommandResult {
   const allowedTools = [
     "Agent", "Read", "Glob", "Grep",
     "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)",
@@ -375,6 +391,7 @@ export function buildTourClaudeCommand(prompt: string, model: string = "sonnet")
       "--json-schema", TOUR_SCHEMA_JSON,
       "--no-session-persistence",
       "--model", model,
+      ...(effort ? ["--effort", effort] : []),
       "--tools", "Agent,Bash,Read,Glob,Grep",
       "--allowedTools", allowedTools,
       "--disallowedTools", disallowedTools,
@@ -409,14 +426,18 @@ export async function buildTourCodexCommand(options: {
   outputPath: string;
   prompt: string;
   model?: string;
+  reasoningEffort?: string;
+  fastMode?: boolean;
 }): Promise<string[]> {
-  const { cwd, outputPath, prompt, model } = options;
+  const { cwd, outputPath, prompt, model, reasoningEffort, fastMode } = options;
   const schemaPath = await ensureTourSchemaFile();
 
   const command = [
     "codex",
-    // Model flag is global — goes before the subcommand
+    // Global flags — go before the "exec" subcommand
     ...(model ? ["-m", model] : []),
+    ...(reasoningEffort ? ["-c", `model_reasoning_effort=${reasoningEffort}`] : []),
+    ...(fastMode ? ["-c", "service_tier=fast"] : []),
     "exec",
     "--output-schema", schemaPath,
     "-o", outputPath,
@@ -506,6 +527,8 @@ export interface TourSessionBuildCommandResult {
   prompt?: string;
   engine: "claude" | "codex";
   model: string;
+  reasoningEffort?: string;
+  fastMode?: boolean;
 }
 
 export interface TourSessionJobSummary {
@@ -548,15 +571,18 @@ export function createTourSession(): TourSession {
       // it to Codex when no model is explicitly selected. Leave Codex model
       // blank and let its own CLI default pick.
       const model = explicitModel ?? (engine === "codex" ? "" : "sonnet");
+      const reasoningEffort = typeof config?.reasoningEffort === "string" && config.reasoningEffort ? config.reasoningEffort : undefined;
+      const effort = typeof config?.effort === "string" && config.effort ? config.effort : undefined;
+      const fastMode = config?.fastMode === true;
       const prompt = TOUR_REVIEW_PROMPT + "\n\n---\n\n" + userMessage;
 
       if (engine === "codex") {
         const outputPath = generateTourOutputPath();
-        const command = await buildTourCodexCommand({ cwd, outputPath, prompt, model: model || undefined });
-        return { command, outputPath, prompt, label: "Code Tour", engine: "codex", model };
+        const command = await buildTourCodexCommand({ cwd, outputPath, prompt, model: model || undefined, reasoningEffort, fastMode });
+        return { command, outputPath, prompt, label: "Code Tour", engine: "codex", model, reasoningEffort, fastMode: fastMode || undefined };
       }
 
-      const { command, stdinPrompt } = buildTourClaudeCommand(prompt, model);
+      const { command, stdinPrompt } = buildTourClaudeCommand(prompt, model, effort);
       return { command, stdinPrompt, prompt, cwd, label: "Code Tour", captureStdout: true, engine: "claude", model };
     },
 

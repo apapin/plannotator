@@ -62,6 +62,7 @@ export function useTourData(jobId: string): UseTourDataReturn {
   const [error, setError] = useState<string | null>(null);
   const [checked, setChecked] = useState<boolean[]>([]);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingChecklistRef = useRef<boolean[] | null>(null);
 
   const fetchTour = useCallback(() => {
     if (!jobId) return;
@@ -99,12 +100,17 @@ export function useTourData(jobId: string): UseTourDataReturn {
   const saveChecklist = useCallback(
     (next: boolean[]) => {
       if (jobId === DEMO_TOUR_ID) return;
+      pendingChecklistRef.current = next;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
+        const payload = pendingChecklistRef.current;
+        pendingChecklistRef.current = null;
+        saveTimerRef.current = null;
+        if (!payload) return;
         fetch(`/api/tour/${jobId}/checklist`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ checked: next }),
+          body: JSON.stringify({ checked: payload }),
         }).catch(() => {});
       }, 500);
     },
@@ -126,8 +132,18 @@ export function useTourData(jobId: string): UseTourDataReturn {
   useEffect(() => {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      const payload = pendingChecklistRef.current;
+      pendingChecklistRef.current = null;
+      if (!payload || jobId === DEMO_TOUR_ID) return;
+      // keepalive lets the request survive if this unmount is part of a tab close.
+      fetch(`/api/tour/${jobId}/checklist`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ checked: payload }),
+        keepalive: true,
+      }).catch(() => {});
     };
-  }, []);
+  }, [jobId]);
 
   return { tour, loading, error, checked, toggleChecked, retry: fetchTour };
 }

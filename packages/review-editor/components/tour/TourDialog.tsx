@@ -236,6 +236,13 @@ function TourDialogContent({ jobId, onClose }: { jobId: string; onClose: () => v
 
   const navigate = useCallback((next: TourPage) => {
     if (exitingPage || next === page) return;
+    // Reduced motion suppresses the page animations, so onAnimationEnd
+    // never fires to clear exitingPage — swap immediately instead.
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) {
+      setPage(next);
+      return;
+    }
     const fromIdx = PAGE_ORDER.indexOf(page);
     const toIdx = PAGE_ORDER.indexOf(next);
     setExitingPage(page);

@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import type { AgentJobInfo, AgentCapabilities } from '../types';
 import { isTerminalStatus } from '@plannotator/shared/agent-jobs';
 import { ReviewAgentsIcon } from './ReviewAgentsIcon';
+import { useAgentSettings } from '../hooks/useAgentSettings';
 
 // --- Agent option catalogs (shared across provider + tour-engine dropdowns) ---
 
@@ -12,7 +13,6 @@ const CLAUDE_MODELS: Array<{ value: string; label: string }> = [
 ];
 
 const CLAUDE_EFFORT: Array<{ value: string; label: string }> = [
-  { value: '', label: 'Default' },
   { value: 'low', label: 'Low' },
   { value: 'medium', label: 'Medium' },
   { value: 'high', label: 'High' },
@@ -21,7 +21,6 @@ const CLAUDE_EFFORT: Array<{ value: string; label: string }> = [
 ];
 
 const CODEX_MODELS: Array<{ value: string; label: string }> = [
-  { value: '', label: 'Default' },
   { value: 'gpt-5.4', label: 'GPT-5.4' },
   { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex' },
   { value: 'gpt-5.3-codex-spark', label: 'GPT-5.3 Codex Spark' },
@@ -33,7 +32,6 @@ const CODEX_MODELS: Array<{ value: string; label: string }> = [
 ];
 
 const CODEX_REASONING: Array<{ value: string; label: string }> = [
-  { value: '', label: 'Default' },
   { value: 'none', label: 'None' },
   { value: 'minimal', label: 'Minimal' },
   { value: 'low', label: 'Low' },
@@ -245,34 +243,49 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
   externalAnnotations,
   onOpenJobDetail,
 }) => {
-  const [selectedProvider, setSelectedProvider] = useState<string>('');
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
-  const [tourEngine, setTourEngine] = useState<'claude' | 'codex'>('claude');
-  const [tourModel, setTourModel] = useState<string>('sonnet');
-  const [claudeModel, setClaudeModel] = useState<string>('claude-opus-4-7');
-  const [claudeEffort, setClaudeEffort] = useState<string>('');
-  const [tourClaudeEffort, setTourClaudeEffort] = useState<string>('');
-  const [tourCodexReasoning, setTourCodexReasoning] = useState<string>('');
-  const [tourCodexFastMode, setTourCodexFastMode] = useState<boolean>(false);
-  const [codexModel, setCodexModel] = useState<string>('');
-  const [codexReasoning, setCodexReasoning] = useState<string>('');
-  const [codexFastMode, setCodexFastMode] = useState<boolean>(false);
-  const initializedRef = useRef(false);
+  const settings = useAgentSettings();
+  const {
+    selectedProvider,
+    tourEngine,
+    claudeModel,
+    claudeEffort,
+    codexModel,
+    codexReasoning,
+    codexFast,
+    tourClaudeModel,
+    tourClaudeEffort,
+    tourCodexModel,
+    tourCodexReasoning,
+    tourCodexFast,
+    setSelectedProvider,
+    setTourEngine,
+    setClaudeModel,
+    setClaudeEffort,
+    setCodexModel,
+    setCodexReasoning,
+    setCodexFast,
+    setTourClaudeModel,
+    setTourClaudeEffort,
+    setTourCodexModel,
+    setTourCodexReasoning,
+    setTourCodexFast,
+  } = settings;
 
-  // Set default provider once capabilities load
+  // Reconcile provider + tour engine against live capabilities. Runs when
+  // capabilities change or the stored selection becomes invalid.
   useEffect(() => {
-    if (capabilities && !initializedRef.current) {
-      const firstAvailable = capabilities.providers.find((p) => p.available);
-      if (firstAvailable) {
-        setSelectedProvider(firstAvailable.id);
-        initializedRef.current = true;
-      }
-      // Default tour engine to first available CLI
-      const hasClaude = capabilities.providers.some((p) => p.id === 'claude' && p.available);
-      const hasCodex = capabilities.providers.some((p) => p.id === 'codex' && p.available);
-      if (!hasClaude && hasCodex) { setTourEngine('codex'); setTourModel(''); }
+    if (!capabilities) return;
+    const available = capabilities.providers.filter((p) => p.available);
+    if (available.length === 0) return;
+    if (!selectedProvider || !available.some((p) => p.id === selectedProvider)) {
+      setSelectedProvider(available[0].id);
     }
-  }, [capabilities]);
+    const hasClaude = available.some((p) => p.id === 'claude');
+    const hasCodex = available.some((p) => p.id === 'codex');
+    if (tourEngine === 'claude' && !hasClaude && hasCodex) setTourEngine('codex');
+    else if (tourEngine === 'codex' && !hasCodex && hasClaude) setTourEngine('claude');
+  }, [capabilities, selectedProvider, tourEngine, setSelectedProvider, setTourEngine]);
 
   const availableProviders = useMemo(
     () => capabilities?.providers.filter((p) => p.available) ?? [],
@@ -318,10 +331,10 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
         provider: 'tour',
         label: 'Code Tour',
         engine: tourEngine,
-        model: tourModel || undefined,
-        ...(tourEngine === 'claude' && tourClaudeEffort ? { effort: tourClaudeEffort } : {}),
-        ...(tourEngine === 'codex' && tourCodexReasoning ? { reasoningEffort: tourCodexReasoning } : {}),
-        ...(tourEngine === 'codex' && tourCodexFastMode ? { fastMode: true } : {}),
+        model: tourEngine === 'claude' ? tourClaudeModel : tourCodexModel,
+        ...(tourEngine === 'claude' ? { effort: tourClaudeEffort } : {}),
+        ...(tourEngine === 'codex' ? { reasoningEffort: tourCodexReasoning } : {}),
+        ...(tourEngine === 'codex' && tourCodexFast ? { fastMode: true } : {}),
       });
       return;
     }
@@ -329,11 +342,9 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
     onLaunch({
       provider: selectedProvider,
       label: provider ? `${provider.name} Review` : selectedProvider,
-      ...(selectedProvider === 'claude' && claudeModel ? { model: claudeModel } : {}),
-      ...(selectedProvider === 'claude' && claudeEffort ? { effort: claudeEffort } : {}),
-      ...(selectedProvider === 'codex' && codexModel ? { model: codexModel } : {}),
-      ...(selectedProvider === 'codex' && codexReasoning ? { reasoningEffort: codexReasoning } : {}),
-      ...(selectedProvider === 'codex' && codexFastMode ? { fastMode: true } : {}),
+      ...(selectedProvider === 'claude' ? { model: claudeModel, effort: claudeEffort } : {}),
+      ...(selectedProvider === 'codex' ? { model: codexModel, reasoningEffort: codexReasoning } : {}),
+      ...(selectedProvider === 'codex' && codexFast ? { fastMode: true } : {}),
     });
   };
 
@@ -345,7 +356,7 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
           <div className="flex items-center gap-1.5">
             {availableProviders.length > 1 ? (
               <select
-                value={selectedProvider}
+                value={selectedProvider ?? ''}
                 onChange={(e) => setSelectedProvider(e.target.value)}
                 className="flex-1 text-xs px-2 py-1.5 rounded bg-muted/50 border border-border/50 text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
               >
@@ -423,11 +434,11 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
                 <label className="flex items-center gap-1.5 cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={codexFastMode}
-                    onChange={(e) => setCodexFastMode(e.target.checked)}
+                    checked={codexFast}
+                    onChange={(e) => setCodexFast(e.target.checked)}
                     className="w-3 h-3 accent-primary"
                   />
-                  <span className={codexFastMode ? 'text-foreground' : ''}>Fast mode</span>
+                  <span className={codexFast ? 'text-foreground' : ''}>Fast mode</span>
                 </label>
               </div>
             </div>
@@ -445,7 +456,7 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
                       type="radio"
                       name="tour-engine"
                       checked={tourEngine === 'claude'}
-                      onChange={() => { setTourEngine('claude'); setTourModel('sonnet'); }}
+                      onChange={() => setTourEngine('claude')}
                       className="w-3 h-3 accent-primary"
                     />
                     <span className={tourEngine === 'claude' ? 'text-foreground' : ''}>Claude</span>
@@ -455,7 +466,7 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
                       type="radio"
                       name="tour-engine"
                       checked={tourEngine === 'codex'}
-                      onChange={() => { setTourEngine('codex'); setTourModel(''); }}
+                      onChange={() => setTourEngine('codex')}
                       className="w-3 h-3 accent-primary"
                     />
                     <span className={tourEngine === 'codex' ? 'text-foreground' : ''}>Codex</span>
@@ -467,8 +478,8 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
               <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
                 <span className="font-medium w-14">Model</span>
                 <select
-                  value={tourModel}
-                  onChange={(e) => setTourModel(e.target.value)}
+                  value={tourEngine === 'claude' ? tourClaudeModel : tourCodexModel}
+                  onChange={(e) => (tourEngine === 'claude' ? setTourClaudeModel(e.target.value) : setTourCodexModel(e.target.value))}
                   className="flex-1 text-[10px] px-1.5 py-0.5 rounded bg-muted/50 border border-border/40 text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
                 >
                   {(tourEngine === 'claude' ? TOUR_CLAUDE_MODELS : CODEX_MODELS).map((o) => (
@@ -509,11 +520,11 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
                     <label className="flex items-center gap-1.5 cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={tourCodexFastMode}
-                        onChange={(e) => setTourCodexFastMode(e.target.checked)}
+                        checked={tourCodexFast}
+                        onChange={(e) => setTourCodexFast(e.target.checked)}
                         className="w-3 h-3 accent-primary"
                       />
-                      <span className={tourCodexFastMode ? 'text-foreground' : ''}>Fast mode</span>
+                      <span className={tourCodexFast ? 'text-foreground' : ''}>Fast mode</span>
                     </label>
                   </div>
                 </>

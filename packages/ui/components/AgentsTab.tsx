@@ -123,25 +123,48 @@ function StatusBadge({ status }: { status: AgentJobInfo['status'] }) {
 
 // --- Provider badge ---
 
-function ProviderBadge({ provider, engine, model, reasoningEffort, fastMode }: { provider: string; engine?: string; model?: string; reasoningEffort?: string; fastMode?: boolean }) {
+// Lookup a human label from the catalogs; fall back to the raw id.
+function catalogLabel(list: Array<{ value: string; label: string }>, value: string): string {
+  return list.find((o) => o.value === value)?.label ?? value;
+}
+
+function formatModel(provider: string, engine: string | undefined, model: string): string {
+  if (provider === 'codex' || engine === 'codex') return catalogLabel(CODEX_MODELS, model);
+  if (provider === 'tour' && engine === 'claude') return catalogLabel(TOUR_CLAUDE_MODELS, model);
+  return catalogLabel(CLAUDE_MODELS, model);
+}
+
+function formatEffort(value: string): string {
+  return catalogLabel(CLAUDE_EFFORT, value);
+}
+
+function formatReasoning(value: string): string {
+  return catalogLabel(CODEX_REASONING, value);
+}
+
+function ProviderBadge({ provider, engine, model, effort, reasoningEffort, fastMode }: { provider: string; engine?: string; model?: string; effort?: string; reasoningEffort?: string; fastMode?: boolean }) {
   let label: string;
   if (provider === 'tour') {
     const engineLabel = engine === 'codex' ? 'Codex' : 'Claude';
     const parts = [`Tour · ${engineLabel}`];
-    if (model && (engine === 'codex' || model !== 'sonnet')) {
-      parts.push(model.startsWith('gpt-') ? model : model.charAt(0).toUpperCase() + model.slice(1));
-    }
-    if (reasoningEffort) parts.push(reasoningEffort.charAt(0).toUpperCase() + reasoningEffort.slice(1));
+    if (model) parts.push(formatModel(provider, engine, model));
+    if (engine === 'claude' && effort) parts.push(formatEffort(effort));
+    if (engine === 'codex' && reasoningEffort) parts.push(formatReasoning(reasoningEffort));
     if (fastMode) parts.push('Fast');
     label = parts.join(' · ');
   } else if (provider === 'codex') {
     const parts = ['Codex'];
-    if (model) parts.push(model);
-    if (reasoningEffort) parts.push(reasoningEffort.charAt(0).toUpperCase() + reasoningEffort.slice(1));
+    if (model) parts.push(formatModel(provider, engine, model));
+    if (reasoningEffort) parts.push(formatReasoning(reasoningEffort));
     if (fastMode) parts.push('Fast');
     label = parts.join(' · ');
+  } else if (provider === 'claude') {
+    const parts = ['Claude'];
+    if (model) parts.push(formatModel(provider, engine, model));
+    if (effort) parts.push(formatEffort(effort));
+    label = parts.join(' · ');
   } else {
-    label = provider === 'claude' ? 'Claude' : 'Shell';
+    label = 'Shell';
   }
   return (
     <span className={`text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded ${
@@ -182,7 +205,7 @@ function JobCard({
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <ProviderBadge provider={job.provider} engine={job.engine} model={job.model} reasoningEffort={job.reasoningEffort} fastMode={job.fastMode} />
+          <ProviderBadge provider={job.provider} engine={job.engine} model={job.model} effort={job.effort} reasoningEffort={job.reasoningEffort} fastMode={job.fastMode} />
           <span className="text-xs text-foreground/80 truncate">{job.label}</span>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -324,7 +347,6 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
 
   const handleLaunch = () => {
     if (!selectedProvider) return;
-    const provider = availableProviders.find((p) => p.id === selectedProvider);
 
     if (selectedProvider === 'tour') {
       onLaunch({
@@ -341,7 +363,7 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
 
     onLaunch({
       provider: selectedProvider,
-      label: provider ? `${provider.name} Review` : selectedProvider,
+      label: 'Code Review',
       ...(selectedProvider === 'claude' ? { model: claudeModel, effort: claudeEffort } : {}),
       ...(selectedProvider === 'codex' ? { model: codexModel, reasoningEffort: codexReasoning } : {}),
       ...(selectedProvider === 'codex' && codexFast ? { fastMode: true } : {}),

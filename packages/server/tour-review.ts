@@ -527,6 +527,7 @@ export interface TourSessionBuildCommandResult {
   prompt?: string;
   engine: "claude" | "codex";
   model: string;
+  effort?: string;
   reasoningEffort?: string;
   fastMode?: boolean;
 }
@@ -583,7 +584,7 @@ export function createTourSession(): TourSession {
       }
 
       const { command, stdinPrompt } = buildTourClaudeCommand(prompt, model, effort);
-      return { command, stdinPrompt, prompt, cwd, label: "Code Tour", captureStdout: true, engine: "claude", model };
+      return { command, stdinPrompt, prompt, cwd, label: "Code Tour", captureStdout: true, engine: "claude", model, effort };
     },
 
     async onJobComplete({ job, meta }) {

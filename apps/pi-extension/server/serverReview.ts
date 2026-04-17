@@ -230,7 +230,7 @@ export async function startReviewServer(options: {
 				const outputPath = generateOutputPath();
 				const prompt = CODEX_REVIEW_SYSTEM_PROMPT + "\n\n---\n\n" + userMessage;
 				const command = await buildCodexCommand({ cwd, outputPath, prompt, model, reasoningEffort, fastMode });
-				return { command, outputPath, prompt, label: "Codex Review", model, reasoningEffort, fastMode: fastMode || undefined };
+				return { command, outputPath, prompt, label: "Code Review", model, reasoningEffort, fastMode: fastMode || undefined };
 			}
 
 			if (provider === "claude") {
@@ -238,7 +238,7 @@ export async function startReviewServer(options: {
 				const effort = typeof config?.effort === "string" && config.effort ? config.effort : undefined;
 				const prompt = CLAUDE_REVIEW_PROMPT + "\n\n---\n\n" + userMessage;
 				const { command, stdinPrompt } = buildClaudeCommand(prompt, model, effort);
-				return { command, stdinPrompt, prompt, cwd, label: "Claude Code Review", captureStdout: true, model };
+				return { command, stdinPrompt, prompt, cwd, label: "Code Review", captureStdout: true, model, effort };
 			}
 
 			if (provider === "tour") {

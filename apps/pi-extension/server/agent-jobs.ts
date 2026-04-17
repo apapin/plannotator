@@ -67,6 +67,8 @@ export interface AgentJobHandlerOptions {
 		engine?: string;
 		/** Model used (e.g., "sonnet", "opus"). Stored on AgentJobInfo for UI display. */
 		model?: string;
+		/** Claude --effort level. */
+		effort?: string;
 		/** Codex reasoning effort level. */
 		reasoningEffort?: string;
 		/** Whether Codex fast mode was enabled. */
@@ -116,7 +118,7 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions) {
 		command: string[],
 		label: string,
 		outputPath?: string,
-		spawnOptions?: { captureStdout?: boolean; stdinPrompt?: string; cwd?: string; prompt?: string; engine?: string; model?: string; reasoningEffort?: string; fastMode?: boolean },
+		spawnOptions?: { captureStdout?: boolean; stdinPrompt?: string; cwd?: string; prompt?: string; engine?: string; model?: string; effort?: string; reasoningEffort?: string; fastMode?: boolean },
 	): AgentJobInfo {
 		const id = crypto.randomUUID();
 		const source = jobSource(id);
@@ -132,6 +134,7 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions) {
 			cwd: getCwd(),
 			...(spawnOptions?.engine && { engine: spawnOptions.engine }),
 			...(spawnOptions?.model && { model: spawnOptions.model }),
+			...(spawnOptions?.effort && { effort: spawnOptions.effort }),
 			...(spawnOptions?.reasoningEffort && { reasoningEffort: spawnOptions.reasoningEffort }),
 			...(spawnOptions?.fastMode && { fastMode: spawnOptions.fastMode }),
 		};
@@ -412,6 +415,7 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions) {
 					let promptText: string | undefined;
 					let jobEngine: string | undefined;
 					let jobModel: string | undefined;
+					let jobEffort: string | undefined;
 					let jobReasoningEffort: string | undefined;
 					let jobFastMode: boolean | undefined;
 					if (options.buildCommand) {
@@ -433,6 +437,7 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions) {
 							if (built.label) label = built.label;
 							jobEngine = built.engine;
 							jobModel = built.model;
+							jobEffort = built.effort;
 							jobReasoningEffort = built.reasoningEffort;
 							jobFastMode = built.fastMode;
 						}
@@ -450,6 +455,7 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions) {
 						prompt: promptText,
 						engine: jobEngine,
 						model: jobModel,
+						effort: jobEffort,
 						reasoningEffort: jobReasoningEffort,
 						fastMode: jobFastMode,
 					});

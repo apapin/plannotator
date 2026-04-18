@@ -407,6 +407,18 @@ COMMAND_EOF
 
 echo "Installed /plannotator-last command to ${CLAUDE_COMMANDS_DIR}/plannotator-last.md"
 
+# Install /plannotator-copy-last slash command for Claude Code
+cat > "$CLAUDE_COMMANDS_DIR/plannotator-copy-last.md" << 'COMMAND_EOF'
+---
+description: Copy the last rendered assistant message to the clipboard
+allowed-tools: Bash(plannotator:*)
+---
+
+!`plannotator copy-last`
+COMMAND_EOF
+
+echo "Installed /plannotator-copy-last command to ${CLAUDE_COMMANDS_DIR}/plannotator-copy-last.md"
+
 # Install OpenCode slash command
 OPENCODE_COMMANDS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/opencode/command"
 mkdir -p "$OPENCODE_COMMANDS_DIR"
@@ -593,7 +605,7 @@ echo "Add the plugin to your opencode.json:"
 echo ""
 echo '  "plugin": ["@plannotator/opencode@latest"]'
 echo ""
-echo "Then restart OpenCode. The /plannotator-review, /plannotator-annotate, and /plannotator-last commands are ready!"
+echo "Then restart OpenCode. The /plannotator-review, /plannotator-annotate, /plannotator-last, and /plannotator-copy-last commands are ready!"
 echo ""
 echo "=========================================="
 echo "  PI USERS"
@@ -624,7 +636,7 @@ echo "Install the Claude Code plugin:"
 echo "  /plugin marketplace add backnotprop/plannotator"
 echo "  /plugin install plannotator@plannotator"
 echo ""
-echo "The /plannotator-review, /plannotator-annotate, and /plannotator-last commands are ready to use after you restart Claude Code!"
+echo "The /plannotator-review, /plannotator-annotate, /plannotator-last, and /plannotator-copy-last commands are ready to use after you restart Claude Code!"
 
 # Warn if plannotator is configured in both settings.json hooks AND the plugin (causes double execution)
 # Only warn when the plugin is installed — manual-only users won't have overlap

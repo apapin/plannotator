@@ -338,6 +338,18 @@ Address the annotation feedback above. The user has reviewed your last message a
 
 Write-Host "Installed /plannotator-last command to $claudeCommandsDir\plannotator-last.md"
 
+# Install Claude Code /plannotator-copy-last slash command
+@'
+---
+description: Copy the last rendered assistant message to the clipboard
+allowed-tools: Bash(plannotator:*)
+---
+
+!`plannotator copy-last`
+'@ | Set-Content -Path "$claudeCommandsDir\plannotator-copy-last.md"
+
+Write-Host "Installed /plannotator-copy-last command to $claudeCommandsDir\plannotator-copy-last.md"
+
 # Install OpenCode slash command
 $opencodeCommandsDir = "$env:USERPROFILE\.config\opencode\command"
 New-Item -ItemType Directory -Force -Path $opencodeCommandsDir | Out-Null
@@ -532,7 +544,7 @@ Write-Host "Add the plugin to your opencode.json:"
 Write-Host ""
 Write-Host '  "plugin": ["@plannotator/opencode@latest"]'
 Write-Host ""
-Write-Host "Then restart OpenCode. The /plannotator-review, /plannotator-annotate, and /plannotator-last commands are ready!"
+Write-Host "Then restart OpenCode. The /plannotator-review, /plannotator-annotate, /plannotator-last, and /plannotator-copy-last commands are ready!"
 Write-Host ""
 Write-Host "=========================================="
 Write-Host "  PI USERS"
@@ -550,7 +562,7 @@ Write-Host "Install the Claude Code plugin:"
 Write-Host "  /plugin marketplace add backnotprop/plannotator"
 Write-Host "  /plugin install plannotator@plannotator"
 Write-Host ""
-Write-Host "The /plannotator-review, /plannotator-annotate, and /plannotator-last commands are ready to use after you restart Claude Code!"
+Write-Host "The /plannotator-review, /plannotator-annotate, /plannotator-last, and /plannotator-copy-last commands are ready to use after you restart Claude Code!"
 
 # Warn if plannotator is configured in both settings.json hooks AND the plugin (causes double execution)
 # Only warn when the plugin is installed — manual-only users won't have overlap

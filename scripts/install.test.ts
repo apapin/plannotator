@@ -64,6 +64,7 @@ describe("install.sh", () => {
     expect(script).toContain("plannotator-review.md");
     expect(script).toContain("plannotator-annotate.md");
     expect(script).toContain("plannotator-last.md");
+    expect(script).toContain("plannotator-copy-last.md");
     expect(script).toContain("CLAUDE_COMMANDS_DIR");
     expect(script).toContain("OPENCODE_COMMANDS_DIR");
   });
@@ -133,6 +134,7 @@ describe("install.ps1", () => {
     expect(script).toContain("plannotator-review.md");
     expect(script).toContain("plannotator-annotate.md");
     expect(script).toContain("plannotator-last.md");
+    expect(script).toContain("plannotator-copy-last.md");
   });
 });
 
@@ -194,6 +196,7 @@ describe("install.cmd", () => {
     expect(script).toContain("plannotator-review.md");
     expect(script).toContain("plannotator-annotate.md");
     expect(script).toContain("plannotator-last.md");
+    expect(script).toContain("plannotator-copy-last.md");
   });
 
   test("Gemini settings merge uses || idiom (issue #506 regression)", () => {

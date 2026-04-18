@@ -37,7 +37,11 @@
  *    - Annotate the last assistant message from a Copilot CLI session
  *    - Parses events.jsonl from session state
  *
- * 8. Improve Context (`plannotator improve-context`):
+ * 8. Copy Last (`plannotator copy-last` / `plannotator copilot-copy-last`):
+ *    - Copy the last rendered assistant message to the system clipboard
+ *    - Same lookup as annotate-last, but no UI is opened
+ *
+ * 9. Improve Context (`plannotator improve-context`):
  *    - Spawned by PreToolUse hook on EnterPlanMode
  *    - Reads improvement hook file from ~/.plannotator/hooks/
  *    - Returns additionalContext or silently passes through
@@ -76,6 +80,7 @@ import { statSync, rmSync, realpathSync, existsSync } from "fs";
 import { parseRemoteUrl } from "@plannotator/shared/repo";
 import { registerSession, unregisterSession, listSessions } from "@plannotator/server/sessions";
 import { openBrowser } from "@plannotator/server/browser";
+import { copyToClipboard } from "@plannotator/server/clipboard";
 import { detectProjectName } from "@plannotator/server/project";
 import { hostnameOrFallback } from "@plannotator/shared/project";
 import { planDenyFeedback } from "@plannotator/shared/feedback-templates";
@@ -728,6 +733,86 @@ if (args[0] === "sessions") {
     console.log(result.feedback || "No feedback provided.");
   }
   process.exit(0);
+
+} else if (args[0] === "copy-last") {
+  // ============================================
+  // COPY LAST MESSAGE TO CLIPBOARD MODE
+  // ============================================
+  //
+  // Finds the last rendered assistant message (same lookup as annotate-last)
+  // and writes it to the system clipboard. No UI, no server — just copy.
+
+  const projectRoot = process.env.PLANNOTATOR_CWD || process.cwd();
+  const codexThreadId = process.env.CODEX_THREAD_ID;
+
+  let lastMessage: RenderedMessage | null = null;
+
+  if (codexThreadId) {
+    const rolloutPath = findCodexRolloutByThreadId(codexThreadId);
+    if (rolloutPath) {
+      const msg = getLastCodexMessage(rolloutPath);
+      if (msg) {
+        lastMessage = { messageId: codexThreadId, text: msg.text, lineNumbers: [] };
+      }
+    }
+  } else {
+    function tryLogCandidates(getPaths: () => string[]): void {
+      if (lastMessage) return;
+      for (const logPath of getPaths()) {
+        lastMessage = getLastRenderedMessage(logPath);
+        if (lastMessage) return;
+      }
+    }
+
+    const ppidLog = resolveSessionLogByPpid();
+    tryLogCandidates(() => ppidLog ? [ppidLog] : []);
+    tryLogCandidates(() => findSessionLogsForCwd(projectRoot));
+    tryLogCandidates(() => findSessionLogsByAncestorWalk(projectRoot));
+  }
+
+  if (!lastMessage) {
+    console.error("No rendered assistant message found in session logs.");
+    process.exit(1);
+  }
+
+  const result = await copyToClipboard(lastMessage.text);
+
+  if (result.ok) {
+    console.log(`Copied last message to clipboard (${lastMessage.text.length} chars).`);
+    process.exit(0);
+  } else {
+    console.error(`Failed to copy to clipboard: ${result.error}`);
+    process.exit(1);
+  }
+
+} else if (args[0] === "copilot-copy-last") {
+  // ============================================
+  // COPILOT CLI COPY LAST MESSAGE TO CLIPBOARD MODE
+  // ============================================
+
+  const projectRoot = process.env.PLANNOTATOR_CWD || process.cwd();
+  const sessionDir = findCopilotSessionForCwd(projectRoot);
+
+  if (!sessionDir) {
+    console.error("No Copilot CLI session found.");
+    process.exit(1);
+  }
+
+  const msg = getLastCopilotMessage(sessionDir);
+  if (!msg) {
+    console.error("No assistant message found in Copilot CLI session.");
+    process.exit(1);
+  }
+
+  const result = await copyToClipboard(msg.text);
+
+  if (result.ok) {
+    console.log(`Copied last message to clipboard (${msg.text.length} chars).`);
+    process.exit(0);
+  } else {
+    console.error(`Failed to copy to clipboard: ${result.error}`);
+    process.exit(1);
+  }
 
 } else if (args[0] === "archive") {
   // ============================================

@@ -133,16 +133,17 @@ export async function startReviewServer(
 
   // Agent jobs — background process manager (late-binds serverUrl via getter)
   let serverUrl = "";
+  // Worktree-aware cwd resolver — shared by getCwd, buildCommand, and onJobComplete.
+  // Mirror of Pi's resolveAgentCwd in apps/pi-extension/server/serverReview.ts.
+  const resolveAgentCwd = (): string =>
+    options.agentCwd ?? resolveVcsCwd(currentDiffType, gitContext?.cwd) ?? process.cwd();
   const agentJobs = createAgentJobHandler({
     mode: "review",
     getServerUrl: () => serverUrl,
-    getCwd: () => {
-      if (options.agentCwd) return options.agentCwd;
-      return resolveVcsCwd(currentDiffType, gitContext?.cwd) ?? process.cwd();
-    },
+    getCwd: resolveAgentCwd,
 
     async buildCommand(provider, config) {
-      const cwd = options.agentCwd ?? resolveVcsCwd(currentDiffType, gitContext?.cwd) ?? process.cwd();
+      const cwd = resolveAgentCwd();
       const hasAgentLocalAccess = !!options.agentCwd || !!gitContext;
       const userMessage = buildCodexReviewUserMessage(
         currentPatch,
@@ -177,7 +178,7 @@ export async function startReviewServer(
     },
 
     async onJobComplete(job, meta) {
-      const cwd = options.agentCwd ?? resolveVcsCwd(currentDiffType, gitContext?.cwd) ?? process.cwd();
+      const cwd = resolveAgentCwd();
 
       // --- Codex path ---
       if (job.provider === "codex" && meta.outputPath) {
@@ -383,7 +384,7 @@ export async function startReviewServer(
           const url = new URL(req.url);
 
           // API: Get tour result
-          if (url.pathname.startsWith("/api/tour/") && req.method === "GET" && !url.pathname.includes("/", "/api/tour/".length)) {
+          if (url.pathname.match(/^\/api\/tour\/[^/]+$/) && req.method === "GET") {
             const jobId = url.pathname.slice("/api/tour/".length);
             const result = tour.getTour(jobId);
             if (!result) return Response.json({ error: "Tour not found" }, { status: 404 });

@@ -44,7 +44,7 @@ const initialState: AgentSettingsState = {
 // One-shot migration: drop any cached "none" codex reasoning entries. The
 // dropdown no longer offers "None" (codex-rs rejects it as a config value);
 // fall back to the default instead of shipping an invalid flag.
-function sanitizeCodexPerModel(
+export function sanitizeCodexPerModel(
   perModel: Record<string, { reasoning: string; fast: boolean }> | undefined,
 ): Record<string, { reasoning: string; fast: boolean }> {
   if (!perModel) return {};
@@ -109,15 +109,27 @@ export function useAgentSettings() {
     setState((s) => ({ ...s, claude: { ...s.claude, model } }));
   }, []);
 
-  const setClaudeEffort = useCallback((effort: string) => {
-    setState((s) => ({
-      ...s,
-      claude: {
-        ...s.claude,
-        perModel: { ...s.claude.perModel, [s.claude.model]: { effort } },
-      },
-    }));
-  }, []);
+  const patchClaude = useCallback(
+    (section: 'claude' | 'tourClaude', patch: Partial<{ effort: string }>) => {
+      setState((s) => {
+        const cur = s[section];
+        const prev = cur.perModel[cur.model] ?? { effort: '' };
+        return {
+          ...s,
+          [section]: {
+            ...cur,
+            perModel: { ...cur.perModel, [cur.model]: { ...prev, ...patch } },
+          },
+        };
+      });
+    },
+    [],
+  );
+
+  const setClaudeEffort = useCallback(
+    (effort: string) => patchClaude('claude', { effort }),
+    [patchClaude],
+  );
 
   const setCodexModel = useCallback((model: string) => {
     setState((s) => ({ ...s, codex: { ...s.codex, model } }));
@@ -157,15 +169,10 @@ export function useAgentSettings() {
     setState((s) => ({ ...s, tourClaude: { ...s.tourClaude, model } }));
   }, []);
 
-  const setTourClaudeEffort = useCallback((effort: string) => {
-    setState((s) => ({
-      ...s,
-      tourClaude: {
-        ...s.tourClaude,
-        perModel: { ...s.tourClaude.perModel, [s.tourClaude.model]: { effort } },
-      },
-    }));
-  }, []);
+  const setTourClaudeEffort = useCallback(
+    (effort: string) => patchClaude('tourClaude', { effort }),
+    [patchClaude],
+  );
 
   const setTourCodexModel = useCallback((model: string) => {
     setState((s) => ({ ...s, tourCodex: { ...s.tourCodex, model } }));

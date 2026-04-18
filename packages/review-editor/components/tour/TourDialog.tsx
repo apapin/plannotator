@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { motion, type Variants } from 'motion/react';
+import { motion, MotionConfig, type Variants } from 'motion/react';
 import { OverlayScrollArea } from '@plannotator/ui/components/OverlayScrollArea';
 import { useTourData } from '../../hooks/useTourData';
 import { useReviewState } from '../../dock/ReviewStateContext';
@@ -192,20 +192,26 @@ export const TourDialog: React.FC<TourDialogProps> = ({ jobId, onClose }) => {
 
   if (!renderedJobId) return null;
 
+  // MotionConfig reducedMotion="user" makes every motion.* inside honor the
+  // OS prefers-reduced-motion setting: transform/scale drop out, opacity
+  // crossfade stays. Pair with the CSS @media block that handles the
+  // class-based keyframes so both sides of the animation surface cooperate.
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-2 md:px-8 md:py-4" onClick={requestClose}>
-      {/* Backdrop */}
-      <div className={`absolute inset-0 bg-black/50 backdrop-blur-[2px] ${closing ? 'tour-dialog-overlay-closing' : 'tour-dialog-overlay'}`} />
+    <MotionConfig reducedMotion="user">
+      <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-2 md:px-8 md:py-4" onClick={requestClose}>
+        {/* Backdrop */}
+        <div className={`absolute inset-0 bg-black/50 backdrop-blur-[2px] ${closing ? 'tour-dialog-overlay-closing' : 'tour-dialog-overlay'}`} />
 
-      {/* Dialog card */}
-      <div
-        className={`relative z-10 w-full max-w-6xl h-full max-h-[96vh] bg-background rounded-2xl shadow-2xl border border-border/15 overflow-hidden flex flex-col ${closing ? 'tour-dialog-content-closing' : 'tour-dialog-content'}`}
-        onClick={(e) => e.stopPropagation()}
-        onAnimationEnd={closing ? handleExitEnd : undefined}
-      >
-        <TourDialogContent jobId={renderedJobId} onClose={requestClose} />
+        {/* Dialog card */}
+        <div
+          className={`relative z-10 w-full max-w-6xl h-full max-h-[96vh] bg-background rounded-2xl shadow-2xl border border-border/15 overflow-hidden flex flex-col ${closing ? 'tour-dialog-content-closing' : 'tour-dialog-content'}`}
+          onClick={(e) => e.stopPropagation()}
+          onAnimationEnd={closing ? handleExitEnd : undefined}
+        >
+          <TourDialogContent jobId={renderedJobId} onClose={requestClose} />
+        </div>
       </div>
-    </div>
+    </MotionConfig>
   );
 };
 

@@ -357,29 +357,30 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
   const claudeAvailable = capabilities?.providers.some((p) => p.id === 'claude' && p.available) ?? false;
   const codexAvailable = capabilities?.providers.some((p) => p.id === 'codex' && p.available) ?? false;
 
+  type LaunchParams = Parameters<typeof onLaunch>[0];
+  const buildLaunch: Record<string, () => LaunchParams> = {
+    claude: () => ({ provider: 'claude', label: 'Code Review', model: claudeModel, effort: claudeEffort }),
+    codex: () => ({
+      provider: 'codex',
+      label: 'Code Review',
+      model: codexModel,
+      reasoningEffort: codexReasoning,
+      ...(codexFast && { fastMode: true }),
+    }),
+    tour: () => ({
+      provider: 'tour',
+      label: 'Code Tour',
+      engine: tourEngine,
+      model: tourEngine === 'claude' ? tourClaudeModel : tourCodexModel,
+      ...(tourEngine === 'claude'
+        ? { effort: tourClaudeEffort }
+        : { reasoningEffort: tourCodexReasoning, ...(tourCodexFast && { fastMode: true }) }),
+    }),
+  };
+
   const handleLaunch = () => {
     if (!selectedProvider) return;
-
-    if (selectedProvider === 'tour') {
-      onLaunch({
-        provider: 'tour',
-        label: 'Code Tour',
-        engine: tourEngine,
-        model: tourEngine === 'claude' ? tourClaudeModel : tourCodexModel,
-        ...(tourEngine === 'claude' ? { effort: tourClaudeEffort } : {}),
-        ...(tourEngine === 'codex' ? { reasoningEffort: tourCodexReasoning } : {}),
-        ...(tourEngine === 'codex' && tourCodexFast ? { fastMode: true } : {}),
-      });
-      return;
-    }
-
-    onLaunch({
-      provider: selectedProvider,
-      label: 'Code Review',
-      ...(selectedProvider === 'claude' ? { model: claudeModel, effort: claudeEffort } : {}),
-      ...(selectedProvider === 'codex' ? { model: codexModel, reasoningEffort: codexReasoning } : {}),
-      ...(selectedProvider === 'codex' && codexFast ? { fastMode: true } : {}),
-    });
+    onLaunch(buildLaunch[selectedProvider]?.() ?? { provider: selectedProvider, label: selectedProvider });
   };
 
   return (

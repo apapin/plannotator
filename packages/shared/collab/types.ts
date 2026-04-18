@@ -125,7 +125,7 @@ export type RoomTransportMessage =
 // Room Status
 // ---------------------------------------------------------------------------
 
-export type RoomStatus = 'created' | 'active' | 'locked' | 'deleted';
+export type RoomStatus = 'created' | 'active' | 'locked' | 'deleted' | 'expired';
 
 // ---------------------------------------------------------------------------
 // Sequenced Envelope (for event log storage)

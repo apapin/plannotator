@@ -185,7 +185,8 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions) {
 					const lines = text.split('\n');
 					for (const line of lines) {
 						if (!line.trim()) continue;
-						if (provider === "claude") {
+						// Tour jobs with the Claude engine also stream Claude JSONL.
+						if (provider === "claude" || spawnOptions?.engine === "claude") {
 							const formatted = formatClaudeLogEvent(line);
 							if (formatted !== null) {
 								broadcast({ type: "job:log", jobId: id, delta: formatted + '\n' });

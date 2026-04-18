@@ -371,7 +371,11 @@ export function buildTourClaudeCommand(prompt: string, model: string = "sonnet",
     "Bash(git show-ref:*)",
     "Bash(gh pr view:*)", "Bash(gh pr diff:*)", "Bash(gh pr list:*)",
     "Bash(gh api repos/*/*/pulls/*)", "Bash(gh api repos/*/*/pulls/*/files*)",
+    // Linked-issue context: the prompt tells the agent to read `Fixes #123` / `Closes
+    // owner/repo#456` targets, so the allowlist has to permit the issue-read commands.
+    "Bash(gh issue view:*)", "Bash(gh api repos/*/*/issues/*)",
     "Bash(glab mr view:*)", "Bash(glab mr diff:*)",
+    "Bash(glab issue view:*)",
     "Bash(wc:*)",
   ].join(",");
 

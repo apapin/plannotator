@@ -236,8 +236,9 @@ export function createAgentJobHandler(options: AgentJobHandlerOptions): AgentJob
                 const lines = text.split('\n');
                 for (const line of lines) {
                   if (!line.trim()) continue;
-                  // Claude: format JSONL into readable text
-                  if (provider === "claude") {
+                  // Claude: format JSONL into readable text. Tour jobs with the
+                  // Claude engine also stream Claude JSONL, so key off engine too.
+                  if (provider === "claude" || spawnOptions?.engine === "claude") {
                     const formatted = formatClaudeLogEvent(line);
                     if (formatted !== null) {
                       broadcast({ type: "job:log", jobId: id, delta: formatted + '\n' });

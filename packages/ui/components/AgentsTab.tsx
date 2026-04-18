@@ -46,6 +46,19 @@ const TOUR_CLAUDE_MODELS: Array<{ value: string; label: string }> = [
   { value: 'opus', label: 'Opus (thorough)' },
 ];
 
+// Dropdown labels: action first, provider second. Groups visually by action —
+// you scan two "Code Review" entries and one "Code Tour" instead of three raw
+// CLI names.
+const PROVIDER_DROPDOWN_LABEL: Record<string, string> = {
+  claude: 'Code Review · Claude',
+  codex: 'Code Review · Codex',
+  tour: 'Code Tour',
+};
+
+function providerDropdownLabel(id: string, fallback: string): string {
+  return PROVIDER_DROPDOWN_LABEL[id] ?? fallback;
+}
+
 interface AgentsTabProps {
   jobs: AgentJobInfo[];
   capabilities: AgentCapabilities | null;
@@ -384,13 +397,13 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
               >
                 {availableProviders.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name}
+                    {providerDropdownLabel(p.id, p.name)}
                   </option>
                 ))}
               </select>
             ) : (
               <span className="flex-1 text-xs px-2 py-1.5 text-muted-foreground">
-                {availableProviders[0]?.name}
+                {availableProviders[0] ? providerDropdownLabel(availableProviders[0].id, availableProviders[0].name) : ''}
               </span>
             )}
             <button

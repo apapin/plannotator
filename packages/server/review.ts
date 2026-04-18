@@ -227,7 +227,15 @@ export async function startReviewServer(
       // --- Tour path ---
       if (job.provider === "tour") {
         const { summary } = await tour.onJobComplete({ job, meta });
-        if (summary) job.summary = summary;
+        if (summary) {
+          job.summary = summary;
+        } else {
+          // The process exited 0 but the model returned empty or malformed output
+          // and nothing was stored. Flip status so the client doesn't auto-open
+          // a successful-looking card that 404s on /api/tour/:id.
+          job.status = "failed";
+          job.error = "Tour generation returned empty or malformed output";
+        }
         return;
       }
     },

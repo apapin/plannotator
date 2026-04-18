@@ -41,6 +41,25 @@ const initialState: AgentSettingsState = {
   tourCodex: { model: DEFAULT_TOUR_CODEX_MODEL, perModel: {} },
 };
 
+// One-shot migration: drop any cached "none" codex reasoning entries. The
+// dropdown no longer offers "None" (codex-rs rejects it as a config value);
+// fall back to the default instead of shipping an invalid flag.
+function sanitizeCodexPerModel(
+  perModel: Record<string, { reasoning: string; fast: boolean }> | undefined,
+): Record<string, { reasoning: string; fast: boolean }> {
+  if (!perModel) return {};
+  const out: Record<string, { reasoning: string; fast: boolean }> = {};
+  for (const [model, entry] of Object.entries(perModel)) {
+    if (!entry || typeof entry !== 'object') continue;
+    if (entry.reasoning === 'none') {
+      if (entry.fast) out[model] = { reasoning: DEFAULT_CODEX_REASONING, fast: true };
+      continue;
+    }
+    out[model] = entry;
+  }
+  return out;
+}
+
 function readCookie(): AgentSettingsState {
   const raw = getItem(COOKIE_KEY);
   if (!raw) return initialState;
@@ -55,7 +74,7 @@ function readCookie(): AgentSettingsState {
       },
       codex: {
         model: typeof parsed.codex?.model === 'string' ? parsed.codex.model : DEFAULT_CODEX_MODEL,
-        perModel: parsed.codex?.perModel ?? {},
+        perModel: sanitizeCodexPerModel(parsed.codex?.perModel),
       },
       tourClaude: {
         model: typeof parsed.tourClaude?.model === 'string' ? parsed.tourClaude.model : DEFAULT_TOUR_CLAUDE_MODEL,
@@ -63,7 +82,7 @@ function readCookie(): AgentSettingsState {
       },
       tourCodex: {
         model: typeof parsed.tourCodex?.model === 'string' ? parsed.tourCodex.model : DEFAULT_TOUR_CODEX_MODEL,
-        perModel: parsed.tourCodex?.perModel ?? {},
+        perModel: sanitizeCodexPerModel(parsed.tourCodex?.perModel),
       },
     };
   } catch {

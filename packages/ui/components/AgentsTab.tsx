@@ -32,7 +32,6 @@ const CODEX_MODELS: Array<{ value: string; label: string }> = [
 ];
 
 const CODEX_REASONING: Array<{ value: string; label: string }> = [
-  { value: 'none', label: 'None' },
   { value: 'minimal', label: 'Minimal' },
   { value: 'low', label: 'Low' },
   { value: 'medium', label: 'Medium' },

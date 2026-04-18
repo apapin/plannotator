@@ -39,6 +39,7 @@ import { FILE_BROWSER_EXCLUDED } from "./generated/reference-common.js";
 import { htmlToMarkdown } from "./generated/html-to-markdown.js";
 import { urlToMarkdown } from "./generated/url-to-markdown.js";
 import { loadConfig, resolveUseJina } from "./generated/config.js";
+import { copyToClipboard } from "./generated/clipboard.js";
 import {
 	getLastAssistantMessageText,
 	hasPlanBrowserHtml,
@@ -512,6 +513,30 @@ export default function plannotator(pi: ExtensionAPI): void {
 			} catch (err) {
 				ctx.ui.notify(
 					`Failed to start annotation UI: ${getStartupErrorMessage(err)}`,
+					"error",
+				);
+			}
+		},
+	});
+
+	pi.registerCommand("plannotator-copy-last", {
+		description: "Copy the last assistant message to the clipboard",
+		handler: async (_args, ctx) => {
+			const lastText = await getLastAssistantMessageText(ctx);
+			if (!lastText) {
+				ctx.ui.notify("No assistant message found in session.", "error");
+				return;
+			}
+
+			const result = await copyToClipboard(lastText);
+			if (result.ok) {
+				ctx.ui.notify(
+					`Copied last message to clipboard (${lastText.length} chars).`,
+					"info",
+				);
+			} else {
+				ctx.ui.notify(
+					`Failed to copy to clipboard: ${result.error}`,
 					"error",
 				);
 			}

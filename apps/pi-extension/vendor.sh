@@ -21,6 +21,12 @@ for f in codex-review claude-review path-utils; do
     > "generated/$f.ts"
 done
 
+# Vendor runtime-agnostic server utilities (no Bun APIs).
+for f in clipboard; do
+  src="../../packages/server/$f.ts"
+  printf '// @generated — DO NOT EDIT. Source: packages/server/%s.ts\n' "$f" | cat - "$src" > "generated/$f.ts"
+done
+
 for f in index types provider session-manager endpoints context base-session; do
   src="../../packages/ai/$f.ts"
   printf '// @generated — DO NOT EDIT. Source: packages/ai/%s.ts\n' "$f" | cat - "$src" > "generated/ai/$f.ts"

@@ -178,6 +178,10 @@ Run `/plannotator-annotate <file.md>` to open any markdown file in the annotatio
 
 Run `/plannotator-last` to annotate the agent's most recent response. The message opens in the annotation UI where you can highlight text, add comments, and send structured feedback back to the agent.
 
+### Copy last message
+
+Run `/plannotator-copy-last` to copy the agent's most recent response to the system clipboard. No UI opens — the message is written directly via `pbcopy` (macOS), `clip.exe` (Windows/WSL), or `wl-copy` / `xclip` / `xsel` (Linux).
+
 ### Archive browser
 
 The Plannotator archive browser is available through the shared event API as `archive`, which opens the saved plan/decision browser for future callers. The orchestrator does not expose a dedicated archive command yet.
@@ -196,6 +200,7 @@ During execution, the agent marks completed steps with `[DONE:n]` markers. Progr
 | `/plannotator-review` | Open code review UI for current changes |
 | `/plannotator-annotate <file>` | Open markdown file in annotation UI |
 | `/plannotator-last` | Annotate the last assistant message |
+| `/plannotator-copy-last` | Copy the last assistant message to the clipboard |
 
 ## Flags
 

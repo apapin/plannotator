@@ -1,5 +1,5 @@
 /**
- * Cross-platform clipboard utility.
+ * Cross-platform clipboard utility. Runtime-agnostic (Node + Bun).
  *
  * Writes text to the system clipboard. Returns `{ ok: true, tool }` on success
  * or `{ ok: false, error }` when no clipboard tool is available or all attempts
@@ -13,15 +13,25 @@
  */
 
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import os from "node:os";
-
-import { isWSL } from "./browser";
 
 export interface ClipboardResult {
   ok: boolean;
   /** Tool name used for the successful write (e.g. "pbcopy", "clip.exe"). */
   tool?: string;
   error?: string;
+}
+
+function isWSL(): boolean {
+  if (os.platform() !== "linux") return false;
+  if (os.release().toLowerCase().includes("microsoft")) return true;
+  try {
+    const content = readFileSync("/proc/version", "utf-8").toLowerCase();
+    return content.includes("wsl") || content.includes("microsoft");
+  } catch {
+    return false;
+  }
 }
 
 function pipeToCommand(cmd: string, args: string[], text: string): Promise<boolean> {
@@ -55,7 +65,7 @@ export async function copyToClipboard(text: string): Promise<ClipboardResult> {
   }
 
   if (platform === "linux") {
-    if (await isWSL()) {
+    if (isWSL()) {
       const ok = await pipeToCommand("clip.exe", [], text);
       if (ok) return { ok: true, tool: "clip.exe" };
     }

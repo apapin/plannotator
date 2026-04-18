@@ -6,7 +6,7 @@
  * DO hibernation via serializeAttachment/deserializeAttachment.
  */
 
-import type { RoomStatus, SequencedEnvelope } from '@plannotator/shared/collab';
+import type { RoomStatus } from '@plannotator/shared/collab';
 
 // ---------------------------------------------------------------------------
 // Worker Environment
@@ -20,7 +20,12 @@ export interface Env {
   BASE_URL?: string;
 }
 
-/** Durable state stored in DO storage under key 'room'. */
+/**
+ * Durable state stored in DO storage under key 'room'.
+ *
+ * Events are NOT stored in this record — they use separate per-event keys
+ * ('event:0000000001', etc.) to stay within DO per-value size limits.
+ */
 export interface RoomDurableState {
   /** Stored at creation — DO can't reverse idFromName(). */
   roomId: string;
@@ -28,10 +33,10 @@ export interface RoomDurableState {
   roomVerifier: string;
   adminVerifier: string;
   seq: number;
+  /** Oldest event seq still in storage. Initialized to 1 at creation. */
+  earliestRetainedSeq: number;
   snapshotCiphertext?: string;
   snapshotSeq?: number;
-  /** Empty in Slice 2 — populated by Slice 3 event sequencing. */
-  eventLog: SequencedEnvelope[];
   lockedAt?: number;
   deletedAt?: number;
   expiredAt?: number;
@@ -42,9 +47,15 @@ export interface RoomDurableState {
  * WebSocket attachment — survives hibernation via serializeAttachment/deserializeAttachment.
  *
  * Pre-auth: holds pending challenge state so the DO can verify after waking.
- * Post-auth: holds authenticated connection metadata.
+ * Post-auth: holds authenticated connection metadata + optional pending admin challenge.
  * Both variants carry roomId so webSocketMessage() can access it without a storage read.
  */
 export type WebSocketAttachment =
   | { authenticated: false; roomId: string; challengeId: string; nonce: string; expiresAt: number }
-  | { authenticated: true; roomId: string; clientId: string; authenticatedAt: number };
+  | {
+      authenticated: true;
+      roomId: string;
+      clientId: string;
+      authenticatedAt: number;
+      pendingAdminChallenge?: { challengeId: string; nonce: string; expiresAt: number };
+    };

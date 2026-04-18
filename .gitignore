@@ -46,3 +46,6 @@ opencode.json
 plannotator-local
 # Local research/reference docs (not for repo)
 /reference/
+
+# Cloudflare Wrangler local state (Miniflare SQLite, caches)
+.wrangler/

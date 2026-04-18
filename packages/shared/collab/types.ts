@@ -119,7 +119,8 @@ export type RoomTransportMessage =
   | { type: 'room.snapshot'; snapshotSeq: number; snapshotCiphertext: string }
   | { type: 'room.event'; seq: number; receivedAt: number; envelope: ServerEnvelope }
   | { type: 'room.presence'; envelope: ServerEnvelope }
-  | { type: 'room.status'; status: RoomStatus };
+  | { type: 'room.status'; status: RoomStatus }
+  | { type: 'room.error'; code: string; message: string };
 
 // ---------------------------------------------------------------------------
 // Room Status
@@ -169,7 +170,7 @@ export interface AuthAccepted {
 // ---------------------------------------------------------------------------
 
 export type AdminCommand =
-  | { type: 'room.lock'; finalSnapshotCiphertext?: string }
+  | { type: 'room.lock'; finalSnapshotCiphertext?: string; finalSnapshotAtSeq?: number }
   | { type: 'room.unlock' }
   | { type: 'room.delete' };
 

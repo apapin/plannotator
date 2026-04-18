@@ -3,7 +3,7 @@
  * Fully testable with bun:test.
  */
 
-import type { CreateRoomRequest } from '@plannotator/shared/collab';
+import type { CreateRoomRequest, ServerEnvelope, AdminCommandEnvelope } from '@plannotator/shared/collab';
 
 export interface ValidationError {
   error: string;
@@ -14,6 +14,8 @@ const MIN_EXPIRY_DAYS = 1;
 const MAX_EXPIRY_DAYS = 30;
 const DEFAULT_EXPIRY_DAYS = 30;
 const MAX_SNAPSHOT_CIPHERTEXT_LENGTH = 1_500_000; // ~1.5 MB
+const MAX_EVENT_CIPHERTEXT_LENGTH = 512_000; // ~512 KB per event
+const MAX_PRESENCE_CIPHERTEXT_LENGTH = 8_192; // ~8 KB per presence update
 
 /** Clamp expiry days to [1, 30], default 30. */
 export function clampExpiryDays(days: number | undefined): number {
@@ -85,7 +87,93 @@ export function validateCreateRoomRequest(
   };
 }
 
-/** Type guard: is this a ValidationError (not a valid request)? */
-export function isValidationError(result: CreateRoomRequest | ValidationError): result is ValidationError {
-  return 'error' in result;
+/** Type guard: is the result a ValidationError? Works with any validated union. */
+export function isValidationError<T>(result: T | ValidationError): result is ValidationError {
+  return typeof result === 'object' && result !== null && 'error' in result;
+}
+
+// ---------------------------------------------------------------------------
+// Post-Auth Message Validation (Slice 3)
+// ---------------------------------------------------------------------------
+
+const VALID_CHANNELS = new Set(['event', 'presence']);
+const VALID_ADMIN_COMMANDS = new Set(['room.lock', 'room.unlock', 'room.delete']);
+
+/** Validate a ServerEnvelope from an authenticated WebSocket message. */
+export function validateServerEnvelope(
+  msg: Record<string, unknown>,
+): ServerEnvelope | ValidationError {
+  if (!isNonEmptyString(msg.clientId)) {
+    return { error: 'Missing or empty "clientId"', status: 400 };
+  }
+  if (!isNonEmptyString(msg.opId)) {
+    return { error: 'Missing or empty "opId"', status: 400 };
+  }
+  if (!isNonEmptyString(msg.channel) || !VALID_CHANNELS.has(msg.channel)) {
+    return { error: '"channel" must be "event" or "presence"', status: 400 };
+  }
+  if (!isNonEmptyString(msg.ciphertext)) {
+    return { error: 'Missing or empty "ciphertext"', status: 400 };
+  }
+
+  const maxSize = msg.channel === 'presence'
+    ? MAX_PRESENCE_CIPHERTEXT_LENGTH
+    : MAX_EVENT_CIPHERTEXT_LENGTH;
+  if (msg.ciphertext.length > maxSize) {
+    return { error: `Ciphertext exceeds max size for ${msg.channel} (${Math.round(maxSize / 1024)} KB)`, status: 413 };
+  }
+
+  return {
+    clientId: msg.clientId,
+    opId: msg.opId,
+    channel: msg.channel as 'event' | 'presence',
+    ciphertext: msg.ciphertext,
+  };
+}
+
+/** Validate an AdminCommandEnvelope from an authenticated WebSocket message. */
+export function validateAdminCommandEnvelope(
+  msg: Record<string, unknown>,
+): AdminCommandEnvelope | ValidationError {
+  if (!isNonEmptyString(msg.challengeId)) {
+    return { error: 'Missing or empty "challengeId"', status: 400 };
+  }
+  if (!isNonEmptyString(msg.clientId)) {
+    return { error: 'Missing or empty "clientId"', status: 400 };
+  }
+  if (!isNonEmptyString(msg.adminProof)) {
+    return { error: 'Missing or empty "adminProof"', status: 400 };
+  }
+
+  if (!msg.command || typeof msg.command !== 'object') {
+    return { error: 'Missing or invalid "command"', status: 400 };
+  }
+
+  const cmd = msg.command as Record<string, unknown>;
+  if (!isNonEmptyString(cmd.type) || !VALID_ADMIN_COMMANDS.has(cmd.type)) {
+    return { error: `Unknown command type: ${String(cmd.type)}`, status: 400 };
+  }
+
+  // Validate room.lock snapshot pair — both present or both absent
+  if (cmd.type === 'room.lock') {
+    const hasCiphertext = isNonEmptyString(cmd.finalSnapshotCiphertext);
+    const hasAtSeq = typeof cmd.finalSnapshotAtSeq === 'number';
+    if (hasCiphertext !== hasAtSeq) {
+      return { error: '"finalSnapshotCiphertext" and "finalSnapshotAtSeq" must be both present or both absent', status: 400 };
+    }
+    if (hasCiphertext && (cmd.finalSnapshotCiphertext as string).length > MAX_SNAPSHOT_CIPHERTEXT_LENGTH) {
+      return { error: `"finalSnapshotCiphertext" exceeds max size (${Math.round(MAX_SNAPSHOT_CIPHERTEXT_LENGTH / 1024)} KB)`, status: 413 };
+    }
+    if (hasAtSeq && ((cmd.finalSnapshotAtSeq as number) < 0 || !Number.isInteger(cmd.finalSnapshotAtSeq))) {
+      return { error: '"finalSnapshotAtSeq" must be a non-negative integer', status: 400 };
+    }
+  }
+
+  return {
+    type: 'admin.command',
+    challengeId: msg.challengeId,
+    clientId: msg.clientId,
+    command: msg.command as AdminCommandEnvelope['command'],
+    adminProof: msg.adminProof,
+  };
 }

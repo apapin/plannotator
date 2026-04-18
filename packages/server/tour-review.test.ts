@@ -5,8 +5,23 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseTourStreamOutput, parseTourFileOutput } from "./tour-review";
 
-const stop = { path: "src/a.ts", startLine: 1, endLine: 10, title: "t", body: "b" };
-const validOutput = { stops: [stop] };
+const stop = {
+  title: "Add retry",
+  gist: "Wrap the fetch in a retry.",
+  detail: "Three attempts, exponential backoff.",
+  transition: "",
+  anchors: [{ file: "src/a.ts", line: 1, end_line: 10, hunk: "", label: "retry" }],
+};
+const validOutput = {
+  title: "Retry pass",
+  greeting: "hi",
+  intent: "",
+  before: "",
+  after: "",
+  key_takeaways: [],
+  stops: [stop],
+  qa_checklist: [],
+};
 
 describe("parseTourStreamOutput", () => {
   test("returns parsed output from terminal result event", () => {

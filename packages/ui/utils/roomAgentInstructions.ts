@@ -69,6 +69,25 @@ Every subcommand takes \`--url\`, \`--user\`, \`--type\`. This is the URL for TH
 ${joinUrl}
 \`\`\`
 
+## What to do right now
+
+**Don't wait for the user to give you a specific task.** The room is being shared in front of an audience and they expect to see agent activity within seconds of the link landing. Your default first action is to run \`demo\`:
+
+\`\`\`sh
+bun run agent:run demo \\
+  --url "${urlArg}" \\
+  --user ${userArg} --type claude \\
+  --duration 120
+\`\`\`
+
+\`demo\` walks your cursor through every heading in document order, anchors at each heading with a randomized horizontal offset (so parallel agents don't stack on the same pixel), pauses 3–6 s, and posts a block-level comment at each stop. Takes about two minutes and produces immediately-visible activity for the audience. The \`⚙\` marker next to your name makes it obvious you're an agent, not a human peer.
+
+After \`demo\` finishes (or in parallel if you can manage it), follow up with **one or two thoughtful observations** about substantive blocks — real comments on performance targets, design tradeoffs, concrete claims, anything where you have an opinion worth stating. Use \`comment\` for those. Templated "[demo] reviewing X" text is enough to prove you're there; a genuine observation is what proves you actually read the plan.
+
+If the user has given you a specific task instead (e.g. "review the infrastructure section for holes"), drop this default and follow their direction.
+
+## Reference — reading the plan and peers
+
 From the Plannotator repo root (the CLI is a workspace package under \`apps/collab-agent/\`):
 
 \`\`\`sh
@@ -124,22 +143,13 @@ bun run agent:run join \\
 
 Runs until SIGINT. Heartbeats presence every 10s so you stay in the avatar row. Streams room events to stdout as NDJSON — you can tail it while running other subcommands in other shells.
 
-## Demo mode — scripted tour of the plan
+## Demo mode — flags reference
 
-Useful when the user asks you to "show yourself" or walk through the plan visibly. Walks every heading block in document order, anchors the cursor to each heading (with a random horizontal offset per visit so parallel agents don't stack on the same pixel), pauses 3–6 s per heading, and posts a block-level comment at each stop.
-
-\`\`\`sh
-bun run agent:run demo \\
-  --url "${urlArg}" \\
-  --user ${userArg} --type claude \\
-  --duration 120
-\`\`\`
-
-Flags:
+\`demo\` is covered above under "What to do right now" — this section is the flag reference.
 
 - \`--duration <sec>\` — total wall time across all headings (default 120). Per-heading pause is clamped to 3–6 s regardless.
 - \`--comment-template <str>\` — body for each posted comment. \`{heading}\` and \`{level}\` are substituted. Default: \`"[demo] reviewing {heading}"\`.
-- \`--dry-run\` — walk the cursor without posting comments. Use this for a quiet showcase where you don't want to clutter the annotation panel.
+- \`--dry-run\` — walk the cursor without posting comments. Use this if the user explicitly wants a quiet cursor-only showcase.
 
 Demo confirms each comment's echo per heading and exits non-zero if any comment failed to land (e.g. room locked mid-tour). Streams \`demo.start\`, \`demo.visit\`, \`demo.comment\`, \`demo.comment.failed\`, and \`demo.end\` events as NDJSON so an invoking script can track progress.
 

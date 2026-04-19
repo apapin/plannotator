@@ -16,7 +16,7 @@
 
 import { useCallback, useState } from 'react';
 import type { UseCollabRoomReturn } from './useCollabRoom';
-import type { AdminAction } from '../components/collab/AdminControls';
+import type { AdminAction } from '../../components/collab/AdminControls';
 
 export interface UseRoomAdminActionsReturn {
   /** Action currently in flight, if any. Drives button disabled + label. */

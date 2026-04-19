@@ -14,7 +14,7 @@
 import React from 'react';
 import App from './App';
 import { RoomApp } from './RoomApp';
-import { useRoomMode } from '@plannotator/ui/hooks/useRoomMode';
+import { useRoomMode } from '@plannotator/ui/hooks/collab/useRoomMode';
 import { isBase64Url32ByteString } from '@plannotator/shared/collab/validation';
 import { storeAdminSecret, loadAdminSecret } from '@plannotator/ui/utils/adminSecretStorage';
 import { captureCreatorIdentityFromFragment } from './roomIdentityHandoff';

@@ -62,7 +62,7 @@ import { useEditorAnnotations } from '@plannotator/ui/hooks/useEditorAnnotations
 import { useExternalAnnotations } from '@plannotator/ui/hooks/useExternalAnnotations';
 import { useExternalAnnotationHighlights } from '@plannotator/ui/hooks/useExternalAnnotationHighlights';
 import { useAnnotationHighlightReconciler } from '@plannotator/ui/hooks/useAnnotationHighlightReconciler';
-import { useRoomAdminActions } from '@plannotator/ui/hooks/useRoomAdminActions';
+import { useRoomAdminActions } from '@plannotator/ui/hooks/collab/useRoomAdminActions';
 import { RoomHeaderControls } from '@plannotator/ui/components/collab/RoomHeaderControls';
 import { RoomAdminErrorToast } from '@plannotator/ui/components/collab/RoomAdminErrorToast';
 import { ImageStripNotice } from '@plannotator/ui/components/collab/ImageStripNotice';
@@ -100,7 +100,7 @@ export interface AppProps {
    * AppRoot is the only caller that should pass this; plain
    * consumers mounting `<App />` get local mode unchanged.
    */
-  roomSession?: import('@plannotator/ui/hooks/useCollabRoomSession').UseCollabRoomSessionReturn;
+  roomSession?: import('@plannotator/ui/hooks/collab/useCollabRoomSession').UseCollabRoomSessionReturn;
 }
 
 /**

@@ -48,7 +48,7 @@ import type {
   FailedOp,
 } from '../types/annotationController';
 import type { Annotation } from '../types';
-import type { UseCollabRoomReturn } from './useCollabRoom';
+import type { UseCollabRoomReturn } from './collab/useCollabRoom';
 import type { RoomAnnotation } from '@plannotator/shared/collab';
 import { toRoomAnnotation as sharedToRoomAnnotation } from '@plannotator/shared/collab';
 

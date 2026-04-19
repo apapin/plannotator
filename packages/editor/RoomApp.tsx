@@ -22,8 +22,8 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useCollabRoomSession } from '@plannotator/ui/hooks/useCollabRoomSession';
-import { usePresenceThrottle } from '@plannotator/ui/hooks/usePresenceThrottle';
+import { useCollabRoomSession } from '@plannotator/ui/hooks/collab/useCollabRoomSession';
+import { usePresenceThrottle } from '@plannotator/ui/hooks/collab/usePresenceThrottle';
 import { RemoteCursorLayer } from '@plannotator/ui/components/collab/RemoteCursorLayer';
 import { JoinRoomGate } from '@plannotator/ui/components/collab/JoinRoomGate';
 import { loadAdminSecret } from '@plannotator/ui/utils/adminSecretStorage';

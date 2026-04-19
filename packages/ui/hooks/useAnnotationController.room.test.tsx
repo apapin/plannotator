@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { renderHook } from '@testing-library/react';
 import { useRoomAnnotationController } from './useAnnotationController';
 import { AnnotationType, type Annotation } from '../types';
-import type { UseCollabRoomReturn } from './useCollabRoom';
+import type { UseCollabRoomReturn } from './collab/useCollabRoom';
 import type { RoomAnnotation } from '@plannotator/shared/collab';
 
 function makeAnn(id: string, overrides: Partial<Annotation> = {}): Annotation {

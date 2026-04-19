@@ -25,7 +25,7 @@ export const TaterSpriteRunning: React.FC = () => {
         right: -DISPLAY_WIDTH, // Start off-screen right
         width: DISPLAY_WIDTH,
         height: DISPLAY_HEIGHT,
-        zIndex: 5, // Above sidebars (z-auto) but below plan document (z-10)
+        zIndex: 15, // Above sidebar tabs / resize handles (z-10) but below the plan area stack (z-20)
         backgroundImage: `url(${spriteSheet})`,
         backgroundSize: `${TOTAL_SPRITE_WIDTH}px ${DISPLAY_HEIGHT}px`,
         backgroundPosition: 'left center',

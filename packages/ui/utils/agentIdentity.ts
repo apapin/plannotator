@@ -72,6 +72,40 @@ export class InvalidAgentIdentityError extends Error {
 }
 
 /**
+ * Normalize an arbitrary display name into a CLI-safe `--user` slug.
+ *
+ * `constructAgentIdentity` enforces a strict `/^[a-z0-9][a-z0-9-]*$/`
+ * charset on the user half of the identity, but human display names
+ * routinely carry spaces, uppercase, punctuation, and the occasional
+ * emoji. This function bridges the two — feeding raw names through
+ * slugification before they hit the agent CLI avoids either silent
+ * shell truncation (unquoted `--user Michael Ramos` splits on the
+ * space and drops "Ramos") or a thrown `InvalidAgentIdentityError`.
+ *
+ * Rules:
+ *  - trim surrounding whitespace
+ *  - lowercase
+ *  - replace any run of non-`[a-z0-9-]` with a single `-`
+ *  - collapse runs of `-`
+ *  - strip leading/trailing `-`
+ *  - if the result is empty (all-punctuation input), return `fallback`
+ *
+ * `fallback` exists so the slug is always a valid `--user` argument,
+ * even when the display name can't produce one. Default is
+ * `"participant"` to match the semantic level (a participant in a
+ * room) without guessing at the user's intent.
+ */
+export function toAgentUserSlug(name: string, fallback = 'participant'): string {
+  const slug = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-{2,}/g, '-');
+  return slug.length > 0 ? slug : fallback;
+}
+
+/**
  * Build `<user>-agent-<type>` from components. Normalizes to
  * lowercase so downstream hashing (presence color) is stable
  * across case variants. Rejects obviously malformed user inputs

@@ -24,6 +24,7 @@ export interface RoomMenuProps {
   pendingAdminAction?: AdminAction;
   onCopyParticipantUrl(): void;
   onCopyConsolidatedFeedback(): void;
+  onCopyAgentInstructions(): void;
   onCopyAdminUrl(): void;
   onLock(): void;
   onUnlock(): void;
@@ -62,6 +63,11 @@ const KeyIcon = (
     <path strokeLinecap="round" strokeLinejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
   </svg>
 );
+const RobotIcon = (
+  <svg className={ICON_CLASS} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h2m14 0h2M5 17h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2zM9 10h.01M15 10h.01M10 14h4" />
+  </svg>
+);
 const ChevronIcon = (
   <svg className="w-3 h-3 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
     <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
@@ -75,6 +81,7 @@ export function RoomMenu({
   pendingAdminAction,
   onCopyParticipantUrl,
   onCopyConsolidatedFeedback,
+  onCopyAgentInstructions,
   onCopyAdminUrl,
   onLock,
   onUnlock,
@@ -133,6 +140,22 @@ export function RoomMenu({
             onClick={() => {
               closeMenu();
               onCopyConsolidatedFeedback();
+            }}
+          />
+          {/*
+            "Copy agent instructions" — the clipboard payload teaches
+            an AI agent (Claude Code, Codex, etc.) how to join THIS
+            room via the collab-agent CLI and post comments as a
+            first-class peer. The payload pre-fills this room's URL
+            and the current user's identity so the agent doesn't
+            have to extract them from a separate message.
+          */}
+          <ActionMenuItem
+            icon={RobotIcon}
+            label="Copy agent instructions"
+            onClick={() => {
+              closeMenu();
+              onCopyAgentInstructions();
             }}
           />
 

@@ -64,6 +64,7 @@ import { RoomHeaderControls } from '@plannotator/ui/components/collab/RoomHeader
 import { RoomAdminErrorToast } from '@plannotator/ui/components/collab/RoomAdminErrorToast';
 import { ImageStripNotice } from '@plannotator/ui/components/collab/ImageStripNotice';
 import { buildPlanAgentInstructions } from '@plannotator/ui/utils/planAgentInstructions';
+import { buildRoomAgentInstructions } from '@plannotator/ui/utils/roomAgentInstructions';
 import { hasNewSettings, markNewSettingsSeen } from '@plannotator/ui/utils/newSettingsHint';
 import { useFileBrowser } from '@plannotator/ui/hooks/useFileBrowser';
 import { isVaultBrowserEnabled } from '@plannotator/ui/utils/obsidian';
@@ -1527,6 +1528,25 @@ const App: React.FC<AppProps> = ({ roomSession }) => {
     );
   }, [blocks, allAnnotations, copyToClipboardWithToast]);
 
+  const handleCopyRoomAgentInstructions = React.useCallback(async () => {
+    // Prefer the participant URL (joinUrl) so an agent dropped into
+    // the clipboard payload doesn't accidentally end up with admin
+    // capability. The CLI also strips `#admin=` defensively, but
+    // pairing the strip with a deliberate participant-URL copy here
+    // makes the guard layered rather than single-point.
+    const joinUrl = roomSession?.joinUrl;
+    if (!joinUrl) return;
+    const payload = buildRoomAgentInstructions({
+      joinUrl,
+      userIdentity: getIdentity(),
+    });
+    await copyToClipboardWithToast(
+      payload,
+      'Agent instructions copied',
+      'Failed to copy instructions',
+    );
+  }, [roomSession?.joinUrl, copyToClipboardWithToast]);
+
   // Cmd/Ctrl+S keyboard shortcut — save to default notes app
   useEffect(() => {
     const handleSaveShortcut = (e: KeyboardEvent) => {
@@ -1759,6 +1779,7 @@ const App: React.FC<AppProps> = ({ roomSession }) => {
                 onCopyParticipantUrl={handleCopyParticipantUrl}
                 onCopyAdminUrl={handleCopyAdminUrl}
                 onCopyConsolidatedFeedback={handleCopyConsolidatedFeedback}
+                onCopyAgentInstructions={handleCopyRoomAgentInstructions}
                 onLock={() => void roomAdmin.run('lock')}
                 onUnlock={() => void roomAdmin.run('unlock')}
                 onDelete={() => void roomAdmin.run('delete')}

@@ -34,6 +34,7 @@ export interface RoomHeaderControlsProps {
   onCopyParticipantUrl(): void;
   onCopyAdminUrl(): void;
   onCopyConsolidatedFeedback(): void;
+  onCopyAgentInstructions(): void;
   onLock(): void;
   onUnlock(): void;
   onDelete(): void;
@@ -66,6 +67,7 @@ export function RoomHeaderControls({
   onCopyParticipantUrl,
   onCopyAdminUrl,
   onCopyConsolidatedFeedback,
+  onCopyAgentInstructions,
   onLock,
   onUnlock,
   onDelete,
@@ -96,6 +98,7 @@ export function RoomHeaderControls({
         onCopyParticipantUrl={onCopyParticipantUrl}
         onCopyAdminUrl={onCopyAdminUrl}
         onCopyConsolidatedFeedback={onCopyConsolidatedFeedback}
+        onCopyAgentInstructions={onCopyAgentInstructions}
         onLock={onLock}
         onUnlock={onUnlock}
         onDelete={onDelete}

@@ -6,7 +6,10 @@ export function useDismissOnOutsideAndEscape({
   onDismiss,
 }: {
   enabled: boolean;
-  ref: React.RefObject<HTMLElement>;
+  // React 18→19 migration: `useRef<HTMLElement>(null)` returns
+  // `RefObject<HTMLElement | null>` now, so callers can't pass a
+  // non-null-typed ref here. Accept the nullable form.
+  ref: React.RefObject<HTMLElement | null>;
   onDismiss: () => void;
 }) {
   useEffect(() => {

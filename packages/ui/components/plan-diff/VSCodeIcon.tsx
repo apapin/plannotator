@@ -9,7 +9,10 @@ export const VSCodeIcon: React.FC<{ className?: string }> = ({ className }) => (
   >
     <mask
       id="mask0"
-      maskType="alpha"
+      // `maskType` is a valid SVG presentation attribute but missing
+      // from React's SVGMaskElement typing. Apply via the CSS `mask-type`
+      // property (the DOM representation is identical) so tsc is happy.
+      style={{ maskType: 'alpha' }}
       maskUnits="userSpaceOnUse"
       x="0"
       y="0"

@@ -29,7 +29,12 @@ jobs:
         run: bun run typecheck
 
       - name: Run tests
-        run: bun test
+        # Use the root `test` script (splits non-UI + UI-cwd) so the
+        # packages/ui/bunfig.toml happy-dom preload is loaded. Raw
+        # `bun test` from the repo root doesn't pick up that package-
+        # scoped preload, so UI hook tests would hit "document is not
+        # defined".
+        run: bun run test
 
   install-cmd-windows:
     # End-to-end integration test for scripts/install.cmd on real cmd.exe.

@@ -43,6 +43,39 @@ export interface UseAnnotationHighlighterOptions {
   selectedAnnotationId: string | null;
   mode: EditorMode;
   enabled?: boolean;
+  /**
+   * When true: suppress ALL write paths (selection-triggered marks,
+   * toolbar, comment popover, quick-label picker, mobile selection
+   * bridge) while KEEPING existing annotations renderable via
+   * applyAnnotations() and still forwarding `onSelectAnnotation` clicks
+   * for sidebar navigation. Used by locked rooms so the editor reads
+   * as read-only instead of exposing write affordances that no-op or
+   * leave stray local marks.
+   */
+  readOnly?: boolean;
+  /**
+   * Override the `author` field stamped on newly-created annotations.
+   * When unset, falls back to `getIdentity()` (configStore displayName,
+   * the cookie-backed Tater name). Passed from App when in room mode so
+   * annotations carry the identity the participant typed into the
+   * JoinRoomGate instead of a stale/missing per-origin cookie —
+   * participants on room.plannotator.ai don't have the creator's
+   * local-origin Tater cookie and would otherwise get generated names
+   * that don't match the cursor label peers see.
+   */
+  authorOverride?: string;
+  /**
+   * Invoked whenever the underlying highlight surface is (re)initialized
+   * or explicitly cleared via `clearAllHighlights()`. Consumers (the
+   * Viewer) translate this into a monotonically-bumped generation that
+   * downstream reconcilers use to clear their applied-highlight caches.
+   *
+   * Fires AFTER the surface change is in effect — on init, after the
+   * highlighter is constructed and `highlighterRef.current` is set; on
+   * clear, after the DOM marks are removed. Same-tick re-entry is safe
+   * because React effects run after commit.
+   */
+  onSurfaceReset?: () => void;
 }
 
 export interface UseAnnotationHighlighterReturn {
@@ -74,7 +107,21 @@ export function useAnnotationHighlighter({
   selectedAnnotationId,
   mode,
   enabled = true,
+  readOnly = false,
+  authorOverride,
+  onSurfaceReset,
 }: UseAnnotationHighlighterOptions): UseAnnotationHighlighterReturn {
+  // Ref so the annotation-creation closure sees the latest override
+  // without re-binding event handlers on every change.
+  const authorOverrideRef = useRef(authorOverride);
+  useEffect(() => { authorOverrideRef.current = authorOverride; }, [authorOverride]);
+  const readOnlyRef = useRef(readOnly);
+  useEffect(() => { readOnlyRef.current = readOnly; }, [readOnly]);
+  // Ref for the surface-reset callback so the init effect can call the
+  // latest version without re-binding (and dropping) the highlighter on
+  // every parent re-render.
+  const onSurfaceResetRef = useRef(onSurfaceReset);
+  useEffect(() => { onSurfaceResetRef.current = onSurfaceReset; }, [onSurfaceReset]);
   const highlighterRef = useRef<Highlighter | null>(null);
   const modeRef = useRef<EditorMode>(mode);
   const onAddAnnotationRef = useRef(onAddAnnotation);
@@ -91,6 +138,28 @@ export function useAnnotationHighlighter({
   useEffect(() => { modeRef.current = mode; }, [mode]);
   useEffect(() => { onAddAnnotationRef.current = onAddAnnotation; }, [onAddAnnotation]);
   useEffect(() => { onSelectAnnotationRef.current = onSelectAnnotation; }, [onSelectAnnotation]);
+
+  // Transition into read-only: tear down any in-progress write
+  // interaction. Without this, a user who had a toolbar/popover/picker
+  // open when the room locked would keep the underlying pending mark
+  // (pendingSourceRef) + the UI state alive — the Viewer hides the UI
+  // behind !readOnly but the local <mark> stays in the DOM as a ghost
+  // annotation the user thinks they created.
+  useEffect(() => {
+    if (!readOnly) return;
+    const highlighter = highlighterRef.current;
+    if (highlighter && pendingSourceRef.current) {
+      highlighter.remove(pendingSourceRef.current.id);
+    }
+    pendingSourceRef.current = null;
+    setToolbarState(null);
+    setCommentPopover(null);
+    setQuickLabelPicker(null);
+    // Also release the browser selection so the user sees a definitive
+    // "your action was cancelled" state instead of a highlighted range
+    // with nothing attached to it.
+    try { window.getSelection()?.removeAllRanges(); } catch { /* ignore */ }
+  }, [readOnly]);
 
   // Track mouse position for quick label picker
   useEffect(() => {
@@ -202,7 +271,7 @@ export function useAnnotationHighlighter({
       text,
       originalText: source.text,
       createdA: Date.now(),
-      author: getIdentity(),
+      author: authorOverrideRef.current ?? getIdentity(),
       startMeta: source.startMeta,
       endMeta: source.endMeta,
       images,
@@ -350,6 +419,10 @@ export function useAnnotationHighlighter({
       }
       el.remove();
     });
+
+    // DOM marks are gone; any reconciler that was tracking "already
+    // applied" needs to know so it can repaint from scratch.
+    onSurfaceResetRef.current?.();
   }, []);
 
   // --- Effects ---
@@ -366,10 +439,23 @@ export function useAnnotationHighlighter({
     });
 
     highlighterRef.current = highlighter;
+    // Surface exists and is empty — let reconcilers (external SSE,
+    // room annotations) know so they clear any stale applied maps
+    // inherited from before the surface was (re)created.
+    onSurfaceResetRef.current?.();
 
     highlighter.on(Highlighter.event.CREATE, ({ sources }: { sources: any[] }) => {
       if (sources.length > 0) {
         const source = sources[0];
+        // Read-only: drop the mark the highlighter just created and
+        // suppress every write-path transition. Users can still select
+        // text for copy, but selecting won't leave a persistent local
+        // mark or surface an annotation toolbar.
+        if (readOnlyRef.current) {
+          highlighter.remove(source.id);
+          window.getSelection()?.removeAllRanges();
+          return;
+        }
         const doms = highlighter.getDoms(source.id);
         if (doms?.length > 0) {
           // Clean up previous pending
@@ -416,13 +502,24 @@ export function useAnnotationHighlighter({
 
     highlighter.run();
 
-    // Mobile bridge
+    // Mobile bridge — install once per highlighter lifetime on touch
+    // devices, and honor the CURRENT read-only state at event time via
+    // readOnlyRef. Gating at install time would either strand a stale
+    // listener when the room transitions unlocked → locked, or never
+    // install one if the room started locked and later unlocked (forcing
+    // a remount to recover touch-selection annotation).
     const isTouchPrimary = window.matchMedia('(pointer: coarse)').matches;
     let selectionTimer: ReturnType<typeof setTimeout>;
     const handleSelectionChange = isTouchPrimary
       ? () => {
+          // Checked on every event so lock-state transitions take effect
+          // immediately without re-init churn. Avoids the mark-then-remove
+          // flicker that would result if we let the CREATE handler do the
+          // clean-up after a fromRange() was forwarded.
+          if (readOnlyRef.current) return;
           clearTimeout(selectionTimer);
           selectionTimer = setTimeout(() => {
+            if (readOnlyRef.current) return;  // re-check after debounce
             const sel = window.getSelection();
             if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
             if (!containerRef.current?.contains(sel.anchorNode)) return;

@@ -1,6 +1,17 @@
-# V1 Decision Bridge and External Annotation Compatibility
+# V1 Later External-Annotation Forwarding and Direct-Agent Clients
 
-This document explains how Plannotator Live Rooms interoperate with the existing local external-annotations SSE model and with direct agent clients. The complete room-service architecture lives in `specs/v1.md`; this file narrows in on the bridge behavior.
+This document explains how Plannotator Live Rooms interoperate with
+the existing local external-annotations SSE model and with direct
+agent clients. The complete room-service architecture lives in
+`specs/v1.md`; this file narrows in on later Slice 6 behavior:
+forwarding local SSE annotations into encrypted room operations and
+allowing agents to join directly as encrypted room clients.
+
+This document does not describe current Slice 5 room behavior. In the
+current room product integration, the room tab does not POST to
+localhost, local external annotations stay in the localhost editor,
+and Approve/Deny remain local-only actions in the creator's localhost
+tab.
 
 ## Existing Local Flow
 
@@ -36,7 +47,7 @@ Transfer these concepts to room collaboration:
 - agent-facing instruction style
 - polling fallback pattern for local API environments
 
-The decrypted room event vocabulary should mirror the useful pieces while using room-specific names and stable IDs. The canonical types live in `specs/v1.md` as `RoomClientOp` and `RoomServerEvent`; this file only restates the bridge-relevant annotation operations:
+The decrypted room event vocabulary should mirror the useful pieces while using room-specific names and stable IDs. The canonical types live in `specs/v1.md` as `RoomClientOp` and `RoomServerEvent`; this file only restates the relevant annotation operations:
 
 ```ts
 type RoomAnnotationOp =
@@ -60,9 +71,9 @@ Do not transfer these parts to `room-service`:
 
 The existing local server may continue to see plaintext because it is running on the user's machine. The remote room service must store and relay ciphertext only.
 
-## Local Bridge Mode
+## Later Local External-Annotation Forwarding
 
-Local bridge mode preserves the current Plannotator model while adding encrypted room replication:
+Later V1 work can preserve the current Plannotator external-annotation model while adding encrypted room replication:
 
 ```text
 agent/tool
@@ -86,7 +97,7 @@ DELETE /api/external-annotations?id=<id>
 DELETE /api/external-annotations?source=<source>
 ```
 
-When a browser is joined to a room, annotations received from local SSE should be converted into encrypted room ops:
+When this later forwarding mode is enabled, annotations received from local SSE should be converted into encrypted room ops:
 
 ```text
 SSE snapshot/add/update/remove/clear
@@ -98,7 +109,7 @@ SSE snapshot/add/update/remove/clear
 
 The browser must prevent duplicates when an annotation received from local SSE is forwarded into the room and later echoed back. Use stable annotation IDs and the server-authoritative echo path: room-backed annotation state updates from the echoed event, not from a second local optimistic apply. `opId` remains useful protocol metadata for future ack/reject support, but V1 does not maintain an own-echo dedupe cache.
 
-If a local SSE annotation includes image attachments, the bridge should strip the image fields before forwarding it as a `RoomAnnotation` op. V1 room annotations use `RoomAnnotation`, which excludes `images` because existing image attachments are local paths rather than portable encrypted assets. The annotation text content is still forwarded.
+If a local SSE annotation includes image attachments, the forwarding layer should strip the image fields before sending it as a `RoomAnnotation` op. V1 room annotations use `RoomAnnotation`, which excludes `images` because existing image attachments are local paths rather than portable encrypted assets. The annotation text content is still forwarded.
 
 ## Direct Agent Client Mode
 
@@ -133,39 +144,33 @@ The agent derives the same room keys as a browser client and uses shared collab 
 
 Agents are clients. Giving an agent the full room URL grants it the ability to read the plan and annotations and submit encrypted annotations.
 
-## Creator Agent Decision Bridge
+## Creator Decision Flow
 
-The creator's browser is usually the bridge back to the primary local agent because it holds both:
+V1 Live Rooms are a collaborative annotation surface only. Approve
+and Deny are local (same-origin) actions that happen in the
+creator's original localhost tab — the same tab that started the
+agent hook — not in the room tab on room.plannotator.ai.
 
-- the encrypted room WebSocket/session
-- `localhost:<port>` access to the running Plannotator server
+Creator/admin-only controls in the room:
 
-Creator/admin-only controls:
-
-- Approve
-- Deny / Send Feedback
 - Lock review
 - Unlock review
 - Delete room from Plannotator servers
 
-Approve flow:
+Getting room-side feedback back into the local Approve payload uses
+the existing, pre-room flows (share-hash or paste-short-URL import,
+or manual paste via "Copy consolidated feedback"). None of the room
+tab's UI talks to `localhost:<port>` for approval. The forwarding
+trust boundary described below is only for later external annotation
+ops, not for Approve/Deny.
 
-1. Browser consolidates all room annotations into `annotationsOutput`.
-2. Browser POSTs to `localhost:<port>/api/approve`.
-3. If approve succeeds, browser locks the room.
-4. Room remains readable as a frozen review snapshot.
-
-Deny flow:
-
-1. Browser consolidates all room annotations into `annotationsOutput`.
-2. Browser POSTs to `localhost:<port>/api/deny`.
-3. Room remains active by default for the next revision cycle.
-
-All participants, not just the creator, may export, copy, or download consolidated feedback from the encrypted room state. Only the creator/admin can submit approve/deny to their local agent bridge or lock/delete the room.
+All participants, not just the creator, may export, copy, or
+download consolidated feedback from the encrypted room state. Only
+the creator/admin can lock or delete the room.
 
 ## Trust Boundary
 
-In local bridge mode, the browser performs plaintext-to-encrypted translation: it receives plaintext annotations from localhost SSE, encrypts them with `eventKey`, and sends encrypted room envelopes to `room.plannotator.ai`.
+In the later local external-annotation forwarding mode, the browser performs plaintext-to-encrypted translation: it receives plaintext annotations from localhost SSE, encrypts them with `eventKey`, and sends encrypted room envelopes to `room.plannotator.ai`.
 
 This is not a server-side zero-knowledge break. The trusted boundary is:
 

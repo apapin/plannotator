@@ -35,6 +35,7 @@ import {
 	saveToOctarine,
 } from "./integrations.js";
 import { listenOnPort } from "./network.js";
+import { isValidPermissionMode } from "../generated/collab/validation.js";
 
 import { saveConfig, detectGitUser, getServerConfig } from "../generated/config.js";
 import { detectProjectName, getRepoInfo } from "./project.js";
@@ -128,13 +129,21 @@ export async function startPlanReviewServer(options: {
 	const reviewId = randomUUID();
 	let resolveDecision!: (result: PlanReviewDecision) => void;
 	const decisionListeners = new Set<(result: PlanReviewDecision) => void | Promise<void>>();
+	// Claim-then-publish: claimDecision() sets the flag BEFORE any side
+	// effects run, so two near-simultaneous POSTs cannot both pass the
+	// guard and run integrations/saves twice. publishDecision() is
+	// called after side effects finish; it only resolves the promise
+	// and notifies listeners. Mirrors packages/server/index.ts.
 	let decisionSettled = false;
 	const decisionPromise = new Promise<PlanReviewDecision>((r) => {
 		resolveDecision = r;
 	});
-	const publishDecision = (result: PlanReviewDecision): boolean => {
+	const claimDecision = (): boolean => {
 		if (decisionSettled) return false;
 		decisionSettled = true;
+		return true;
+	};
+	const publishDecision = (result: PlanReviewDecision): boolean => {
 		resolveDecision(result);
 		for (const listener of decisionListeners) {
 			Promise.resolve(listener(result)).catch((error) => {
@@ -225,9 +234,10 @@ export async function startPlanReviewServer(options: {
 			}
 		} else if (url.pathname === "/api/config" && req.method === "POST") {
 			try {
-				const body = (await parseBody(req)) as { displayName?: string; diffOptions?: Record<string, unknown>; conventionalComments?: boolean };
+				const body = (await parseBody(req)) as { displayName?: string; presenceColor?: string; diffOptions?: Record<string, unknown>; conventionalComments?: boolean };
 				const toSave: Record<string, unknown> = {};
 				if (body.displayName !== undefined) toSave.displayName = body.displayName;
+				if (body.presenceColor !== undefined) toSave.presenceColor = body.presenceColor;
 				if (body.diffOptions !== undefined) toSave.diffOptions = body.diffOptions;
 				if (body.conventionalComments !== undefined) toSave.conventionalComments = body.conventionalComments;
 				if (Object.keys(toSave).length > 0) saveConfig(toSave as Parameters<typeof saveConfig>[0]);
@@ -338,7 +348,7 @@ export async function startPlanReviewServer(options: {
 			}
 			json(res, { ok: true, results });
 		} else if (url.pathname === "/api/approve" && req.method === "POST") {
-			if (decisionSettled) {
+			if (!claimDecision()) {
 				json(res, { ok: true, duplicate: true });
 				return;
 			}
@@ -351,14 +361,15 @@ export async function startPlanReviewServer(options: {
 				const body = await parseBody(req);
 				if (body.feedback) feedback = body.feedback as string;
 				if (body.agentSwitch) agentSwitch = body.agentSwitch as string;
-				if (body.permissionMode)
-					requestedPermissionMode = body.permissionMode as string;
 				if (body.planSave !== undefined) {
 					const ps = body.planSave as { enabled: boolean; customPath?: string };
 					planSaveEnabled = ps.enabled;
 					planSaveCustomPath = ps.customPath;
 				}
-				// Run note integrations in parallel
+				// Validate body.permissionMode shape so an invalid value
+				// can't silently fall through to the hook.
+				if (isValidPermissionMode(body.permissionMode))
+					requestedPermissionMode = body.permissionMode;
 				const integrationResults: Record<string, IntegrationResult> = {};
 				const integrationPromises: Promise<void>[] = [];
 				const obsConfig = body.obsidian as ObsidianConfig | undefined;
@@ -393,20 +404,32 @@ export async function startPlanReviewServer(options: {
 			} catch (err) {
 				console.error(`[Integration] Error:`, err);
 			}
-			// Save annotations and final snapshot
+			// Save annotations and final snapshot. The claim is already set
+			// above, so we MUST reach publishDecision() below — otherwise
+			// the awaiting hook hangs forever and retries are rejected as
+			// duplicates. Persistence is best-effort: log and continue.
 			let savedPath: string | undefined;
 			if (planSaveEnabled) {
-				const annotations = feedback || "";
-				if (annotations) saveAnnotations(slug, annotations, planSaveCustomPath);
-				savedPath = saveFinalSnapshot(
-					slug,
-					"approved",
-					options.plan,
-					annotations,
-					planSaveCustomPath,
-				);
+				try {
+					const annotations = feedback || "";
+					if (annotations) saveAnnotations(slug, annotations, planSaveCustomPath);
+					savedPath = saveFinalSnapshot(
+						slug,
+						"approved",
+						options.plan,
+						annotations,
+						planSaveCustomPath,
+					);
+				} catch (err) {
+					console.error(`[plan-save] approve persistence failed:`, err);
+				}
 			}
-			deleteDraft(draftKey);
+			try {
+				deleteDraft(draftKey);
+			} catch (err) {
+				console.error(`[draft] delete failed:`, err);
+			}
+			// Resolution order: client request body > server startup value.
 			const effectivePermissionMode = requestedPermissionMode || options.permissionMode;
 			publishDecision({
 				approved: true,
@@ -417,7 +440,7 @@ export async function startPlanReviewServer(options: {
 			});
 			json(res, { ok: true, savedPath });
 		} else if (url.pathname === "/api/deny" && req.method === "POST") {
-			if (decisionSettled) {
+			if (!claimDecision()) {
 				json(res, { ok: true, duplicate: true });
 				return;
 			}
@@ -437,16 +460,24 @@ export async function startPlanReviewServer(options: {
 			}
 			let savedPath: string | undefined;
 			if (planSaveEnabled) {
-				saveAnnotations(slug, feedback, planSaveCustomPath);
-				savedPath = saveFinalSnapshot(
-					slug,
-					"denied",
-					options.plan,
-					feedback,
-					planSaveCustomPath,
-				);
+				try {
+					saveAnnotations(slug, feedback, planSaveCustomPath);
+					savedPath = saveFinalSnapshot(
+						slug,
+						"denied",
+						options.plan,
+						feedback,
+						planSaveCustomPath,
+					);
+				} catch (err) {
+					console.error(`[plan-save] deny persistence failed:`, err);
+				}
 			}
-			deleteDraft(draftKey);
+			try {
+				deleteDraft(draftKey);
+			} catch (err) {
+				console.error(`[draft] delete failed:`, err);
+			}
 			publishDecision({ approved: false, feedback, savedPath });
 			json(res, { ok: true, savedPath });
 		} else {

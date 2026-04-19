@@ -3,15 +3,27 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "build:shell": "rm -rf public && vite build",
+    "dev": "bun run build:shell && wrangler dev",
+    "deploy": "bun run build:shell && wrangler deploy",
     "test": "bun test"
   },
   "dependencies": {
-    "@plannotator/shared": "workspace:*"
+    "@plannotator/editor": "workspace:*",
+    "@plannotator/shared": "workspace:*",
+    "@plannotator/ui": "workspace:*",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241218.0",
+    "@tailwindcss/vite": "^4.1.18",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "tailwindcss": "^4.1.18",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0",
     "wrangler": "^4.80.0"
   }
 }

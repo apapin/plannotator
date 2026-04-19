@@ -399,7 +399,19 @@ export type RoomTransportMessage =
   | { type: 'room.event'; seq: number; receivedAt: number; envelope: ServerEnvelope }
   | { type: 'room.presence'; envelope: ServerEnvelope }
   | { type: 'room.status'; status: RoomStatus }
-  | { type: 'room.error'; code: string; message: string };
+  | { type: 'room.error'; code: string; message: string }
+  /**
+   * Peer left the room. Broadcast by the room service on a
+   * WebSocket close so other participants can drop the peer's
+   * presence (cursor, avatar) immediately rather than waiting for
+   * the client-side presence TTL sweep to expire the entry.
+   *
+   * `clientId` is the server-assigned id from the peer's
+   * auth.challenge; the server knows it from the socket's
+   * attachment. No encrypted payload — nothing here that a
+   * receiver couldn't have inferred from absence anyway.
+   */
+  | { type: 'room.participant.left'; clientId: string };
 
 // ---------------------------------------------------------------------------
 // Room Status

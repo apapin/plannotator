@@ -82,6 +82,55 @@ interface ViewerProps {
   // Checkbox toggle props
   onToggleCheckbox?: (blockId: string, checked: boolean) => void;
   checkboxOverrides?: Map<string, boolean>;
+  /**
+   * When true, annotation creation affordances (selection toolbar,
+   * comment popover) and attachment controls are hidden. Existing
+   * annotation highlights remain visible for review. Used by the
+   * locked-room flow to make the editor read-only at the UI level
+   * instead of letting the user submit writes that the server or
+   * controller would reject.
+   */
+  readOnly?: boolean;
+  /**
+   * When set, newly-created annotations stamp `author` with this
+   * value instead of the cookie-backed `getIdentity()`. Threaded
+   * from App in room mode so annotations carry the display name
+   * the participant typed into the JoinRoomGate — matches the
+   * name peers see on remote cursors/avatars.
+   */
+  authorOverride?: string;
+  /**
+   * Default true. Passed to CommentPopover to hide the attachments
+   * UI when false. Used by App in room mode: Live Rooms V1 strips
+   * image attachments at room-create time and doesn't carry new
+   * attachments over the wire, so offering the affordance would
+   * silently drop the user's image.
+   */
+  attachmentsEnabled?: boolean;
+  /**
+   * When false, links to local documents (wikilinks like `[[foo]]`
+   * and markdown links to `*.md`/`*.mdx`/`*.html`) render as plain
+   * text instead of clickable anchors. Used by room mode because
+   * `room.plannotator.ai` has no `/api/doc` or Obsidian endpoint —
+   * clicking such a link would either trigger a broken fetch or
+   * navigate the room tab to a non-existent room-origin path.
+   * Non-local links (http/https) are unaffected.
+   */
+  localDocLinksEnabled?: boolean;
+  /**
+   * Notifies the parent that the internal highlight surface has been
+   * (re)initialized or cleared. Fires once on initial highlighter
+   * construction and on each `clearAllHighlights()` call.
+   *
+   * The callback is a bare event — it carries no number. The parent
+   * owns the monotonic generation counter so a Viewer remount (which
+   * resets any Viewer-local state) still produces a fresh value that
+   * `setState` won't dedupe as a no-op. Child-owned numbering would
+   * emit `1` on first mount, then `1` again after a remount, and React
+   * would bail out of the state update, leaving downstream reconcilers
+   * stuck with a stale applied map.
+   */
+  onHighlightSurfaceReset?: () => void;
 }
 
 export interface ViewerHandle {
@@ -154,7 +203,21 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(({
   sourceInfo,
   onToggleCheckbox,
   checkboxOverrides,
+  readOnly = false,
+  authorOverride,
+  attachmentsEnabled = true,
+  localDocLinksEnabled = true,
+  onHighlightSurfaceReset,
 }, ref) => {
+  // Forward each surface-reset event to the parent, which owns the
+  // monotonic generation counter that reconcilers depend on. Held in
+  // a ref so the highlighter hook doesn't re-init just because the
+  // parent passed a new callback identity.
+  const onHighlightSurfaceResetRef = useRef(onHighlightSurfaceReset);
+  useEffect(() => { onHighlightSurfaceResetRef.current = onHighlightSurfaceReset; }, [onHighlightSurfaceReset]);
+  const handleSurfaceReset = useCallback(() => {
+    onHighlightSurfaceResetRef.current?.();
+  }, []);
   const [copied, setCopied] = useState(false);
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null);
   const globalCommentButtonRef = useRef<HTMLButtonElement>(null);
@@ -188,7 +251,38 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(({
   const stickySentinelRef = useRef<HTMLDivElement>(null);
   const [isStuck, setIsStuck] = useState(false);
 
-  // Shared annotation infrastructure via hook
+  // Read-only transition cleanup (Viewer-owned write state).
+  //
+  // `useAnnotationHighlighter` already clears its own pending
+  // selection/toolbar/popover/picker state when `readOnly` flips true.
+  // Viewer owns SEPARATE state for the global-comment popover, the
+  // code-block comment popover (shared `viewerCommentPopover`), the
+  // code-block quick-label picker, and the code-block hover toolbar.
+  // Without this effect those would be hidden-but-alive while locked
+  // and pop back on unlock — contradicting the hook's "cancel in
+  // progress on lock" contract. Clearing all of them (plus any in-
+  // flight hover timeout / exit animation) makes Viewer's lock
+  // response match the hook's.
+  useEffect(() => {
+    if (!readOnly) return;
+    setViewerCommentPopover(null);
+    setCodeBlockQuickLabelPicker(null);
+    setHoveredCodeBlock(null);
+    setIsCodeBlockToolbarExiting(false);
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+  }, [readOnly]);
+
+  // Shared annotation infrastructure via hook.
+  // In read-only mode we neutralize the add callback so a selection
+  // doesn't produce an annotation. Existing highlights still render
+  // (annotations is unchanged) and onSelectAnnotation still works for
+  // navigation; only the CREATE path is suppressed.
+  const effectiveOnAddAnnotation = readOnly
+    ? (_: Annotation) => { /* no-op; room is read-only */ }
+    : onAddAnnotation;
   const {
     highlighterRef,
     toolbarState,
@@ -208,15 +302,25 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(({
   } = useAnnotationHighlighter({
     containerRef,
     annotations,
-    onAddAnnotation,
+    onAddAnnotation: effectiveOnAddAnnotation,
     onSelectAnnotation,
     selectedAnnotationId,
     mode,
+    // Read-only gate inside the hook: existing annotations still
+    // render via applyAnnotations, but selection-triggered marks,
+    // toolbar/popover/quick-label states, and the mobile selection
+    // bridge are all suppressed. Keeps the locked-room editor
+    // readable + copyable without exposing write affordances.
+    readOnly,
+    authorOverride,
+    onSurfaceReset: handleSurfaceReset,
   });
 
-  // Refs for code block annotation path
-  const onAddAnnotationRef = useRef(onAddAnnotation);
-  useEffect(() => { onAddAnnotationRef.current = onAddAnnotation; }, [onAddAnnotation]);
+  // Refs for code block annotation path. When readOnly, use the same
+  // no-op wrapper as the selection path so submissions from the code
+  // block toolbar don't mutate state or create annotations.
+  const onAddAnnotationRef = useRef(effectiveOnAddAnnotation);
+  useEffect(() => { onAddAnnotationRef.current = effectiveOnAddAnnotation; }, [effectiveOnAddAnnotation]);
   const modeRef = useRef<EditorMode>(mode);
   useEffect(() => { modeRef.current = mode; }, [mode]);
 
@@ -247,7 +351,11 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(({
     containerRef,
     highlighterRef,
     inputMethod,
-    enabled: !toolbarState && !hookCommentPopover && !viewerCommentPopover && !hookQuickLabelPicker && !codeBlockQuickLabelPicker && !(isPlanDiffActive ?? false),
+    // Pinpoint is a mutation path (clicking a block creates an
+    // annotation via handlePinpointCodeBlockClick). Disable it in
+    // read-only mode so locked rooms don't expose a click target that
+    // would no-op or make a local-only mark.
+    enabled: !readOnly && !toolbarState && !hookCommentPopover && !viewerCommentPopover && !hookQuickLabelPicker && !codeBlockQuickLabelPicker && !(isPlanDiffActive ?? false),
     onCodeBlockClick: handlePinpointCodeBlockClick,
   });
 
@@ -339,10 +447,18 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(({
     codeEl: Element,
     type: AnnotationType,
     text?: string,
+    /* readOnly gate inside the body below — cheaper than threading a
+       guard through every caller. */
     images?: ImageAttachment[],
     isQuickLabel?: boolean,
     quickLabelTip?: string,
   ) => {
+    // Locked room / read-only: return before any DOM mutation. Without
+    // this early exit the code block would get a temporary local <mark>
+    // that isn't backed by a canonical annotation, misleading the user
+    // into thinking their annotation exists.
+    if (readOnly) return;
+
     const id = `codeblock-${Date.now()}`;
     const codeText = codeEl.textContent || '';
 
@@ -363,7 +479,7 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(({
       text,
       originalText: codeText,
       createdA: Date.now(),
-      author: getIdentity(),
+      author: authorOverride ?? getIdentity(),
       images,
       ...(isQuickLabel ? { isQuickLabel: true } : {}),
       ...(quickLabelTip ? { quickLabelTip } : {}),
@@ -424,7 +540,7 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(({
         text: text.trim(),
         originalText: '',
         createdA: Date.now(),
-        author: getIdentity(),
+        author: authorOverride ?? getIdentity(),
         images,
       };
       onAddAnnotation(newAnnotation);
@@ -474,8 +590,8 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(({
 
         {/* Header buttons - top right */}
         <div data-print-hide data-sticky-actions className={`${stickyActions ? 'sticky top-3' : ''} z-30 float-right flex items-start gap-1 md:gap-2 rounded-lg p-1 md:p-2 transition-colors duration-150 ${isStuck ? 'bg-card/95 backdrop-blur-sm shadow-sm' : ''} -mr-3 mt-6 md:-mr-5 md:-mt-5 lg:-mr-7 lg:-mt-7 xl:-mr-9 xl:-mt-9`}>
-          {/* Attachments button */}
-          {onAddGlobalAttachment && onRemoveGlobalAttachment && (
+          {/* Attachments button — hidden in read-only (e.g. locked room) */}
+          {!readOnly && onAddGlobalAttachment && onRemoveGlobalAttachment && (
             <AttachmentsButton
               images={globalAttachments}
               onAdd={onAddGlobalAttachment}
@@ -486,24 +602,26 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(({
           )}
 
           {/* <span className="md:hidden">Comment</span><span className="hidden md:inline">Global comment</span> button */}
-          <button
-            ref={globalCommentButtonRef}
-            onClick={() => {
-              setViewerCommentPopover({
-                anchorEl: globalCommentButtonRef.current!,
-                contextText: '',
-                isGlobal: true,
-              });
-            }}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground bg-muted/50 hover:bg-muted rounded-md transition-colors"
-            title="Add global comment"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418" />
-            </svg>
-            {actionsLabelMode === 'full' && <span>Global comment</span>}
-            {actionsLabelMode === 'short' && <span>Comment</span>}
-          </button>
+          {!readOnly && (
+            <button
+              ref={globalCommentButtonRef}
+              onClick={() => {
+                setViewerCommentPopover({
+                  anchorEl: globalCommentButtonRef.current!,
+                  contextText: '',
+                  isGlobal: true,
+                });
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground bg-muted/50 hover:bg-muted rounded-md transition-colors"
+              title="Add global comment"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418" />
+              </svg>
+              {actionsLabelMode === 'full' && <span>Global comment</span>}
+              {actionsLabelMode === 'short' && <span>Comment</span>}
+            </button>
+          )}
 
           {/* Copy plan/file button */}
           <button
@@ -545,6 +663,7 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(({
                       block={block}
                       orderedIndex={indices[i]}
                       onOpenLinkedDoc={onOpenLinkedDoc}
+                      localDocLinksEnabled={localDocLinksEnabled}
                       onToggleCheckbox={onToggleCheckbox}
                       checkboxOverrides={checkboxOverrides}
                     />
@@ -587,12 +706,15 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(({
               isHovered={inputMethod !== 'pinpoint' && hoveredCodeBlock?.block.id === group.block.id}
             />
           ) : (
-            <BlockRenderer imageBaseDir={imageBaseDir} onImageClick={(src, alt) => setLightbox({ src, alt })} key={group.block.id} block={group.block} onOpenLinkedDoc={onOpenLinkedDoc} onToggleCheckbox={onToggleCheckbox} checkboxOverrides={checkboxOverrides} />
+            <BlockRenderer imageBaseDir={imageBaseDir} onImageClick={(src, alt) => setLightbox({ src, alt })} key={group.block.id} block={group.block} onOpenLinkedDoc={onOpenLinkedDoc}
+                      localDocLinksEnabled={localDocLinksEnabled} onToggleCheckbox={onToggleCheckbox} checkboxOverrides={checkboxOverrides} />
           )
         )}
 
-        {/* Text selection toolbar */}
-        {toolbarState && (
+        {/* Text selection toolbar — defense-in-depth: the hook already
+            suppresses toolbarState in readOnly, but render-gating here
+            too makes the locked-room invariant locally obvious. */}
+        {!readOnly && toolbarState && (
           <ToolbarErrorBoundary>
             <AnnotationToolbar
               element={toolbarState.element}
@@ -607,8 +729,8 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(({
           </ToolbarErrorBoundary>
         )}
 
-        {/* Code block hover toolbar */}
-        {hoveredCodeBlock && !toolbarState && (
+        {/* Code block hover toolbar — suppressed in read-only mode. */}
+        {!readOnly && hoveredCodeBlock && !toolbarState && (
           <ToolbarErrorBoundary>
           <AnnotationToolbar
             element={hoveredCodeBlock.element}
@@ -643,8 +765,9 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(({
           <PinpointOverlay target={hoverTarget} containerRef={containerRef} />
         )}
 
-        {/* Comment popover — hook handles text selection, Viewer handles global + code block */}
-        {hookCommentPopover && (
+        {/* Comment popover — hook handles text selection, Viewer handles global + code block.
+            All write-path popovers suppressed in readOnly. */}
+        {!readOnly && hookCommentPopover && (
           <CommentPopover
             anchorEl={hookCommentPopover.anchorEl}
             contextText={hookCommentPopover.contextText}
@@ -652,9 +775,10 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(({
             initialText={hookCommentPopover.initialText}
             onSubmit={hookCommentSubmit}
             onClose={hookCommentClose}
+            attachmentsEnabled={attachmentsEnabled}
           />
         )}
-        {viewerCommentPopover && (
+        {!readOnly && viewerCommentPopover && (
           <CommentPopover
             anchorEl={viewerCommentPopover.anchorEl}
             contextText={viewerCommentPopover.contextText}
@@ -662,11 +786,13 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(({
             initialText={viewerCommentPopover.initialText}
             onSubmit={handleViewerCommentSubmit}
             onClose={handleViewerCommentClose}
+            attachmentsEnabled={attachmentsEnabled}
           />
         )}
 
-        {/* Quick Label floating picker — hook handles text selection, Viewer handles code blocks */}
-        {hookQuickLabelPicker && (
+        {/* Quick Label floating picker — hook handles text selection, Viewer handles code blocks.
+            Also a write path → suppressed in readOnly. */}
+        {!readOnly && hookQuickLabelPicker && (
           <FloatingQuickLabelPicker
             anchorEl={hookQuickLabelPicker.anchorEl}
             cursorHint={hookQuickLabelPicker.cursorHint}
@@ -674,7 +800,7 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(({
             onDismiss={hookQuickLabelPickerDismiss}
           />
         )}
-        {codeBlockQuickLabelPicker && (
+        {!readOnly && codeBlockQuickLabelPicker && (
           <FloatingQuickLabelPicker
             anchorEl={codeBlockQuickLabelPicker.anchorEl}
             onSelect={(label: QuickLabel) => {
@@ -743,7 +869,7 @@ function sanitizeLinkUrl(url: string): string | null {
 /**
  * Renders inline markdown: **bold**, *italic*, _italic_, `code`, [links](url)
  */
-const InlineMarkdown: React.FC<{ text: string; onOpenLinkedDoc?: (path: string) => void; imageBaseDir?: string; onImageClick?: (src: string, alt: string) => void }> = ({ text, onOpenLinkedDoc, imageBaseDir, onImageClick }) => {
+const InlineMarkdown: React.FC<{ text: string; onOpenLinkedDoc?: (path: string) => void; localDocLinksEnabled?: boolean; imageBaseDir?: string; onImageClick?: (src: string, alt: string) => void }> = ({ text, onOpenLinkedDoc, localDocLinksEnabled = true, imageBaseDir, onImageClick }) => {
   const parts: React.ReactNode[] = [];
   let remaining = text;
   let key = 0;
@@ -780,7 +906,8 @@ const InlineMarkdown: React.FC<{ text: string; onOpenLinkedDoc?: (path: string) 
     // Strikethrough: ~~text~~
     match = remaining.match(/^~~([\s\S]+?)~~/);
     if (match) {
-      parts.push(<del key={key++}><InlineMarkdown imageBaseDir={imageBaseDir} onImageClick={onImageClick} text={match[1]} onOpenLinkedDoc={onOpenLinkedDoc} /></del>);
+      parts.push(<del key={key++}><InlineMarkdown imageBaseDir={imageBaseDir} onImageClick={onImageClick} text={match[1]} onOpenLinkedDoc={onOpenLinkedDoc}
+                      localDocLinksEnabled={localDocLinksEnabled} /></del>);
       remaining = remaining.slice(match[0].length);
       previousChar = match[0][match[0].length - 1] || previousChar;
       continue;
@@ -789,7 +916,8 @@ const InlineMarkdown: React.FC<{ text: string; onOpenLinkedDoc?: (path: string) 
     // Bold + italic: ***text***
     match = remaining.match(/^\*\*\*([\s\S]+?)\*\*\*/);
     if (match) {
-      parts.push(<strong key={key++} className="font-semibold"><em><InlineMarkdown imageBaseDir={imageBaseDir} onImageClick={onImageClick} text={match[1]} onOpenLinkedDoc={onOpenLinkedDoc} /></em></strong>);
+      parts.push(<strong key={key++} className="font-semibold"><em><InlineMarkdown imageBaseDir={imageBaseDir} onImageClick={onImageClick} text={match[1]} onOpenLinkedDoc={onOpenLinkedDoc}
+                      localDocLinksEnabled={localDocLinksEnabled} /></em></strong>);
       remaining = remaining.slice(match[0].length);
       previousChar = match[0][match[0].length - 1] || previousChar;
       continue;
@@ -798,7 +926,8 @@ const InlineMarkdown: React.FC<{ text: string; onOpenLinkedDoc?: (path: string) 
     // Bold: **text** ([\s\S]+? allows matching across hard line breaks)
     match = remaining.match(/^\*\*([\s\S]+?)\*\*/);
     if (match) {
-      parts.push(<strong key={key++} className="font-semibold"><InlineMarkdown imageBaseDir={imageBaseDir} onImageClick={onImageClick} text={match[1]} onOpenLinkedDoc={onOpenLinkedDoc} /></strong>);
+      parts.push(<strong key={key++} className="font-semibold"><InlineMarkdown imageBaseDir={imageBaseDir} onImageClick={onImageClick} text={match[1]} onOpenLinkedDoc={onOpenLinkedDoc}
+                      localDocLinksEnabled={localDocLinksEnabled} /></strong>);
       remaining = remaining.slice(match[0].length);
       previousChar = match[0][match[0].length - 1] || previousChar;
       continue;
@@ -807,7 +936,8 @@ const InlineMarkdown: React.FC<{ text: string; onOpenLinkedDoc?: (path: string) 
     // Italic: *text* or _text_ (avoid intraword underscores)
     match = remaining.match(/^\*([\s\S]+?)\*/);
     if (match) {
-      parts.push(<em key={key++}><InlineMarkdown imageBaseDir={imageBaseDir} onImageClick={onImageClick} text={match[1]} onOpenLinkedDoc={onOpenLinkedDoc} /></em>);
+      parts.push(<em key={key++}><InlineMarkdown imageBaseDir={imageBaseDir} onImageClick={onImageClick} text={match[1]} onOpenLinkedDoc={onOpenLinkedDoc}
+                      localDocLinksEnabled={localDocLinksEnabled} /></em>);
       remaining = remaining.slice(match[0].length);
       previousChar = match[0][match[0].length - 1] || previousChar;
       continue;
@@ -817,7 +947,8 @@ const InlineMarkdown: React.FC<{ text: string; onOpenLinkedDoc?: (path: string) 
       ? remaining.match(/^_([^_\s](?:[\s\S]*?[^_\s])?)_(?!\w)/)
       : null;
     if (match) {
-      parts.push(<em key={key++}><InlineMarkdown imageBaseDir={imageBaseDir} onImageClick={onImageClick} text={match[1]} onOpenLinkedDoc={onOpenLinkedDoc} /></em>);
+      parts.push(<em key={key++}><InlineMarkdown imageBaseDir={imageBaseDir} onImageClick={onImageClick} text={match[1]} onOpenLinkedDoc={onOpenLinkedDoc}
+                      localDocLinksEnabled={localDocLinksEnabled} /></em>);
       remaining = remaining.slice(match[0].length);
       previousChar = match[0][match[0].length - 1] || previousChar;
       continue;
@@ -843,7 +974,11 @@ const InlineMarkdown: React.FC<{ text: string; onOpenLinkedDoc?: (path: string) 
       const display = match[2]?.trim() || target;
       const targetPath = /\.(mdx?|html?)$/i.test(target) ? target : `${target}.md`;
 
-      if (onOpenLinkedDoc) {
+      // `localDocLinksEnabled === false` pins the wikilink to plain
+      // text regardless of handler presence — room mode uses this so
+      // a click doesn't attempt to resolve a local path on the room
+      // origin (which has no `/api/doc` or Obsidian endpoint).
+      if (onOpenLinkedDoc && localDocLinksEnabled) {
         parts.push(
           <a
             key={key++}
@@ -911,7 +1046,7 @@ const InlineMarkdown: React.FC<{ text: string; onOpenLinkedDoc?: (path: string) 
         !linkUrl.startsWith('http://') &&
         !linkUrl.startsWith('https://');
 
-      if (isLocalDoc && onOpenLinkedDoc) {
+      if (isLocalDoc && onOpenLinkedDoc && localDocLinksEnabled) {
         parts.push(
           <a
             key={key++}
@@ -929,8 +1064,19 @@ const InlineMarkdown: React.FC<{ text: string; onOpenLinkedDoc?: (path: string) 
             </svg>
           </a>
         );
+      } else if (isLocalDoc && !localDocLinksEnabled) {
+        // Room mode: the room origin has no file server, so a click
+        // would either break or navigate to a non-existent room-origin
+        // path. Render as plain text so participants see the label
+        // without an affordance to click.
+        parts.push(
+          <span key={key++} className="text-primary">{linkText}</span>
+        );
       } else if (isLocalDoc) {
-        // No handler — render as plain link (e.g., in shared/portal views)
+        // No handler (e.g. shared/portal views) — render as a plain
+        // `<a>`. Clicking navigates to `<current-origin>/<path>`, which
+        // may or may not resolve depending on deployment; this is the
+        // legacy shape for non-room views.
         parts.push(
           <a
             key={key++}
@@ -963,7 +1109,8 @@ const InlineMarkdown: React.FC<{ text: string; onOpenLinkedDoc?: (path: string) 
     if (match && match.index !== undefined) {
       const before = remaining.slice(0, match.index);
       if (before) {
-        parts.push(<InlineMarkdown key={key++} text={before} onOpenLinkedDoc={onOpenLinkedDoc} imageBaseDir={imageBaseDir} onImageClick={onImageClick} />);
+        parts.push(<InlineMarkdown key={key++} text={before} onOpenLinkedDoc={onOpenLinkedDoc}
+                      localDocLinksEnabled={localDocLinksEnabled} imageBaseDir={imageBaseDir} onImageClick={onImageClick} />);
       }
       parts.push(<br key={key++} />);
       remaining = remaining.slice(match.index + match[0].length);
@@ -1042,12 +1189,14 @@ function groupBlocks(blocks: Block[]): RenderGroup[] {
 const BlockRenderer: React.FC<{
   block: Block;
   onOpenLinkedDoc?: (path: string) => void;
+  /** Mirrors the Viewer-level prop; forwarded verbatim to InlineMarkdown. */
+  localDocLinksEnabled?: boolean;
   imageBaseDir?: string;
   onImageClick?: (src: string, alt: string) => void;
   onToggleCheckbox?: (blockId: string, checked: boolean) => void;
   checkboxOverrides?: Map<string, boolean>;
   orderedIndex?: number | null;
-}> = ({ block, onOpenLinkedDoc, imageBaseDir, onImageClick, onToggleCheckbox, checkboxOverrides, orderedIndex }) => {
+}> = ({ block, onOpenLinkedDoc, localDocLinksEnabled, imageBaseDir, onImageClick, onToggleCheckbox, checkboxOverrides, orderedIndex }) => {
   switch (block.type) {
     case 'heading':
       const Tag = `h${block.level || 1}` as React.ElementType;
@@ -1057,7 +1206,8 @@ const BlockRenderer: React.FC<{
         3: 'text-base font-semibold mb-2 mt-6 text-foreground/80',
       }[block.level || 1] || 'text-base font-semibold mb-2 mt-4';
 
-      return <Tag className={styles} data-block-id={block.id} data-block-type="heading"><InlineMarkdown imageBaseDir={imageBaseDir} onImageClick={onImageClick} text={block.content} onOpenLinkedDoc={onOpenLinkedDoc} /></Tag>;
+      return <Tag className={styles} data-block-id={block.id} data-block-type="heading"><InlineMarkdown imageBaseDir={imageBaseDir} onImageClick={onImageClick} text={block.content} onOpenLinkedDoc={onOpenLinkedDoc}
+                      localDocLinksEnabled={localDocLinksEnabled} /></Tag>;
 
     case 'blockquote': {
       // Content may span multiple merged `>` lines. Split on blank-line
@@ -1070,7 +1220,8 @@ const BlockRenderer: React.FC<{
         >
           {paragraphs.map((para, i) => (
             <p key={i} className={i > 0 ? 'mt-2' : ''}>
-              <InlineMarkdown imageBaseDir={imageBaseDir} onImageClick={onImageClick} text={para} onOpenLinkedDoc={onOpenLinkedDoc} />
+              <InlineMarkdown imageBaseDir={imageBaseDir} onImageClick={onImageClick} text={para} onOpenLinkedDoc={onOpenLinkedDoc}
+                      localDocLinksEnabled={localDocLinksEnabled} />
             </p>
           ))}
         </blockquote>
@@ -1099,7 +1250,8 @@ const BlockRenderer: React.FC<{
             onToggle={isInteractive ? () => onToggleCheckbox!(block.id, !isChecked) : undefined}
           />
           <span className={`text-sm leading-relaxed ${isCheckbox && isChecked ? 'text-muted-foreground line-through' : 'text-foreground/90'}`}>
-            <InlineMarkdown imageBaseDir={imageBaseDir} onImageClick={onImageClick} text={block.content} onOpenLinkedDoc={onOpenLinkedDoc} />
+            <InlineMarkdown imageBaseDir={imageBaseDir} onImageClick={onImageClick} text={block.content} onOpenLinkedDoc={onOpenLinkedDoc}
+                      localDocLinksEnabled={localDocLinksEnabled} />
           </span>
         </div>
       );
@@ -1120,7 +1272,8 @@ const BlockRenderer: React.FC<{
                     key={i}
                     className="px-3 py-2 text-left font-semibold text-foreground/90 bg-muted/30"
                   >
-                    <InlineMarkdown imageBaseDir={imageBaseDir} onImageClick={onImageClick} text={header} onOpenLinkedDoc={onOpenLinkedDoc} />
+                    <InlineMarkdown imageBaseDir={imageBaseDir} onImageClick={onImageClick} text={header} onOpenLinkedDoc={onOpenLinkedDoc}
+                      localDocLinksEnabled={localDocLinksEnabled} />
                   </th>
                 ))}
               </tr>
@@ -1130,7 +1283,8 @@ const BlockRenderer: React.FC<{
                 <tr key={rowIdx} className="border-b border-border/50 hover:bg-muted/20">
                   {row.map((cell, cellIdx) => (
                     <td key={cellIdx} className="px-3 py-2 text-foreground/80">
-                      <InlineMarkdown imageBaseDir={imageBaseDir} onImageClick={onImageClick} text={cell} onOpenLinkedDoc={onOpenLinkedDoc} />
+                      <InlineMarkdown imageBaseDir={imageBaseDir} onImageClick={onImageClick} text={cell} onOpenLinkedDoc={onOpenLinkedDoc}
+                      localDocLinksEnabled={localDocLinksEnabled} />
                     </td>
                   ))}
                 </tr>
@@ -1150,7 +1304,8 @@ const BlockRenderer: React.FC<{
           className="mb-4 leading-relaxed text-foreground/90 text-[15px]"
           data-block-id={block.id}
         >
-          <InlineMarkdown imageBaseDir={imageBaseDir} onImageClick={onImageClick} text={block.content} onOpenLinkedDoc={onOpenLinkedDoc} />
+          <InlineMarkdown imageBaseDir={imageBaseDir} onImageClick={onImageClick} text={block.content} onOpenLinkedDoc={onOpenLinkedDoc}
+                      localDocLinksEnabled={localDocLinksEnabled} />
         </p>
       );
   }

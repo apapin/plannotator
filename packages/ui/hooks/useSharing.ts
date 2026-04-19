@@ -8,7 +8,7 @@
  * - Tracking whether current session is from a shared link
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Annotation, type ImageAttachment } from '../types';
 import {
   type SharePayload,
@@ -86,7 +86,17 @@ export function useSharing(
   setGlobalAttachments: React.Dispatch<React.SetStateAction<ImageAttachment[]>>,
   onSharedLoad?: () => void,
   shareBaseUrl?: string,
-  pasteApiUrl?: string
+  pasteApiUrl?: string,
+  /**
+   * When true, the hook short-circuits on mount: no hash parsing, no share
+   * URL generation, no paste-service fetch. Used when the editor is
+   * running in live-room mode — the URL fragment `#key=<roomSecret>` would
+   * otherwise be mis-read as a failed static-share payload, producing a
+   * spurious "Failed to load shared plan" error. Static sharing and live
+   * rooms are orthogonal flows in Slice 5; later Slice 6 work can
+   * forward shared/import flows into room-specific behavior where needed.
+   */
+  disabled?: boolean,
 ): UseSharingResult {
   const [isSharedSession, setIsSharedSession] = useState(false);
   const [isLoadingShared, setIsLoadingShared] = useState(true);
@@ -197,13 +207,30 @@ export function useSharing(
     }
   }, [setMarkdown, setAnnotations, setGlobalAttachments, onSharedLoad, pasteApiUrl]);
 
-  // Load from hash on mount
+  // Load from hash on mount. Captured from the FIRST render and never
+  // re-evaluated: in room mode the URL fragment is `#key=<roomSecret>`
+  // and must never be parsed as a static-share payload, even if some
+  // future code path flips `disabled` from true to false (e.g. a mode
+  // transition). Keying this effect on `disabled` would re-parse the
+  // room fragment and surface a spurious "Failed to load shared plan"
+  // error. The initial capture is the single source of truth for
+  // "is this a share-eligible mount?".
+  const initiallyDisabledRef = useRef(disabled);
   useEffect(() => {
+    if (initiallyDisabledRef.current) {
+      setIsLoadingShared(false);
+      return;
+    }
     loadFromHash().finally(() => setIsLoadingShared(false));
-  }, []); // Only run on mount
+    // Intentionally mount-only. `loadFromHash` identity changes on
+    // prop updates and MUST NOT retrigger this effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Listen for hash changes (when user pastes a new share URL)
+  // Listen for hash changes (when user pastes a new share URL). Also skipped
+  // when disabled so hashchange events inside a live room are ignored.
   useEffect(() => {
+    if (disabled) return;
     const handleHashChange = () => {
       if (window.location.hash.length > 1) {
         loadFromHash();
@@ -212,7 +239,7 @@ export function useSharing(
 
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [loadFromHash]);
+  }, [loadFromHash, disabled]);
 
   // Generate share URL when markdown or annotations change
   const refreshShareUrl = useCallback(async () => {
@@ -227,10 +254,12 @@ export function useSharing(
     }
   }, [markdown, annotations, globalAttachments, shareBaseUrl]);
 
-  // Auto-refresh share URL when dependencies change
+  // Auto-refresh share URL when dependencies change. Skipped in room mode:
+  // static share URLs are not produced for live-room sessions.
   useEffect(() => {
+    if (disabled) return;
     refreshShareUrl();
-  }, [refreshShareUrl]);
+  }, [refreshShareUrl, disabled]);
 
   // Clear stale short URL when content changes (does NOT auto-regenerate —
   // the user must explicitly click "Create short link" again)
@@ -299,7 +328,15 @@ export function useSharing(
           return { success: false, count: 0, planTitle: '', error: 'Invalid share URL: empty hash' };
         }
 
-        payload = await decompress(hash);
+        payload = (await decompress(hash)) as SharePayload;
+      }
+
+      // `payload` is non-null here: the short-URL branch returns
+      // early on falsy load, and the hash branch assigns from the
+      // (asserted) decompress result. Narrow for the rest of the
+      // function.
+      if (!payload) {
+        return { success: false, count: 0, planTitle: '', error: 'Invalid share URL: no payload decoded' };
       }
 
       // Extract plan title from embedded plan text

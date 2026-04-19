@@ -31,62 +31,210 @@ export async function handleRequest(
     return Response.json({ ok: true }, { headers: cors });
   }
 
-  // Room SPA shell placeholder (Slice 5 serves the real editor bundle).
-  //
-  // Defense-in-depth header: Referrer-Policy: no-referrer.
-  // Note: browsers already do NOT include the URL fragment (#key=…&admin=…)
-  // in outbound Referer headers, so the header isn't plugging a fragment
-  // leak per se. What it does is belt-and-braces: it strips the *path*
-  // (which contains the room id) from Referer on any outbound navigation
-  // or subresource fetch the page performs, reducing room-id exposure to
-  // third parties. The actual credential-leak risk for this page is
-  // JavaScript telemetry reading `window.location.href` — Slice 5 editor
-  // code must scrub `#key=` and `#admin=` from any telemetry /
-  // error-reporting payload.
-  const roomMatch = pathname.match(ROOM_PATH_RE);
-  if (roomMatch && method === 'GET') {
-    const roomId = roomMatch[1];
-    // Validate up front so invalid URLs never reach the room shell (or,
-    // in Slice 5, the editor bundle). Matches the /ws/:roomId validation.
-    if (!isRoomId(roomId)) {
-      return new Response('Not Found', { status: 404, headers: cors });
-    }
-    return new Response(
-      `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Plannotator Room</title></head><body><p>Room: ${escapeHtml(roomId)}</p><!-- Slice 5 replaces this with the editor bundle --></body></html>`,
-      {
-        status: 200,
-        headers: {
-          ...cors,
-          'Content-Type': 'text/html; charset=utf-8',
-          'Referrer-Policy': 'no-referrer',
-        },
-      },
-    );
-  }
-
-  // Assets placeholder — intentionally deferred to Slice 5
-  if (pathname.startsWith('/assets/') && method === 'GET') {
-    return Response.json(
-      { error: 'Static assets not yet available' },
-      { status: 404, headers: cors },
-    );
-  }
-
   // Room creation
   if (pathname === '/api/rooms' && method === 'POST') {
     return handleCreateRoom(request, env, cors);
   }
 
-  // WebSocket upgrade
+  // WebSocket upgrade — matched before asset/SPA routes so a stray ws/*
+  // under the asset binding can't be mistaken for a file fetch.
   const wsMatch = pathname.match(WS_PATH_RE);
   if (wsMatch && method === 'GET') {
     return handleWebSocket(request, env, wsMatch[1], cors);
   }
 
-  // 404
+  // Hashed static assets — produced by `vite build` into ./public/assets/.
+  // Filenames include a content hash, so we set far-future immutable
+  // Cache-Control: chunks invalidate by name, never by TTL. Headers from
+  // the asset response (Content-Type, ETag, Content-Encoding) are
+  // preserved; we only override CORS + Cache-Control.
+  // Static root-level assets (favicon.svg). Vite copies these from
+  // the publicDir into the build output root alongside index.html.
+  // Served with a 1-day cache — they're not hashed so immutable isn't
+  // safe, but they change very rarely.
+  if (pathname === '/favicon.svg' && method === 'GET') {
+    if (!env.ASSETS) {
+      return new Response('Not Found', { status: 404, headers: cors });
+    }
+    const assetRes = await env.ASSETS.fetch(request);
+    // Pass a real miss through as 404, but let 304 Not Modified
+    // responses flow through — `fetch.ok` treats 304 as "not ok"
+    // (it's outside 200-299), so returning 404 on 304 would force
+    // the browser to abandon its cached favicon and re-download
+    // on every revalidation.
+    if (!assetRes.ok && assetRes.status !== 304) {
+      return new Response('Not Found', { status: 404, headers: cors });
+    }
+    const headers = new Headers(assetRes.headers);
+    for (const [k, v] of Object.entries(cors)) headers.set(k, v);
+    headers.set('Cache-Control', 'public, max-age=86400');
+    return new Response(assetRes.body, { status: assetRes.status, headers });
+  }
+
+  if (pathname.startsWith('/assets/') && method === 'GET') {
+    if (!env.ASSETS) {
+      return new Response('Not Found', { status: 404, headers: cors });
+    }
+    const assetRes = await env.ASSETS.fetch(request);
+    if (!assetRes.ok) {
+      // Surface the real status (404/403/etc.) rather than pretending
+      // everything is fine. CORS still attached so the browser exposes
+      // the response to the page's fetch logic.
+      const headers = new Headers(assetRes.headers);
+      for (const [k, v] of Object.entries(cors)) headers.set(k, v);
+      return new Response(assetRes.body, { status: assetRes.status, headers });
+    }
+    const headers = new Headers(assetRes.headers);
+    for (const [k, v] of Object.entries(cors)) headers.set(k, v);
+    headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+    return new Response(assetRes.body, { status: assetRes.status, headers });
+  }
+
+  // Room SPA shell — /c/:roomId rewrites to /index.html so the chunked
+  // Vite bundle can boot with the original path still visible to the
+  // client JS (useRoomMode reads window.location.pathname to extract
+  // roomId, and parseRoomUrl reads the fragment for the room secret).
+  //
+  // Cache-Control: no-store — index.html references hashed chunk URLs
+  // that change on every deploy. Caching it would pin clients to stale
+  // chunk references and break after the next release. The immutable
+  // caching for /assets/* is what preserves the warm-visit performance;
+  // this HTML is tiny.
+  //
+  // Referrer-Policy: no-referrer strips the path (which contains the
+  // roomId) from Referer on any outbound subresource fetch. Fragments
+  // are never in Referer in any browser, so this is defense-in-depth
+  // for the path, not the secret itself.
+  const roomMatch = pathname.match(ROOM_PATH_RE);
+  if (roomMatch && method === 'GET') {
+    const roomId = roomMatch[1];
+    if (!isRoomId(roomId)) {
+      return new Response('Not Found', { status: 404, headers: cors });
+    }
+    return serveIndexHtml(request, env, cors);
+  }
+
+  // No broad SPA fallback. This is a room-only origin — the only valid
+  // browser route is /c/:roomId (matched above). Serving index.html for
+  // `/`, `/about`, or other non-room paths would boot the local editor
+  // via AppRoot's local-mode branch, contradicting the room-only
+  // boundary. If future routes are added (e.g. /rooms index, admin
+  // recovery page), add explicit path matches here; don't open a
+  // catch-all that silently renders local mode.
   return Response.json(
-    { error: 'Not found. Valid paths: GET /health, GET /c/:id, POST /api/rooms, GET /ws/:id' },
+    { error: 'Not found. Valid paths: GET /health, GET /c/:id, POST /api/rooms, GET /ws/:id, GET /assets/*' },
     { status: 404, headers: cors },
+  );
+}
+
+/**
+ * Content Security Policy for the room HTML shell.
+ *
+ * Applied ONLY to the document response (/index.html), not to API or
+ * asset responses. The browser evaluates CSP from the document.
+ *
+ * Rationale for each directive:
+ *   default-src 'self'            — lockdown baseline
+ *   script-src 'self' 'wasm-unsafe-eval'
+ *                                 — Vite chunks + Graphviz WASM
+ *   style-src 'self' 'unsafe-inline' https://fonts.googleapis.com
+ *                                 — app CSS + Google Fonts + inline styles
+ *   font-src 'self' https://fonts.gstatic.com
+ *                                 — Google font files
+ *   img-src 'self' https: data: blob:
+ *                                 — icons, blob previews, and remote
+ *                                   markdown document images (e.g.
+ *                                   `![diagram](https://example/a.png)`)
+ *                                   which Viewer renders as plain <img>.
+ *   connect-src 'self' ws://localhost:* ws://127.0.0.1:* ws://[::1]:*
+ *                                 — same-origin Worker API/WebSocket
+ *                                   + cross-port localhost dev WS
+ *   worker-src 'self' blob:       — defensive for libs using blob workers
+ *   object-src 'none'             — no plugins/objects
+ *   base-uri 'none'               — prevent <base> tag injection
+ *   frame-ancestors 'none'        — no clickjacking/embedding
+ *   form-action 'none'            — no form submissions expected
+ */
+export const ROOM_CSP = [
+  "default-src 'self'",
+  // 'wasm-unsafe-eval' needed for @viz-js/viz (Graphviz WASM build).
+  // NOT 'unsafe-eval' — only WebAssembly compilation is allowed.
+  "script-src 'self' 'wasm-unsafe-eval'",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com",
+  // Remote markdown document images (e.g. `![diagram](https://example/a.png)`)
+  // are a supported plan-content feature — Viewer renders them as plain
+  // `<img src="https://...">`. Allowing blanket `https:` here is a known
+  // tradeoff: an injected script could beacon via image URLs. Accepted
+  // because the product supports remote plan images, and the more
+  // exfil-capable channels (fetch / WebSocket) stay locked down via
+  // `connect-src 'self' + scoped localhost`.
+  // Annotation image attachments remain stripped before sending to the
+  // room (stripRoomAnnotationImages), so only document-level markdown
+  // images exercise this allowance.
+  "img-src 'self' https: data: blob:",
+  // Production: `'self'` covers the same-origin WebSocket
+  // (wss://room.plannotator.ai/ws/<id>) per the CSP spec.
+  //
+  // Development: wrangler dev serves both the room shell and the
+  // WebSocket on the same localhost port, so `'self'` covers that
+  // too. Cross-port local dev (shell on one port, WebSocket on
+  // another) still needs explicit ws:// localhost entries.
+  //
+  // Blanket https: / ws: / wss: are intentionally omitted —
+  // widening the scheme would give any post-XSS injection an
+  // unrestricted exfiltration surface.
+  "connect-src 'self' ws://localhost:* ws://127.0.0.1:* ws://[::1]:*",
+  "worker-src 'self' blob:",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "frame-ancestors 'none'",
+  "form-action 'none'",
+  // upgrade-insecure-requests is intentionally omitted because
+  // wrangler dev serves the shell + WebSocket over `ws://localhost`,
+  // and this directive rewrites ws:// → wss:// (which breaks local
+  // development). Production only makes same-origin wss://
+  // connections, so the directive would be a no-op there anyway.
+].join('; ');
+
+/**
+ * Fetch and serve /index.html from the Wrangler asset binding with the
+ * headers the room shell needs: CSP, CORS, no-store cache,
+ * Referrer-Policy, and an HTML content type. Falls back to a minimal
+ * inline HTML when ASSETS is unbound (local test environments that
+ * don't run Wrangler).
+ */
+async function serveIndexHtml(
+  request: Request,
+  env: Env,
+  cors: Record<string, string>,
+): Promise<Response> {
+  if (env.ASSETS) {
+    const assetUrl = new URL(request.url);
+    assetUrl.pathname = '/index.html';
+    const assetReq = new Request(assetUrl, { method: 'GET', headers: request.headers });
+    const assetRes = await env.ASSETS.fetch(assetReq);
+    const headers = new Headers(assetRes.headers);
+    for (const [k, v] of Object.entries(cors)) headers.set(k, v);
+    headers.set('Content-Security-Policy', ROOM_CSP);
+    headers.set('Referrer-Policy', 'no-referrer');
+    headers.set('Content-Type', 'text/html; charset=utf-8');
+    headers.set('Cache-Control', 'no-store');
+    return new Response(assetRes.body, { status: assetRes.status, headers });
+  }
+  // Fallback for local/test environments without an ASSETS binding.
+  return new Response(
+    `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Plannotator Room</title></head><body><p>Room shell (test fallback; ASSETS binding unavailable)</p></body></html>`,
+    {
+      status: 200,
+      headers: {
+        ...cors,
+        'Content-Security-Policy': ROOM_CSP,
+        'Content-Type': 'text/html; charset=utf-8',
+        'Referrer-Policy': 'no-referrer',
+        'Cache-Control': 'no-store',
+      },
+    },
   );
 }
 
@@ -162,8 +310,10 @@ async function handleWebSocket(
   roomId: string,
   cors: Record<string, string>,
 ): Promise<Response> {
-  // Verify WebSocket upgrade header
-  if (request.headers.get('Upgrade') !== 'websocket') {
+  // Verify WebSocket upgrade header. RFC 6455 specifies the token
+  // is case-insensitive; browsers send lowercase but standards-
+  // conformant non-browser clients may send `WebSocket` or `WEBSOCKET`.
+  if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
     return Response.json(
       { error: 'Expected WebSocket upgrade' },
       { status: 426, headers: cors },
@@ -184,12 +334,4 @@ async function handleWebSocket(
   const id = env.ROOM.idFromName(roomId);
   const stub = env.ROOM.get(id);
   return stub.fetch(request);
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function escapeHtml(str: string): string {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Annotation, AnnotationType, Block, type EditorAnnotation } from '../types';
 import { isCurrentUser } from '../utils/identity';
 import { ImageThumbnail } from './ImageThumbnail';
@@ -23,6 +23,33 @@ interface PanelProps {
   onShare?: () => void;
   otherFileAnnotations?: { count: number; files: number };
   onOtherFileAnnotationsClick?: () => void;
+  /**
+   * Room-mode sync state. `pendingIds` are annotations sent but not yet
+   * echoed; `failedIds` are sends that rejected and need Retry/Discard;
+   * `pendingAdditions` are optimistic ADD rows to render inline for
+   * "Sending…" feedback before server echo. They are NOT part of the
+   * `annotations` prop so the canonical feed to approve/deny/export
+   * stays server-authoritative.
+   * All five props are optional — local mode consumers don't pass them.
+   */
+  pendingIds?: ReadonlySet<string>;
+  failedIds?: ReadonlyMap<string, { kind: string; error: string }>;
+  pendingAdditions?: ReadonlyMap<string, Annotation>;
+  onRetry?: (id: string) => void;
+  onDiscard?: (id: string) => void;
+  /**
+   * Room-mode lock state. When true, per-row edit/delete affordances
+   * are suppressed: the user should experience the room as read-only
+   * instead of clicking buttons that silently get rejected.
+   */
+  roomIsLocked?: boolean;
+  /**
+   * When set, "(me)" and the muted-color treatment match this value
+   * instead of the cookie-backed `getIdentity()` used by `isCurrentUser`.
+   * In room mode App passes the joined display name so the panel
+   * matches remote cursor labels.
+   */
+  authorOverride?: string;
 }
 
 export const AnnotationPanel: React.FC<PanelProps> = ({
@@ -42,12 +69,39 @@ export const AnnotationPanel: React.FC<PanelProps> = ({
   onShare,
   otherFileAnnotations,
   onOtherFileAnnotationsClick,
+  pendingIds,
+  failedIds,
+  pendingAdditions,
+  onRetry,
+  onDiscard,
+  roomIsLocked,
+  authorOverride,
 }) => {
+  // Unified "is this the current user?" check. Room mode passes the
+  // joined display name via authorOverride; local mode falls through
+  // to the cookie-backed isCurrentUser.
+  const isMe = (author: string | undefined): boolean =>
+    author !== undefined && (authorOverride !== undefined
+      ? author === authorOverride
+      : isCurrentUser(author));
   const isMobile = useIsMobile();
   const [copiedText, setCopiedText] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
-  const sortedAnnotations = [...annotations].sort((a, b) => a.createdA - b.createdA);
-  const totalCount = annotations.length + (editorAnnotations?.length ?? 0);
+  // Render list = canonical annotations + optimistic pending-add rows.
+  // `annotations` stays clean for approve/deny/export; the merge here is
+  // purely presentational so users see "Sending…" / failed cards before
+  // the server echo lands.
+  const renderAnnotations = useMemo(() => {
+    if (!pendingAdditions || pendingAdditions.size === 0) return annotations;
+    const seen = new Set(annotations.map(a => a.id));
+    const extra: Annotation[] = [];
+    for (const [id, a] of pendingAdditions) {
+      if (!seen.has(id)) extra.push(a);
+    }
+    return extra.length > 0 ? [...annotations, ...extra] : annotations;
+  }, [annotations, pendingAdditions]);
+  const sortedAnnotations = [...renderAnnotations].sort((a, b) => a.createdA - b.createdA);
+  const totalCount = renderAnnotations.length + (editorAnnotations?.length ?? 0);
 
   // Scroll selected annotation card into view
   useEffect(() => {
@@ -117,16 +171,83 @@ export const AnnotationPanel: React.FC<PanelProps> = ({
           </div>
         ) : (
           <>
-            {sortedAnnotations.map(ann => (
-              <AnnotationCard
-                key={ann.id}
-                annotation={ann}
-                isSelected={selectedId === ann.id}
-                onSelect={() => onSelect(ann.id)}
-                onDelete={() => onDelete(ann.id)}
-                onEdit={onEdit ? (updates: Partial<Annotation>) => onEdit(ann.id, updates) : undefined}
-              />
-            ))}
+            {sortedAnnotations.map(ann => {
+              const isPending = pendingIds?.has(ann.id) ?? false;
+              const failure = failedIds?.get(ann.id);
+              return (
+                <div
+                  key={ann.id}
+                  className={
+                    failure
+                      ? 'border-l-2 border-destructive pl-1'
+                      : isPending
+                      ? 'opacity-70'
+                      : ''
+                  }
+                  data-testid={
+                    failure ? `annotation-failed-${ann.id}` : isPending ? `annotation-pending-${ann.id}` : undefined
+                  }
+                >
+                  <AnnotationCard
+                    annotation={ann}
+                    isSelected={selectedId === ann.id}
+                    isMe={isMe}
+                    onSelect={() => onSelect(ann.id)}
+                    // Locked rooms: suppress delete/edit affordances so the
+                    // panel reads as read-only instead of offering buttons
+                    // that silently fail. Existing annotations stay visible
+                    // for review; locks block new writes, not reads.
+                    //
+                    // Pending / failed rows: also suppress normal edit/delete.
+                    // Room controller tracks at most one pending op per id;
+                    // mutating while an add/update/remove is in flight (or
+                    // already failed) would either overwrite the pending
+                    // op's retry payload or enqueue a conflicting op the
+                    // user can't reason about. Failed rows offer the
+                    // dedicated Retry/Discard controls rendered below.
+                    onDelete={
+                      roomIsLocked || isPending || failure
+                        ? undefined
+                        : () => onDelete(ann.id)
+                    }
+                    onEdit={
+                      roomIsLocked || !onEdit || isPending || failure
+                        ? undefined
+                        : (updates: Partial<Annotation>) => onEdit(ann.id, updates)
+                    }
+                  />
+                  {failure && onRetry && onDiscard && (
+                    <div
+                      className="text-[10px] text-destructive flex items-center gap-2 px-2 py-1"
+                      role="alert"
+                    >
+                      <span className="flex-1">Failed to {failure.kind}: {failure.error}</span>
+                      <button
+                        type="button"
+                        className="underline"
+                        onClick={() => onRetry(ann.id)}
+                        data-testid={`annotation-retry-${ann.id}`}
+                      >
+                        Retry
+                      </button>
+                      <button
+                        type="button"
+                        className="underline"
+                        onClick={() => onDiscard(ann.id)}
+                        data-testid={`annotation-discard-${ann.id}`}
+                      >
+                        Discard
+                      </button>
+                    </div>
+                  )}
+                  {isPending && !failure && (
+                    <div className="text-[10px] text-muted-foreground px-2 py-0.5">
+                      Sending…
+                    </div>
+                  )}
+                </div>
+              );
+            })}
             {editorAnnotations && editorAnnotations.length > 0 && (
               <>
                 {sortedAnnotations.length > 0 && (
@@ -230,10 +351,19 @@ function formatTimestamp(ts: number): string {
 const AnnotationCard: React.FC<{
   annotation: Annotation;
   isSelected: boolean;
+  /**
+   * "Is this annotation authored by the current user?" — passed in
+   * from AnnotationPanel so the helper can bake in the room-mode
+   * override (the joined display name instead of the cookie Tater).
+   * Taking it as a prop rather than closing over the parent's local
+   * helper keeps AnnotationCard module-scoped.
+   */
+  isMe: (author: string | undefined) => boolean;
   onSelect: () => void;
-  onDelete: () => void;
+  /** Undefined = hide delete button (e.g. locked room / read-only). */
+  onDelete?: () => void;
   onEdit?: (updates: Partial<Annotation>) => void;
-}> = ({ annotation, isSelected, onSelect, onDelete, onEdit }) => {
+}> = ({ annotation, isSelected, isMe, onSelect, onDelete, onEdit }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(annotation.text || '');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -251,6 +381,16 @@ const AnnotationCard: React.FC<{
       setEditText(annotation.text || '');
     }
   }, [annotation.text, isEditing]);
+
+  // Cancel in-progress edits when the card becomes read-only (e.g. room
+  // locks while the user has a textarea open). Without this, the
+  // textarea would persist visually; Save would silently no-op because
+  // onEdit is now undefined, confusing the user.
+  useEffect(() => {
+    if (!onEdit && isEditing) {
+      setIsEditing(false);
+    }
+  }, [onEdit, isEditing]);
 
   const handleStartEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -339,11 +479,11 @@ const AnnotationCard: React.FC<{
     >
       {/* Author */}
       {annotation.author && (
-        <div className={`flex items-center gap-1.5 text-[10px] font-mono truncate mb-1.5 ${isCurrentUser(annotation.author) ? 'text-muted-foreground/60' : 'text-muted-foreground'}`}>
+        <div className={`flex items-center gap-1.5 text-[10px] font-mono truncate mb-1.5 ${isMe(annotation.author) ? 'text-muted-foreground/60' : 'text-muted-foreground'}`}>
           <svg className="w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
           </svg>
-          <span className="truncate">{annotation.author}{isCurrentUser(annotation.author) && ' (me)'}</span>
+          <span className="truncate">{annotation.author}{isMe(annotation.author) && ' (me)'}</span>
         </div>
       )}
 
@@ -379,15 +519,17 @@ const AnnotationCard: React.FC<{
               </svg>
             </button>
           )}
-          <button
-            onClick={(e: React.MouseEvent<HTMLButtonElement>) => { e.stopPropagation(); onDelete(); }}
-            className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all"
-            title="Delete annotation"
-          >
-            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          {onDelete && (
+            <button
+              onClick={(e: React.MouseEvent<HTMLButtonElement>) => { e.stopPropagation(); onDelete(); }}
+              className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all"
+              title="Delete annotation"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
 

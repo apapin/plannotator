@@ -1,0 +1,23 @@
+{
+  "//": "Aspirational typecheck for the browser entry. NOT currently a green CI gate — TypeScript follows the AppRoot import into packages/editor + packages/ui, which surface pre-existing implicit-any, missing @types/react, CSS module, and __APP_VERSION__ errors from the broader codebase. Those are shared-package tech-debt items, not room-service issues. Run via: bunx tsc --noEmit -p apps/room-service/tsconfig.browser.json. Entry.tsx itself is clean; the transitive errors are inherited. Once the shared packages carry their own tsconfig with strict: false or the missing declarations are added, this config becomes a usable gate.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "paths": {
+      "@plannotator/ui/*": ["../../packages/ui/*"],
+      "@plannotator/editor": ["../../packages/editor/AppRoot.tsx"],
+      "@plannotator/editor/App": ["../../packages/editor/App.tsx"],
+      "@plannotator/editor/*": ["../../packages/editor/*"],
+      "@plannotator/editor/styles": ["../../packages/editor/index.css"]
+    }
+  },
+  "include": ["entry.tsx", "vite.config.ts"]
+}

@@ -70,7 +70,34 @@ export interface CollabRoomState {
    * rather than command-specific acks — acceptable for V1, not multi-admin safe.
    */
   hasAdminCapability: boolean;
-  lastError: { code: string; message: string } | null;
+  /**
+   * Most recent client or server error. `scope` classifies the source so
+   * consumers can react only to the classes they care about:
+   *
+   *   'mutation' — server-sent rejection of a mutation (room.error on an
+   *                annotation op this client sent). The annotation
+   *                controller uses this to transition in-flight pending
+   *                ops to failed. This is the ONLY scope that does so.
+   *   'admin'    — admin-command rejection. Consumed by
+   *                CollabRoomClient.pendingAdmin; never affects pending
+   *                mutations (a failed lock must not fail a racing add).
+   *   'event'    — inbound event from another participant failed to
+   *                decode locally (malformed payload, decrypt failure,
+   *                reducer rejection). Not a rejection of OUR state.
+   *   'presence' — inbound presence frame failed to decode locally. Not
+   *                a rejection of our state.
+   *   'snapshot' — snapshot replay failed to decode or validate. Not a
+   *                rejection of our state.
+   *   'join'     — connect/join-phase failure surfaced by the hook
+   *                wrapper (mapJoinFailure).
+   *
+   * `id` is a monotonic counter bumped on every NEW error — state clones
+   * rebuild the `lastError` object each emit, so object identity is NOT
+   * a safe "same error" signal; consumers must dedupe on `lastErrorId`.
+   */
+  lastError: { code: string; message: string; scope: 'mutation' | 'admin' | 'event' | 'presence' | 'snapshot' | 'join' } | null;
+  /** Monotonic identifier for `lastError`. 0 when no error has ever occurred. */
+  lastErrorId: number;
 }
 
 // ---------------------------------------------------------------------------

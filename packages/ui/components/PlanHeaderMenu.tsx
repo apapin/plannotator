@@ -18,6 +18,22 @@ interface PlanHeaderMenuProps {
   onPrint: () => void;
   onCopyShareLink: () => void;
   onOpenImport: () => void;
+  /**
+   * Opens the Start-live-room modal. Optional so existing consumers
+   * (build-time and tests) don't need to thread the prop; when omitted
+   * the menu item is hidden.
+   */
+  onStartLiveRoom?: () => void;
+  /**
+   * When true (i.e. the editor is currently joined to a live room),
+   * the menu surfaces Lock / Unlock / Delete admin actions. All three
+   * props are optional and tested for presence before rendering.
+   */
+  onRoomLock?: () => void;
+  onRoomUnlock?: () => void;
+  onRoomDelete?: () => void;
+  roomIsLocked?: boolean;
+  isRoomAdmin?: boolean;
   onSaveToObsidian: () => void;
   onSaveToBear: () => void;
   onSaveToOctarine: () => void;
@@ -39,6 +55,12 @@ export const PlanHeaderMenu: React.FC<PlanHeaderMenuProps> = ({
   onPrint,
   onCopyShareLink,
   onOpenImport,
+  onStartLiveRoom,
+  onRoomLock,
+  onRoomUnlock,
+  onRoomDelete,
+  roomIsLocked,
+  isRoomAdmin,
   onSaveToObsidian,
   onSaveToBear,
   onSaveToOctarine,
@@ -162,6 +184,42 @@ export const PlanHeaderMenu: React.FC<PlanHeaderMenuProps> = ({
               icon={<LinkIcon />}
               label="Copy Share Link"
             />
+          )}
+          {onStartLiveRoom && (
+            <ActionMenuItem
+              onClick={() => {
+                closeMenu();
+                onStartLiveRoom();
+              }}
+              // 👥 (people) distinguishes "Start live room" from the
+              // visually-similar "Copy Share Link" entry above, which
+              // keeps its chain-link icon for static sharing.
+              icon={<span aria-hidden>👥</span>}
+              label="Start live room…"
+            />
+          )}
+          {isRoomAdmin && onRoomLock && onRoomUnlock && onRoomDelete && (
+            <>
+              {!roomIsLocked && (
+                <ActionMenuItem
+                  onClick={() => { closeMenu(); onRoomLock(); }}
+                  icon={<LockIcon />}
+                  label="Lock room"
+                />
+              )}
+              {roomIsLocked && (
+                <ActionMenuItem
+                  onClick={() => { closeMenu(); onRoomUnlock(); }}
+                  icon={<UnlockIcon />}
+                  label="Unlock room"
+                />
+              )}
+              <ActionMenuItem
+                onClick={() => { closeMenu(); onRoomDelete(); }}
+                icon={<DeleteIcon />}
+                label="Delete room"
+              />
+            </>
           )}
           {sharingEnabled && (
             <ActionMenuItem
@@ -298,6 +356,24 @@ const ImportIcon = () => (
 const NoteIcon = () => (
   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+  </svg>
+);
+
+const LockIcon = () => (
+  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+  </svg>
+);
+
+const UnlockIcon = () => (
+  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+  </svg>
+);
+
+const DeleteIcon = () => (
+  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M8 7V4a1 1 0 011-1h6a1 1 0 011 1v3" />
   </svg>
 );
 

@@ -21,7 +21,8 @@
     "paths": {
       "@/*": ["./*"],
       "@plannotator/ui/*": ["../../packages/ui/*"],
-      "@plannotator/editor": ["../../packages/editor/App.tsx"],
+      "@plannotator/editor": ["../../packages/editor/AppRoot.tsx"],
+      "@plannotator/editor/App": ["../../packages/editor/App.tsx"],
       "@plannotator/editor/*": ["../../packages/editor/*"]
     },
     "allowImportingTsExtensions": true,

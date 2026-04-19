@@ -68,9 +68,23 @@ export interface UseCollabRoomReturn {
   roomStatus: RoomStatus | null;
   planMarkdown: string;
   annotations: RoomAnnotation[];
+  /**
+   * Last server seq applied locally. Advances monotonically for every
+   * server-admitted op. Pending-op reconciliation in useAnnotationController
+   * uses this to detect "the server has processed past my send" without
+   * needing opId-level echo matching.
+   */
+  seq: number;
   remotePresence: Record<string, PresenceState>;
   hasAdminCapability: boolean;
-  lastError: { code: string; message: string } | null;
+  lastError: { code: string; message: string; scope: 'mutation' | 'admin' | 'event' | 'presence' | 'snapshot' | 'join' } | null;
+  /**
+   * Monotonic id bumped on every NEW server-side error. Consumers that
+   * react to errors (e.g. annotation controller rejecting in-flight
+   * pending ops) MUST dedupe on this id — object identity is unstable
+   * across state emissions because the client clones `lastError`.
+   */
+  lastErrorId: number;
 
   addAnnotations: (a: RoomAnnotation[]) => Promise<void>;
   updateAnnotation: (id: string, patch: Partial<RoomAnnotation>) => Promise<void>;
@@ -114,19 +128,31 @@ const DISCONNECTED_STATE: CollabRoomState = {
   remotePresence: {},
   hasAdminCapability: false,
   lastError: null,
+  lastErrorId: 0,
 };
 
 /**
  * Map joinRoom() / connect() errors to stable, UI-friendly codes so consumers
  * can render actionable messages without string-matching `err.message`.
+ *
+ * Scope is 'join': these are join/connect-phase failures surfaced by the
+ * hook wrapper itself, not client-internal mutation or admin rejections.
+ * Consumers (annotation controller, RoomApp error banner) dedupe on
+ * `lastErrorId` and branch on `scope === 'join'` to distinguish
+ * "couldn't get into the room" from "server rejected my op."
  */
-function mapJoinFailure(err: unknown): { code: string; message: string } {
-  if (err instanceof InvalidRoomUrlError) return { code: 'invalid_room_url', message: err.message };
-  if (err instanceof InvalidAdminSecretError) return { code: 'invalid_admin_secret', message: err.message };
-  if (err instanceof ConnectTimeoutError) return { code: 'connect_timeout', message: err.message };
-  if (err instanceof AuthRejectedError) return { code: 'auth_rejected', message: err.message };
-  if (err instanceof RoomUnavailableError) return { code: 'room_unavailable', message: err.message };
-  return { code: 'join_failed', message: err instanceof Error ? err.message : String(err) };
+function mapJoinFailure(err: unknown): {
+  code: string;
+  message: string;
+  scope: 'mutation' | 'admin' | 'event' | 'presence' | 'snapshot' | 'join';
+} {
+  const scope = 'join' as const;
+  if (err instanceof InvalidRoomUrlError) return { code: 'invalid_room_url', message: err.message, scope };
+  if (err instanceof InvalidAdminSecretError) return { code: 'invalid_admin_secret', message: err.message, scope };
+  if (err instanceof ConnectTimeoutError) return { code: 'connect_timeout', message: err.message, scope };
+  if (err instanceof AuthRejectedError) return { code: 'auth_rejected', message: err.message, scope };
+  if (err instanceof RoomUnavailableError) return { code: 'room_unavailable', message: err.message, scope };
+  return { code: 'join_failed', message: err instanceof Error ? err.message : String(err), scope };
 }
 
 /**
@@ -152,6 +178,15 @@ export function useCollabRoom(options: UseCollabRoomOptions): UseCollabRoomRetur
   // triggering a reconnect. Reconnect only fires when user.id changes.
   const userRef = useRef(user);
   userRef.current = user;
+
+  // Monotonic counter for join-phase errors surfaced by this hook. The
+  // underlying client increments its own id for client-internal errors
+  // (mutation, admin, event, ...); join failures never reach that path
+  // because they happen before the client is wired up. Without a hook-owned
+  // counter, the failure branch would spread DISCONNECTED_STATE and leave
+  // `lastErrorId` at 0 — violating the contract that 0 means "no error has
+  // ever occurred" and breaking consumers that dedupe errors on id.
+  const joinErrorIdRef = useRef(0);
 
   useEffect(() => {
     // Reset synchronously on every dep change BEFORE any async setup. Between
@@ -221,9 +256,11 @@ export function useCollabRoom(options: UseCollabRoomOptions): UseCollabRoomRetur
           }
         }
         if (!cancelled) {
+          joinErrorIdRef.current += 1;
           setState({
             ...DISCONNECTED_STATE,
             lastError: mapJoinFailure(err),
+            lastErrorId: joinErrorIdRef.current,
           });
           setStateKey(effectKey);
         }
@@ -284,9 +321,11 @@ export function useCollabRoom(options: UseCollabRoomOptions): UseCollabRoomRetur
     roomStatus: stateForRender.roomStatus,
     planMarkdown: stateForRender.planMarkdown,
     annotations: stateForRender.annotations,
+    seq: stateForRender.seq,
     remotePresence: stateForRender.remotePresence,
     hasAdminCapability: stateForRender.hasAdminCapability,
     lastError: stateForRender.lastError,
+    lastErrorId: stateForRender.lastErrorId,
     addAnnotations,
     updateAnnotation,
     removeAnnotations,

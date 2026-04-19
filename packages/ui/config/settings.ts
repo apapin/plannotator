@@ -11,15 +11,23 @@
 
 import { storage } from '../utils/storage';
 import { generateIdentity } from '../utils/generateIdentity';
+import { hashNameToSwatch, isValidPresenceColor, normalizePresenceColor } from '../utils/presenceColor';
 
 export interface SettingDef<T> {
   defaultValue: T | (() => T);
-  fromCookie: () => T | undefined;
-  toCookie: (value: T) => void;
+  // Method signatures (not arrow-typed properties) so TypeScript compares
+  // parameter types bivariantly. SETTINGS entries declare concrete
+  // parameter types (e.g. `toCookie: (v: string) => void`); with
+  // arrow-typed properties those are contravariantly incompatible with
+  // the generic's default inference as `unknown`. Method signatures
+  // admit the intended usage without forcing every entry to declare its
+  // generic parameter explicitly.
+  fromCookie(): T | undefined;
+  toCookie(value: T): void;
   /** If set, this setting syncs to server via POST /api/config */
   serverKey?: string;
-  fromServer?: (serverConfig: Record<string, unknown>) => T | undefined;
-  toServer?: (value: T) => Record<string, unknown>;
+  fromServer?(serverConfig: Record<string, unknown>): T | undefined;
+  toServer?(value: T): Record<string, unknown>;
 }
 
 export const SETTINGS = {
@@ -31,6 +39,37 @@ export const SETTINGS = {
     fromServer: (sc: Record<string, unknown>) =>
       typeof sc.displayName === 'string' && sc.displayName ? sc.displayName : undefined,
     toServer: (v: string) => ({ displayName: v }),
+  },
+
+  /**
+   * Presence color for Live Rooms. Surfaced in Settings, StartRoomModal,
+   * and JoinRoomGate; peers see it via the presence channel.
+   *
+   * Default: hash of the current displayName to a swatch index, so a
+   * first-time user gets a stable distinct color without opening the
+   * picker. Depends on `displayName`'s cookie being populated first;
+   * declaration order in this object is the resolution order in
+   * `ConfigStore.constructor`, so `displayName` above is guaranteed
+   * to have written its cookie before this default runs.
+   */
+  presenceColor: {
+    defaultValue: () => {
+      const name = storage.getItem('plannotator-identity') ?? '';
+      return hashNameToSwatch(name);
+    },
+    fromCookie: () => {
+      const v = storage.getItem('plannotator-presence-color');
+      return v && isValidPresenceColor(v) ? normalizePresenceColor(v) : undefined;
+    },
+    toCookie: (v: string) => storage.setItem('plannotator-presence-color', v),
+    serverKey: 'presenceColor',
+    fromServer: (sc: Record<string, unknown>) => {
+      const v = sc.presenceColor;
+      return typeof v === 'string' && isValidPresenceColor(v)
+        ? normalizePresenceColor(v)
+        : undefined;
+    },
+    toServer: (v: string) => ({ presenceColor: v }),
   },
 
   // --- Diff display options (namespaced under diffOptions in config.json) ---

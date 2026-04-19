@@ -57,6 +57,8 @@ function extractVendoredModules(): Set<string> {
       prefix = "ai/providers/";
     } else if (srcPath.includes("packages/ai/")) {
       prefix = "ai/";
+    } else if (srcPath.includes("packages/shared/collab/")) {
+      prefix = "collab/";
     }
     for (const name of names) {
       all.add(prefix + name);

@@ -1005,6 +1005,27 @@ export class RoomDurableObject extends DurableObject<Env> {
     const roomId = meta?.roomId ?? 'unknown';
     const clientId = meta?.authenticated ? meta.clientId : 'unauthenticated';
     safeLog('ws:closed', { roomId, clientId, code });
+
+    // Tell the remaining peers the closed client has left so they can
+    // drop that clientId's presence (cursor + avatar) immediately.
+    // Without this, peers wait out the 30s client-side TTL sweep,
+    // which made "refresh to test" pile up one ghost cursor per
+    // refresh until the entries expired. Only broadcast for
+    // authenticated sockets — unauth'd ones were never in peers'
+    // presence maps, so nothing needs cleanup.
+    //
+    // `exclude: ws` leaves the closing socket out of the fan-out.
+    // It may already be detached, but the broadcast's send-try/catch
+    // tolerates that either way. No payload beyond clientId — the
+    // protocol is zero-knowledge; we only relay opaque encrypted
+    // presence packets, and the clientId is server-assigned in the
+    // auth challenge so it's already non-secret.
+    if (meta?.authenticated) {
+      this.broadcast(
+        { type: 'room.participant.left', clientId: meta.clientId },
+        ws,
+      );
+    }
   }
 
   async webSocketError(ws: WebSocket, error: unknown): Promise<void> {

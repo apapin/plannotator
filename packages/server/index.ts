@@ -42,6 +42,7 @@ import { saveConfig, detectGitUser, getServerConfig } from "./config";
 import { handleImage, handleUpload, handleAgents, handleServerReady, handleDraftSave, handleDraftLoad, handleDraftDelete, handleFavicon, type OpencodeClient } from "./shared-handlers";
 import { contentHash, deleteDraft } from "./draft";
 import { handleDoc, handleObsidianVaults, handleObsidianFiles, handleObsidianDoc, handleFileBrowserFiles } from "./reference-handlers";
+import { isValidPermissionMode } from "@plannotator/shared/collab/validation";
 import { createEditorAnnotationHandler } from "./editor-annotations";
 import { createExternalAnnotationHandler } from "./external-annotations";
 import { isWSL } from "./browser";
@@ -194,6 +195,34 @@ export async function startPlannotatorServer(
     decisionPromise = new Promise(() => {});
   }
 
+  // Prevent duplicate approve/deny side effects (note integrations,
+  // draft deletion, final snapshot saves). The decision promise only
+  // resolves once regardless, but integrations and saves run BEFORE
+  // resolve — without this guard, a duplicate POST would re-run them.
+  // Mirrors Pi's `decisionSettled` in apps/pi-extension/server/serverPlan.ts.
+  // Claim-then-publish pattern: claimDecision() atomically sets the
+  // flag BEFORE any side effects run, so two near-simultaneous POSTs
+  // cannot both pass the guard. publishDecision() is called after
+  // integrations/saves finish; it only resolves the promise (the flag
+  // is already set). If side effects throw after claim, duplicates are
+  // still rejected — acceptable because the decision is in progress
+  // and the promise resolves once regardless.
+  let decisionSettled = false;
+  function claimDecision(): boolean {
+    if (decisionSettled) return false;
+    decisionSettled = true;
+    return true;
+  }
+  function publishDecision(result: {
+    approved: boolean;
+    feedback?: string;
+    savedPath?: string;
+    agentSwitch?: string;
+    permissionMode?: string;
+  }): void {
+    resolveDecision(result);
+  }
+
   // Start server with retry logic
   let server: ReturnType<typeof Bun.serve> | null = null;
 
@@ -285,9 +314,10 @@ export async function startPlannotatorServer(
           // API: Update user config (write-back to ~/.plannotator/config.json)
           if (url.pathname === "/api/config" && req.method === "POST") {
             try {
-              const body = (await req.json()) as { displayName?: string; diffOptions?: Record<string, unknown>; conventionalComments?: boolean; conventionalLabels?: unknown[] | null };
+              const body = (await req.json()) as { displayName?: string; presenceColor?: string; diffOptions?: Record<string, unknown>; conventionalComments?: boolean; conventionalLabels?: unknown[] | null };
               const toSave: Record<string, unknown> = {};
               if (body.displayName !== undefined) toSave.displayName = body.displayName;
+              if (body.presenceColor !== undefined) toSave.presenceColor = body.presenceColor;
               if (body.diffOptions !== undefined) toSave.diffOptions = body.diffOptions;
               if (body.conventionalComments !== undefined) toSave.conventionalComments = body.conventionalComments;
               if (body.conventionalLabels !== undefined) toSave.conventionalLabels = body.conventionalLabels;
@@ -414,6 +444,9 @@ export async function startPlannotatorServer(
 
           // API: Approve plan
           if (url.pathname === "/api/approve" && req.method === "POST") {
+            if (!claimDecision()) {
+              return Response.json({ ok: true, duplicate: true });
+            }
             // Check for note integrations and optional feedback
             let feedback: string | undefined;
             let agentSwitch: string | undefined;
@@ -436,23 +469,21 @@ export async function startPlannotatorServer(
                 feedback = body.feedback;
               }
 
-              // Capture agent switch setting for OpenCode
-              if (body.agentSwitch) {
-                agentSwitch = body.agentSwitch;
-              }
-
-              // Capture permission mode from client request (Claude Code)
-              if (body.permissionMode) {
-                requestedPermissionMode = body.permissionMode;
-              }
-
-              // Capture plan save settings
+              if (body.agentSwitch) agentSwitch = body.agentSwitch;
               if (body.planSave !== undefined) {
                 planSaveEnabled = body.planSave.enabled;
                 planSaveCustomPath = body.planSave.customPath;
               }
 
-              // Run integrations in parallel — they're independent
+              // Capture permission mode from client request (Claude Code).
+              // Require a valid mode string — an invalid value would
+              // silently fall through to the hook and could upgrade the
+              // session to something unintended.
+              if (isValidPermissionMode(body.permissionMode)) {
+                requestedPermissionMode = body.permissionMode;
+              }
+
+              // Run integrations in parallel — they're independent.
               const integrationResults: Record<string, IntegrationResult> = {};
               const integrationPromises: Promise<void>[] = [];
               if (body.obsidian?.vaultPath && body.obsidian?.plan) {
@@ -476,27 +507,44 @@ export async function startPlannotatorServer(
               console.error(`[Integration] Error:`, err);
             }
 
-            // Save annotations and final snapshot (if enabled)
+            // Save annotations and final snapshot (if enabled). The
+            // claim-then-publish flag is already set above, so we MUST
+            // reach publishDecision() below no matter what — otherwise
+            // the awaiting hook hangs forever and retries are rejected
+            // as duplicates. Persistence is best-effort: log the error
+            // and continue.
             let savedPath: string | undefined;
             if (planSaveEnabled) {
-              const annotations = feedback || "";
-              if (annotations) {
-                saveAnnotations(slug, annotations, planSaveCustomPath);
+              try {
+                const annotations = feedback || "";
+                if (annotations) {
+                  saveAnnotations(slug, annotations, planSaveCustomPath);
+                }
+                savedPath = saveFinalSnapshot(slug, "approved", plan, annotations, planSaveCustomPath);
+              } catch (err) {
+                console.error(`[plan-save] approve persistence failed:`, err);
               }
-              savedPath = saveFinalSnapshot(slug, "approved", plan, annotations, planSaveCustomPath);
             }
 
-            // Clean up draft on successful submit
-            deleteDraft(draftKey);
+            // Clean up draft on successful submit (best-effort — draft
+            // deletion failure must not prevent decision publication).
+            try {
+              deleteDraft(draftKey);
+            } catch (err) {
+              console.error(`[draft] delete failed:`, err);
+            }
 
-            // Use permission mode from client request if provided, otherwise fall back to hook input
+            // Resolution order: client request body > server startup value.
             const effectivePermissionMode = requestedPermissionMode || permissionMode;
-            resolveDecision({ approved: true, feedback, savedPath, agentSwitch, permissionMode: effectivePermissionMode });
+            publishDecision({ approved: true, feedback, savedPath, agentSwitch, permissionMode: effectivePermissionMode });
             return Response.json({ ok: true, savedPath });
           }
 
           // API: Deny with feedback
           if (url.pathname === "/api/deny" && req.method === "POST") {
+            if (!claimDecision()) {
+              return Response.json({ ok: true, duplicate: true });
+            }
             let feedback = "Plan rejected by user";
             let planSaveEnabled = true; // default to enabled for backwards compat
             let planSaveCustomPath: string | undefined;
@@ -507,7 +555,6 @@ export async function startPlannotatorServer(
               };
               feedback = body.feedback || feedback;
 
-              // Capture plan save settings
               if (body.planSave !== undefined) {
                 planSaveEnabled = body.planSave.enabled;
                 planSaveCustomPath = body.planSave.customPath;
@@ -516,15 +563,25 @@ export async function startPlannotatorServer(
               // Use default feedback
             }
 
-            // Save annotations and final snapshot (if enabled)
+            // Save annotations and final snapshot (if enabled). Must
+            // reach publishDecision() below regardless — see the matching
+            // comment in the approve handler.
             let savedPath: string | undefined;
             if (planSaveEnabled) {
-              saveAnnotations(slug, feedback, planSaveCustomPath);
-              savedPath = saveFinalSnapshot(slug, "denied", plan, feedback, planSaveCustomPath);
+              try {
+                saveAnnotations(slug, feedback, planSaveCustomPath);
+                savedPath = saveFinalSnapshot(slug, "denied", plan, feedback, planSaveCustomPath);
+              } catch (err) {
+                console.error(`[plan-save] deny persistence failed:`, err);
+              }
             }
 
-            deleteDraft(draftKey);
-            resolveDecision({ approved: false, feedback, savedPath });
+            try {
+              deleteDraft(draftKey);
+            } catch (err) {
+              console.error(`[draft] delete failed:`, err);
+            }
+            publishDecision({ approved: false, feedback, savedPath });
             return Response.json({ ok: true, savedPath });
           }
 

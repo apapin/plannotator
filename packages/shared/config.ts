@@ -33,6 +33,15 @@ export interface CCLabelConfig {
 
 export interface PlannotatorConfig {
   displayName?: string;
+  /**
+   * Presence color (`#RRGGBB`) used in Live Rooms — the color peers
+   * see on remote cursors/avatars. Stored alongside `displayName` so
+   * identity (name + color) persists through the config file, not
+   * only through the origin-scoped browser cookie. Without this,
+   * color would be lost on machine move, profile restore, cookie
+   * wipe, or when running against a non-default local port.
+   */
+  presenceColor?: string;
   diffOptions?: DiffOptions;
   conventionalComments?: boolean;
   /** null = explicitly cleared (use defaults), undefined = not set */
@@ -110,6 +119,7 @@ export function detectGitUser(): string | null {
  */
 export function getServerConfig(gitUser: string | null): {
   displayName?: string;
+  presenceColor?: string;
   diffOptions?: DiffOptions;
   gitUser?: string;
   conventionalComments?: boolean;
@@ -118,6 +128,7 @@ export function getServerConfig(gitUser: string | null): {
   const cfg = loadConfig();
   return {
     displayName: cfg.displayName,
+    ...(cfg.presenceColor !== undefined && { presenceColor: cfg.presenceColor }),
     diffOptions: cfg.diffOptions,
     gitUser: gitUser ?? undefined,
     ...(cfg.conventionalComments !== undefined && { conventionalComments: cfg.conventionalComments }),

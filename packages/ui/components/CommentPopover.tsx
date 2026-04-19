@@ -18,6 +18,14 @@ interface CommentPopoverProps {
   onSubmit: (text: string, images?: ImageAttachment[]) => void;
   /** Called when popover is closed/cancelled */
   onClose: () => void;
+  /**
+   * Default true. Set false in room mode: Live Rooms V1 strips image
+   * attachments at room-create time and doesn't carry them over the
+   * wire for new annotations either, so the attachments UI would
+   * either silently drop images or fail validation at send. Hiding
+   * the affordance is the honest surface.
+   */
+  attachmentsEnabled?: boolean;
 }
 
 const MAX_POPOVER_WIDTH = 384;
@@ -45,6 +53,7 @@ export const CommentPopover: React.FC<CommentPopoverProps> = ({
   initialText = '',
   onSubmit,
   onClose,
+  attachmentsEnabled = true,
 }) => {
   const [mode, setMode] = useState<'popover' | 'dialog'>('popover');
   const [text, setText] = useState(initialText);
@@ -196,12 +205,14 @@ export const CommentPopover: React.FC<CommentPopoverProps> = ({
           {/* Footer */}
           <div className="flex items-center justify-between px-4 py-3 border-t border-border/50">
             <div className="flex items-center gap-2">
-              <AttachmentsButton
-                images={images}
-                onAdd={(img) => setImages((prev) => [...prev, img])}
-                onRemove={(path) => setImages((prev) => prev.filter((i) => i.path !== path))}
-                variant="inline"
-              />
+              {attachmentsEnabled && (
+                <AttachmentsButton
+                  images={images}
+                  onAdd={(img) => setImages((prev) => [...prev, img])}
+                  onRemove={(path) => setImages((prev) => prev.filter((i) => i.path !== path))}
+                  variant="inline"
+                />
+              )}
             </div>
             <div className="flex items-center gap-3">
               <span className="text-[10px] text-muted-foreground">{submitHint}</span>
@@ -291,12 +302,14 @@ export const CommentPopover: React.FC<CommentPopoverProps> = ({
       {/* Footer */}
       <div className="flex items-center justify-between px-3 py-2 border-t border-border/50">
         <div className="flex items-center gap-2">
-          <AttachmentsButton
-            images={images}
-            onAdd={(img) => setImages((prev) => [...prev, img])}
-            onRemove={(path) => setImages((prev) => prev.filter((i) => i.path !== path))}
-            variant="inline"
-          />
+          {attachmentsEnabled && (
+            <AttachmentsButton
+              images={images}
+              onAdd={(img) => setImages((prev) => [...prev, img])}
+              onRemove={(path) => setImages((prev) => prev.filter((i) => i.path !== path))}
+              variant="inline"
+            />
+          )}
         </div>
         <div className="flex items-center gap-3">
           <span className="text-[10px] text-muted-foreground">{submitHint}</span>

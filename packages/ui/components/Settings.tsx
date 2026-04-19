@@ -4,7 +4,8 @@ import type { Origin } from '@plannotator/shared/agents';
 import { configStore, useConfigValue } from '../config';
 import { loadDiffFont } from '../utils/diffFonts';
 import { TaterSpritePullup } from './TaterSpritePullup';
-import { getIdentity, regenerateIdentity, setCustomIdentity } from '../utils/identity';
+import { getIdentity, regenerateIdentity, setCustomIdentity, getPresenceColor, setPresenceColor } from '../utils/identity';
+import { PRESENCE_SWATCHES } from '../utils/presenceColor';
 import { GitUser } from '../icons/GitUser';
 import {
   getObsidianSettings,
@@ -546,6 +547,7 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
   const [showDialog, setShowDialog] = useState(false);
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const [identity, setIdentity] = useState('');
+  const [presenceColor, setPresenceColorState] = useState<string>(PRESENCE_SWATCHES[0]);
   const [obsidian, setObsidian] = useState<ObsidianSettings>({
     enabled: false,
     vaultPath: '',
@@ -621,6 +623,7 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
     if (showDialog) {
       if (showNewHints) markNewSettingsSeen();
       setIdentity(getIdentity())
+      setPresenceColorState(getPresenceColor());
       setObsidian(getObsidianSettings());
       setBear(getBearSettings());
       setOctarine(getOctarineSettings());
@@ -768,6 +771,12 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
     handleIdentitySave(gitUser);
   };
 
+  const handlePresenceColorChange = (color: string) => {
+    if (color === presenceColor) return;
+    const saved = setPresenceColor(color);
+    setPresenceColorState(saved);
+  };
+
   return (
     <>
       <button
@@ -911,6 +920,26 @@ export const Settings: React.FC<SettingsProps> = ({ taterMode, onTaterModeChange
                             <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                           </svg>
                         </button>
+                      </div>
+                      {/*
+                        Presence color lives next to the name as part
+                        of identity. The Live Rooms create/join gates
+                        read the same preference, so editing here
+                        updates what peers see on the next room join.
+                      */}
+                      <div className="flex items-center gap-1 pt-1">
+                        {PRESENCE_SWATCHES.map(s => (
+                          <button
+                            key={s}
+                            type="button"
+                            onClick={() => handlePresenceColorChange(s)}
+                            onMouseDown={(e) => e.preventDefault()}
+                            className={`w-6 h-6 rounded-full border-2 ${presenceColor === s ? 'border-foreground' : 'border-transparent'}`}
+                            style={{ backgroundColor: s }}
+                            aria-label={`Presence color ${s}`}
+                            title={`Presence color ${s}`}
+                          />
+                        ))}
                       </div>
                     </div>
 

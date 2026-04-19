@@ -254,7 +254,30 @@ export class CollabRoomClient {
   private planMarkdown: string = '';
   private annotations = new Map<string, RoomAnnotation>();
   private remotePresence = new Map<string, { presence: PresenceState; lastSeen: number }>();
-  private lastError: { code: string; message: string } | null = null;
+  private lastError: { code: string; message: string; scope: 'mutation' | 'admin' | 'event' | 'presence' | 'snapshot' | 'join' } | null = null;
+  /**
+   * Monotonic id bumped on every NEW lastError assignment. Exposed via
+   * `CollabRoomState.lastErrorId` so consumers can dedupe state emissions
+   * without relying on object identity — buildState() clones `lastError`
+   * each call, so identity changes even when the underlying error didn't.
+   * Clearing (lastError = null) does NOT bump — consumers can check
+   * `state.lastError === null` independently.
+   */
+  private lastErrorId: number = 0;
+
+  /**
+   * Centralized setter so every event-channel error assignment bumps
+   * `lastErrorId`. Prefer this over direct `this.lastError = ...`; the
+   * direct form is only appropriate for `= null` resets.
+   */
+  private setLastError(
+    code: string,
+    message: string,
+    scope: 'mutation' | 'admin' | 'event' | 'presence' | 'snapshot' | 'join',
+  ): void {
+    this.lastError = { code, message, scope };
+    this.lastErrorId++;
+  }
   /**
    * True when the most-recent snapshot attempt failed (malformed or
    * decrypt-failed) and a valid baseline has not yet been re-established.
@@ -955,6 +978,23 @@ export class CollabRoomClient {
       this.enqueue(async () => { this.handleRoomError(err, gen); });
       return;
     }
+    if (msg.type === 'room.participant.left') {
+      // Broadcast from the server when a peer's WebSocket closed.
+      // Drop their presence immediately so the UI doesn't hold a
+      // ghost cursor until the 30s TTL sweep — that stale window
+      // made "refresh to test" show one extra bubble per refresh.
+      //
+      // Protocol validation: require a non-empty string clientId.
+      // Garbage from a non-conforming server or a buggy relay is
+      // ignored rather than corrupting the presence map.
+      const left = msg as unknown as Extract<RoomTransportMessage, { type: 'room.participant.left' }>;
+      if (typeof left.clientId === 'string' && left.clientId.length > 0) {
+        if (this.remotePresence.delete(left.clientId)) {
+          this.emitState();
+        }
+      }
+      return;
+    }
   }
 
   private async handleAuthChallenge(challenge: AuthChallenge): Promise<void> {
@@ -1137,9 +1177,8 @@ export class CollabRoomClient {
         // Also mark the baseline invalid so subsequent room.events cannot
         // apply on top of stale local state until a valid snapshot lands.
         this.baselineInvalid = true;
-        const err = { code: 'snapshot_malformed', message: 'Snapshot payload failed shape validation' };
-        this.lastError = err;
-        this.emitter.emit('error', err);
+        this.setLastError('snapshot_malformed', 'Snapshot payload failed shape validation', 'snapshot');
+        this.emitter.emit('error', { code: 'snapshot_malformed', message: 'Snapshot payload failed shape validation' });
         this.emitState();
         return;
       }
@@ -1175,7 +1214,7 @@ export class CollabRoomClient {
       // next valid snapshot or reconnect clears the flag.
       this.baselineInvalid = true;
       const payload = { code: 'snapshot_decrypt_failed', message: String(err) };
-      this.lastError = payload;
+      this.setLastError(payload.code, payload.message, 'snapshot');
       this.emitter.emit('error', payload);
       this.emitState();
     }
@@ -1231,7 +1270,7 @@ export class CollabRoomClient {
           code: 'event_malformed',
           message: `Malformed event op from clientId=${envelope.clientId} at seq=${seq}`,
         };
-        this.lastError = err;
+        this.setLastError(err.code, err.message, 'event');  // inbound event malformed
         this.emitter.emit('error', err);
         // V1 forward-progress policy: the server has already sequenced and
         // persisted this event, so NOT advancing this.seq would cause the
@@ -1259,7 +1298,7 @@ export class CollabRoomClient {
           code: 'event_rejected_by_reducer',
           message: `Event at seq=${seq} rejected by reducer: ${result.reason ?? 'unknown'}`,
         };
-        this.lastError = err;
+        this.setLastError(err.code, err.message, 'event');  // inbound event reducer-rejected
         this.emitter.emit('error', err);
         this.emitState();
         return;
@@ -1273,7 +1312,7 @@ export class CollabRoomClient {
       // from a stale decrypt failure.
       if (gen !== this.socketGeneration) return;
       const payload = { code: 'event_decrypt_failed', message: String(err) };
-      this.lastError = payload;
+      this.setLastError(payload.code, payload.message, 'event');  // inbound event decrypt failed
       this.emitter.emit('error', payload);
       // Same forward-progress policy as malformed events — the server has
       // already sequenced this event, so we must advance seq or the same
@@ -1303,7 +1342,7 @@ export class CollabRoomClient {
           code: 'presence_malformed',
           message: `Malformed presence from clientId=${msg.envelope.clientId}`,
         };
-        this.lastError = err;
+        this.setLastError(err.code, err.message, 'presence');
         this.emitter.emit('error', err);
         this.emitState();
         return;
@@ -1323,7 +1362,7 @@ export class CollabRoomClient {
       // Post-decrypt generation guard.
       if (gen !== this.socketGeneration) return;
       const payload = { code: 'presence_decrypt_failed', message: String(err) };
-      this.lastError = payload;
+      this.setLastError(payload.code, payload.message, 'presence');
       this.emitter.emit('error', payload);
       this.emitState();
     }
@@ -1365,7 +1404,13 @@ export class CollabRoomClient {
     // Drop errors from retired sockets — they reference operations on a
     // session the client has already moved past.
     if (gen !== this.socketGeneration) return;
-    this.lastError = { code: msg.code, message: msg.message };
+    // Classify scope from the server code. `admin` errors are consumed
+    // by pendingAdmin handling; everything else from the server is a
+    // rejection of a mutation WE sent (the server only returns room.error
+    // to the originator of the rejected op). The annotation controller
+    // uses `'mutation'` to transition pending → failed.
+    const scope: 'mutation' | 'admin' = ADMIN_SCOPED_ERROR_CODES.has(msg.code) ? 'admin' : 'mutation';
+    this.setLastError(msg.code, msg.message, scope);
     this.emitter.emit('error', { code: msg.code, message: msg.message });
 
     // Reject pending admin ONLY for admin-scoped error codes. Event-channel
@@ -1375,7 +1420,7 @@ export class CollabRoomClient {
     // would fail a successful admin command whose `room.status: locked` is
     // still in-flight. Admin-scoped codes are the ones the server emits
     // exclusively from the admin command path.
-    if (this.pendingAdmin && ADMIN_SCOPED_ERROR_CODES.has(msg.code)) {
+    if (this.pendingAdmin && scope === 'admin') {
       const pending = this.pendingAdmin;
       clearTimeout(pending.timeoutHandle);
       this.pendingAdmin = null;
@@ -1592,6 +1637,7 @@ export class CollabRoomClient {
       remotePresence: presence,
       hasAdminCapability: this.adminKey !== null,
       lastError: this.lastError ? { ...this.lastError } : null,
+      lastErrorId: this.lastErrorId,
     };
   }
 

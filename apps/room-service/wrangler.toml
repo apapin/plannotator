@@ -2,6 +2,16 @@ name = "plannotator-room"
 main = "targets/cloudflare.ts"
 compatibility_date = "2024-12-01"
 
+# Chunked Vite build output lives in ./public (index.html + hashed
+# assets/*.js, *.css). Produced by `bun run build:shell` from
+# apps/room-service/vite.config.ts. The directory is gitignored —
+# always generated, never checked in. The Worker's handler rewrites
+# /c/:roomId → /index.html and /assets/* → passthrough with long-lived
+# immutable Cache-Control on hashed chunks; see core/handler.ts.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
 [[durable_objects.bindings]]
 name = "ROOM"
 class_name = "RoomDurableObject"

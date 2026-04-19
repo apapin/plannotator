@@ -19,6 +19,12 @@ import { getCallbackConfig, CallbackAction, executeCallback, type ToastPayload }
 import { useAgents } from '@plannotator/ui/hooks/useAgents';
 import { useActiveSection } from '@plannotator/ui/hooks/useActiveSection';
 import { storage } from '@plannotator/ui/utils/storage';
+import {
+  getIdentity,
+  setCustomIdentity,
+  getPresenceColor,
+  setPresenceColor,
+} from '@plannotator/ui/utils/identity';
 import { configStore } from '@plannotator/ui/config';
 import { CompletionOverlay } from '@plannotator/ui/components/CompletionOverlay';
 import { UpdateBanner } from '@plannotator/ui/components/UpdateBanner';
@@ -55,6 +61,11 @@ import { useArchive } from '@plannotator/ui/hooks/useArchive';
 import { useEditorAnnotations } from '@plannotator/ui/hooks/useEditorAnnotations';
 import { useExternalAnnotations } from '@plannotator/ui/hooks/useExternalAnnotations';
 import { useExternalAnnotationHighlights } from '@plannotator/ui/hooks/useExternalAnnotationHighlights';
+import { useAnnotationHighlightReconciler } from '@plannotator/ui/hooks/useAnnotationHighlightReconciler';
+import { useRoomAdminActions } from '@plannotator/ui/hooks/useRoomAdminActions';
+import { RoomHeaderControls } from '@plannotator/ui/components/collab/RoomHeaderControls';
+import { RoomAdminErrorToast } from '@plannotator/ui/components/collab/RoomAdminErrorToast';
+import { ImageStripNotice } from '@plannotator/ui/components/collab/ImageStripNotice';
 import { buildPlanAgentInstructions } from '@plannotator/ui/utils/planAgentInstructions';
 import { hasNewSettings, markNewSettingsSeen } from '@plannotator/ui/utils/newSettingsHint';
 import { useFileBrowser } from '@plannotator/ui/hooks/useFileBrowser';
@@ -67,6 +78,9 @@ import { PlanDiffViewer } from '@plannotator/ui/components/plan-diff/PlanDiffVie
 import type { PlanDiffMode } from '@plannotator/ui/components/plan-diff/PlanDiffModeSwitcher';
 import { DEMO_PLAN_CONTENT } from './demoPlan';
 import { useCheckboxOverrides } from './hooks/useCheckboxOverrides';
+import { useAnnotationController } from '@plannotator/ui/hooks/useAnnotationController';
+import { StartRoomModal, type StartRoomSubmit } from '@plannotator/ui/components/collab/StartRoomModal';
+import { stripRoomAnnotationImages } from '@plannotator/shared/collab';
 
 type NoteAutoSaveResults = {
   obsidian?: boolean;
@@ -74,9 +88,113 @@ type NoteAutoSaveResults = {
   octarine?: boolean;
 };
 
-const App: React.FC = () => {
-  const [markdown, setMarkdown] = useState(DEMO_PLAN_CONTENT);
-  const [annotations, setAnnotations] = useState<Annotation[]>([]);
+export interface AppProps {
+  /**
+   * When provided, the editor runs in room mode: annotation mutations
+   * route through the room client and the `/api/plan` fetch is
+   * skipped (the plan arrives from the encrypted room snapshot
+   * instead). Approve and Deny are local-only — they are never
+   * offered in room mode — so passing this prop does not change the
+   * approve/deny flow.
+   *
+   * AppRoot is the only caller that should pass this; plain
+   * consumers mounting `<App />` get local mode unchanged.
+   */
+  roomSession?: import('@plannotator/ui/hooks/useCollabRoomSession').UseCollabRoomSessionReturn;
+}
+
+/**
+ * Resolve the room-service base URL for `createRoom()`. Precedence:
+ *
+ *   1. `window.__ROOM_BASE_URL` — runtime escape hatch. Set via
+ *      DevTools console for ad-hoc redirection without restarting
+ *      the dev server.
+ *   2. `import.meta.env.VITE_ROOM_BASE_URL` — build/dev-time env
+ *      var, the standard Vite pattern. `scripts/dev-live-room-local.sh`
+ *      sets this so the editor at :3000 targets the local wrangler
+ *      dev at :8787 instead of production.
+ *   3. `https://room.plannotator.ai` — production default; what
+ *      every shipped build should resolve to when neither override
+ *      is present.
+ *
+ * Declared as a module-level helper rather than inlined in
+ * `handleConfirmStartRoom` so local E2E testing doesn't require
+ * hand-setting a window global before every click.
+ */
+function getRoomBaseUrl(): string {
+  if (typeof window !== 'undefined') {
+    const explicit = (window as { __ROOM_BASE_URL?: string }).__ROOM_BASE_URL;
+    if (explicit) return explicit;
+  }
+  const viteBase = import.meta.env?.VITE_ROOM_BASE_URL;
+  if (viteBase) return viteBase;
+  return 'https://room.plannotator.ai';
+}
+
+const App: React.FC<AppProps> = ({ roomSession }) => {
+  const roomModeActive = !!roomSession?.room;
+  const [markdown, setMarkdown] = useState(
+    roomModeActive ? '' : DEMO_PLAN_CONTENT,
+  );
+
+  // Room admin actions: lock / unlock / delete. Pending + error state
+  // live here (not in `RoomApp`) because the controls render in the
+  // editor header alongside everything else App owns. The error slot
+  // is surfaced via a toast at the bottom of the layout.
+  const roomAdmin = useRoomAdminActions(roomSession?.room);
+
+  // Stripped-image handoff count from the creator-origin fragment
+  // (`&stripped=N`). AppRoot reads and strips the fragment param on
+  // mount, stashing the number on `window.__PLANNOTATOR_STRIPPED_IMAGES__`.
+  // The initializer is PURE; the consume-once effect below clears the
+  // global so a later App remount doesn't re-show the notice. Pattern
+  // matches the previous RoomApp implementation — see its commit
+  // history for the StrictMode double-run trap this avoids.
+  const [strippedImagesCount, setStrippedImagesCount] = useState<number>(() => {
+    if (!roomModeActive || typeof window === 'undefined') return 0;
+    const w = window as { __PLANNOTATOR_STRIPPED_IMAGES__?: number };
+    return w.__PLANNOTATOR_STRIPPED_IMAGES__ ?? 0;
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const w = window as { __PLANNOTATOR_STRIPPED_IMAGES__?: number };
+    if (w.__PLANNOTATOR_STRIPPED_IMAGES__ !== undefined) {
+      delete w.__PLANNOTATOR_STRIPPED_IMAGES__;
+    }
+  }, []);
+  // Annotation state lives behind a uniform controller. In local mode it
+  // wraps useState; in room mode it delegates to useCollabRoom, with
+  // `pending` tracking sends awaiting echo and `failed` holding ids whose
+  // last send rejected. `setAnnotations` is retained as a name pointing at
+  // `controller.setAll` — undefined in room mode, so the few downstream
+  // consumers that ATOMIC-replace (useSharing import, draft restore, linked
+  // doc switch) degrade to no-ops in room mode. That is the Slice 5
+  // contract: those flows are not supported inside a live room.
+  const annotationController = useAnnotationController({
+    initial: [],
+    room: roomSession?.room,
+  });
+  const { annotations } = annotationController;
+  const setAnnotations: React.Dispatch<React.SetStateAction<Annotation[]>> =
+    annotationController.setAll ??
+    ((_: React.SetStateAction<Annotation[]>) => {
+      // In room mode the controller has no replace-all primitive. Silently
+      // drop — every caller that relies on atomic replace is already
+      // guarded upstream (share import is disabled in room mode; draft
+      // restore triggers only in local mode; linked doc switch exits room
+      // mode first).
+    });
+
+  // Sync the plan markdown from the encrypted room snapshot. `room.planMarkdown`
+  // is empty string until the snapshot decrypts; we only overwrite local
+  // markdown when we have non-empty room plan content, so a late snapshot
+  // doesn't clobber the initial empty string render noisily.
+  useEffect(() => {
+    if (!roomSession?.room) return;
+    const plan = roomSession.room.planMarkdown;
+    if (plan && plan !== markdown) setMarkdown(plan);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomSession?.room?.planMarkdown]);
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [frontmatter, setFrontmatter] = useState<Frontmatter | null>(null);
@@ -128,6 +246,15 @@ const App: React.FC = () => {
     return () => ro.disconnect();
   }, []);
   const [isApiMode, setIsApiMode] = useState(false);
+  // Approve / Deny are a LOCAL (same-origin) capability. In room mode
+  // the editor is served from room.plannotator.ai, which has no
+  // path to the blocked agent hook — so the buttons aren't offered
+  // there, even for admins. Decisions are made from the creator's
+  // localhost tab; room-side feedback flows back via the existing
+  // import paths (share hash / paste short URL / "Copy consolidated
+  // feedback" → paste). If a future change wants a room-origin
+  // approve path, it has to change THIS line.
+  const approveDenyAvailable = isApiMode;
   const [origin, setOrigin] = useState<Origin | null>(null);
   const [gitUser, setGitUser] = useState<string | undefined>();
   const [isWSL, setIsWSL] = useState(false);
@@ -141,6 +268,8 @@ const App: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
   const [submitted, setSubmitted] = useState<'approved' | 'denied' | 'exited' | null>(null);
+  /** Visible error message for failed approve/deny. Cleared on next attempt. */
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [pendingPasteImage, setPendingPasteImage] = useState<{ file: File; blobUrl: string; initialName: string } | null>(null);
   const [showPermissionModeSetup, setShowPermissionModeSetup] = useState(false);
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('bypassPermissions');
@@ -162,6 +291,21 @@ const App: React.FC = () => {
   const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
 
   const viewerRef = useRef<ViewerHandle>(null);
+  // Monotonic generation driven by Viewer's highlight-surface lifecycle
+  // (init + `clearAllHighlights`). Reconcilers that track which annotation
+  // IDs are already materialized as DOM marks watch this value so they
+  // repaint from scratch when the underlying surface is reset out from
+  // under them (e.g. share-import wiping the DOM via clearAllHighlights).
+  //
+  // The counter is parent-owned on purpose: if the Viewer remounts (key
+  // change, conditional render) and emitted its own first-mount number
+  // again, React's setState bailout would silently drop the update and
+  // the reconciler's applied map would stay stale. The Viewer just emits
+  // "I reset" and we bump here.
+  const [highlightSurfaceGeneration, setHighlightSurfaceGeneration] = useState(0);
+  const bumpHighlightSurfaceGeneration = useCallback(() => {
+    setHighlightSurfaceGeneration(g => g + 1);
+  }, []);
   // containerRef + scrollViewport both point at the OverlayScrollbars
   // viewport element (the node that actually scrolls), not the <main>
   // host. Consumers: useActiveSection (IntersectionObserver root) and
@@ -171,6 +315,29 @@ const App: React.FC = () => {
     viewport: scrollViewport,
     onViewportReady: handleViewportReady,
   } = useOverlayViewport();
+
+  // Expose the scroll viewport to sibling components outside App's
+  // React tree (LocalPresenceEmitter, RemoteCursorLayer — both live
+  // in RoomApp as React-siblings of App, so they can't consume
+  // `ScrollViewportContext`). They use content coordinates for
+  // remote cursor presence: "pointer at pixel (x, y) inside the
+  // scrolling content" is the one coordinate space that stays
+  // consistent across participants regardless of scroll / window
+  // size / zoom. Tagging the element with a data attribute lets
+  // those components `document.querySelector` for it — ugly
+  // coupling, but the alternative (hoisting presence components
+  // into App, or threading the ref back up through `renderEditor`)
+  // would be a bigger refactor for a localized win. Exactly one
+  // element carries the attribute (one App instance per page).
+  useEffect(() => {
+    if (!scrollViewport) return;
+    scrollViewport.dataset.planScrollViewport = '';
+    return () => {
+      // Clean up on unmount so a later App mount (e.g. HMR) doesn't
+      // have two elements briefly claiming the role.
+      delete scrollViewport.dataset.planScrollViewport;
+    };
+  }, [scrollViewport]);
 
   usePrintMode();
 
@@ -361,7 +528,7 @@ const App: React.FC = () => {
 
   // Flash highlight for annotated files in the sidebar
   const [highlightedFiles, setHighlightedFiles] = useState<Set<string> | undefined>();
-  const flashTimerRef = React.useRef<ReturnType<typeof setTimeout>>();
+  const flashTimerRef = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const handleFlashAnnotatedFiles = React.useCallback(() => {
     const filePaths = new Set(allAnnotationCounts.keys());
     if (filePaths.size === 0) return;
@@ -395,18 +562,27 @@ const App: React.FC = () => {
   // Drive DOM highlights for SSE-delivered external annotations. Disabled
   // while a linked doc overlay is open (Viewer DOM is hidden) and while the
   // plan diff view is active (diff view has its own annotation surface).
-  const { reset: resetExternalHighlights } = useExternalAnnotationHighlights({
+  useExternalAnnotationHighlights({
     viewerRef,
     externalAnnotations,
     enabled: isApiMode && !linkedDocHook.isActive && !isPlanDiffActive,
     planKey: markdown,
+    surfaceGeneration: highlightSurfaceGeneration,
   });
 
   // Merge local + SSE annotations, deduping draft-restored externals against
   // live SSE versions. Prefer the SSE version when both exist (same source,
   // type, and originalText). This avoids the timing issues of an effect-based
   // cleanup — draft-restored externals persist until SSE actually re-delivers them.
+  //
+  // Room-mode exclusion: when a live room is active, external annotations are
+  // NOT merged. An SSE-sourced annotation visible only to the creator would
+  // diverge from other participants' views and could be accidentally
+  // consolidated into approve/deny payloads. Later Slice 6 work can
+  // forward the SSE stream to encrypted room ops so external annotations
+  // become shared.
   const allAnnotations = useMemo(() => {
+    if (roomSession?.room) return annotations;
     if (externalAnnotations.length === 0) return annotations;
 
     const local = annotations.filter(a => {
@@ -419,7 +595,7 @@ const App: React.FC = () => {
     });
 
     return [...local, ...externalAnnotations];
-  }, [annotations, externalAnnotations]);
+  }, [annotations, externalAnnotations, roomSession?.room]);
 
   // Plan diff state — memoize filtered annotation lists to avoid new references per render
   const diffAnnotations = useMemo(() => allAnnotations.filter(a => !!a.diffContext), [allAnnotations]);
@@ -453,7 +629,11 @@ const App: React.FC = () => {
       setIsLoading(false);
     },
     shareBaseUrl,
-    pasteApiUrl
+    pasteApiUrl,
+    // Room mode disables static sharing entirely. The URL fragment
+    // (#key=<roomSecret>) is a room credential, not a deflated share
+    // payload, and must not be interpreted as a static share.
+    roomModeActive,
   );
 
   // Auto-save annotation drafts
@@ -466,6 +646,12 @@ const App: React.FC = () => {
   });
 
   const handleRestoreDraft = React.useCallback(() => {
+    // Draft restore is a replace-all flow; in room mode the room-backed
+    // controller has no replace-all primitive (annotations are
+    // server-authoritative). We intentionally skip restore in room mode —
+    // the user's local draft is still on disk; they can apply it after
+    // leaving the room.
+    if (roomModeActive) return;
     const { annotations: restored, globalAttachments: restoredGlobal } = restoreDraft();
     if (restored.length > 0) {
       setAnnotations(restored);
@@ -475,7 +661,7 @@ const App: React.FC = () => {
         viewerRef.current?.applySharedAnnotations(restored.filter(a => !a.diffContext));
       }, 100);
     }
-  }, [restoreDraft]);
+  }, [restoreDraft, roomModeActive]);
 
   // Fetch available agents for OpenCode (for validation on approve)
   const { agents: availableAgents, validateAgent, getAgentWarning } = useAgents(origin);
@@ -485,17 +671,33 @@ const App: React.FC = () => {
     if (pendingSharedAnnotations && pendingSharedAnnotations.length > 0) {
       // Small delay to ensure DOM is rendered
       const timer = setTimeout(() => {
-        // Clear existing highlights first (important when loading new share URL)
+        // Clear existing highlights first (important when loading new share URL).
+        // Viewer fires `onHighlightSurfaceReset`, which bumps the parent-owned
+        // generation and cascades into both reconcilers (external SSE + room)
+        // so their applied maps invalidate and repaint on the next tick.
         viewerRef.current?.clearAllHighlights();
         viewerRef.current?.applySharedAnnotations(pendingSharedAnnotations.filter(a => !a.diffContext));
         clearPendingSharedAnnotations();
-        // `clearAllHighlights` wiped live external SSE highlights too;
-        // tell the external-highlight bookkeeper to re-apply them.
-        resetExternalHighlights();
       }, 100);
       return () => clearTimeout(timer);
     }
-  }, [pendingSharedAnnotations, clearPendingSharedAnnotations, resetExternalHighlights]);
+  }, [pendingSharedAnnotations, clearPendingSharedAnnotations]);
+
+  // Room-mode annotation → DOM mark reconciliation. Delegates to the
+  // shared `useAnnotationHighlightReconciler` (also used by external
+  // SSE). Room fingerprint includes comment `text` because peers can
+  // edit an annotation's comment without changing `originalText` —
+  // that case must trigger a remove+reapply so the mark's visible
+  // content matches the canonical annotation.
+  useAnnotationHighlightReconciler({
+    viewerRef,
+    annotations,
+    enabled: roomModeActive,
+    planKey: markdown,
+    surfaceGeneration: highlightSurfaceGeneration,
+    eligibleFilter: a => !a.diffContext && !!a.originalText,
+    fingerprint: roomAnnFingerprint,
+  });
 
   const handleTaterModeChange = (enabled: boolean) => {
     setTaterMode(enabled);
@@ -520,6 +722,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (isLoadingShared) return; // Wait for share check to complete
     if (isSharedSession) return; // Already loaded from share
+    if (roomModeActive) return; // Room mode loads plan from the encrypted snapshot
 
     fetch('/api/plan')
       .then(res => {
@@ -700,6 +903,11 @@ const App: React.FC = () => {
   // Global paste listener for image attachments
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
+      // Room mode: images are not supported. Block the paste flow so
+      // the user doesn't get an upload modal that silently fails (the
+      // room Worker has no /api/upload endpoint).
+      if (roomModeActive) return;
+
       const items = e.clipboardData?.items;
       if (!items) return;
 
@@ -720,7 +928,7 @@ const App: React.FC = () => {
 
     document.addEventListener('paste', handlePaste);
     return () => document.removeEventListener('paste', handlePaste);
-  }, [globalAttachments]);
+  }, [globalAttachments, roomModeActive]);
 
   // Handle paste annotator accept — name comes from ImageAnnotator
   const handlePasteAnnotatorAccept = async (blob: Blob, hasDrawings: boolean, name: string) => {
@@ -756,6 +964,7 @@ const App: React.FC = () => {
   // API mode handlers
   const handleApprove = async () => {
     setIsSubmitting(true);
+    setSubmitError(null);
     try {
       const obsidianSettings = getObsidianSettings();
       const bearSettings = getBearSettings();
@@ -823,22 +1032,29 @@ const App: React.FC = () => {
         body.feedback = annotationsOutput;
       }
 
-      await fetch('/api/approve', {
+      const approveRes = await fetch('/api/approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
+      if (!approveRes.ok) {
+        throw new Error(`Approve failed: ${approveRes.status}`);
+      }
+
       setSubmitted('approved');
-    } catch {
+      setSubmitError(null);
+    } catch (err) {
       setIsSubmitting(false);
+      setSubmitError(err instanceof Error ? err.message : 'Approve failed');
     }
   };
 
   const handleDeny = async () => {
     setIsSubmitting(true);
+    setSubmitError(null);
     try {
       const planSaveSettings = getPlanSaveSettings();
-      await fetch('/api/deny', {
+      const denyRes = await fetch('/api/deny', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -849,11 +1065,269 @@ const App: React.FC = () => {
           },
         })
       });
+      if (!denyRes.ok) {
+        throw new Error(`Deny failed: ${denyRes.status}`);
+      }
       setSubmitted('denied');
-    } catch {
+      setSubmitError(null);
+    } catch (err) {
       setIsSubmitting(false);
+      setSubmitError(err instanceof Error ? err.message : 'Deny failed');
     }
   };
+
+  // Start-live-room modal state. The modal is the sole entry to the creator
+  // flow — replaces the earlier inline hardcoded path (name/color/expiry
+  // defaults). Abort during in-flight creation runs through an
+  // AbortController passed to createRoom().
+  const [showStartRoomModal, setShowStartRoomModal] = useState(false);
+  const [startRoomInFlight, setStartRoomInFlight] = useState(false);
+  const [startRoomError, setStartRoomError] = useState<string>('');
+  const startRoomAbortRef = useRef<AbortController | null>(null);
+
+  /**
+   * Count of images that will NOT travel to the live room.
+   * Includes both per-annotation images AND global attachments — both
+   * are local-only in Slice 5 (rooms carry no image payloads), so the
+   * notice must inform the user about either source.
+   */
+  // Single source of truth for "how many local items won't travel to
+  // the room" — matches the value used at actual room-create time
+  // (stripRoomAnnotationImages inside handleConfirmStartRoom) so the
+  // modal notice and the URL `&stripped=N` handoff can never drift.
+  // stripRoomAnnotationImages is synchronous and O(annotations +
+  // globals); running it per render on a typical small annotation list
+  // is cheap.
+  const imageAnnotationsToStrip = useMemo(() => {
+    // Dynamic import in the sync path would defeat the purpose; we use
+    // a static import above and call the helper directly.
+    const { strippedCount } = stripRoomAnnotationImages(annotations, globalAttachments);
+    return strippedCount;
+  }, [annotations, globalAttachments]);
+
+  /**
+   * Stable `pendingIds` derivation for AnnotationPanel. The controller
+   * exposes pending as `Map<id, PendingOp>` but the panel only needs
+   * "is this id pending?" — we project to a Set with the controller's
+   * pending Map as the memo dependency so a new Set is built ONLY when
+   * pending actually changes.
+   */
+  const pendingAnnotationIds = useMemo<ReadonlySet<string> | undefined>(
+    () => (roomModeActive ? new Set(annotationController.pending.keys()) : undefined),
+    [roomModeActive, annotationController.pending],
+  );
+
+  // Live Rooms is a local-creator-only flow: it needs a running
+  // Plannotator hook (isApiMode) to host the creator's original tab so
+  // the blocked agent hook has an approve/deny surface after the room
+  // opens in a new tab. Hosted portals (share.plannotator.ai, the
+  // marketing demo) have no such host, and the room-service CORS policy
+  // intentionally doesn't whitelist them — offering the button there
+  // would surface an "unreachable room service" error on click. Gate
+  // the menu + export-modal affordances on this single flag so both
+  // surfaces stay consistent.
+  const canStartLiveRoom = isApiMode && !roomModeActive;
+
+  const handleStartLiveRoom = React.useCallback(() => {
+    if (!canStartLiveRoom) return;  // belt-and-braces with the prop-level gate below
+    setStartRoomError('');
+    setShowStartRoomModal(true);
+  }, [canStartLiveRoom]);
+
+  // Note: room admin actions (lock / unlock / delete) intentionally
+  // only live in the RoomPanel in Slice 5. The header menu used to
+  // duplicate them via a `runHeaderRoomAdmin` wrapper, but that path
+  // swallowed errors without a visible surface — RoomPanel owns the
+  // `adminActionError` UI and the pending-state chrome, so routing
+  // admin clicks through a single focal point gives the user a
+  // consistent recovery path. We keep `isRoomAdmin` / `roomIsLocked`
+  // props threaded into `PlanHeaderMenu` so other header-level
+  // conditionals can still read capability state without offering
+  // click targets.
+
+  const handleCancelStartRoom = React.useCallback(() => {
+    // Abort the in-flight createRoom if any; modal closes either way.
+    startRoomAbortRef.current?.abort();
+    startRoomAbortRef.current = null;
+    setShowStartRoomModal(false);
+    setStartRoomInFlight(false);
+  }, []);
+
+  const handleConfirmStartRoom = React.useCallback(async (submit: StartRoomSubmit) => {
+    setStartRoomInFlight(true);
+    setStartRoomError('');
+
+    const ctrl = new AbortController();
+    startRoomAbortRef.current = ctrl;
+
+    // Persist any edits the user made in the modal. Identity is a
+    // Plannotator-wide preference — what they pick here also becomes
+    // the default for the next room and feeds Settings. Writes are
+    // no-ops when the submitted values already match ConfigStore.
+    if (submit.displayName && submit.displayName !== getIdentity()) {
+      setCustomIdentity(submit.displayName);
+    }
+    if (submit.color && submit.color !== getPresenceColor()) {
+      setPresenceColor(submit.color);
+    }
+
+    // Pre-open a placeholder tab SYNCHRONOUSLY — inside the user-
+    // activation window from the click that landed us here. Browsers
+    // only honor user activation for synchronous work (or a very short
+    // task chain); a bare window.open after the awaits below would
+    // typically be blocked. We sever `.opener` now while the new
+    // window is still a same-origin about:blank so the subsequent
+    // cross-origin `location.replace` doesn't inherit the opener
+    // reference. Do NOT pass `noopener`/`noreferrer` in the features
+    // string — those make window.open return null EVEN ON SUCCESS,
+    // which would make every opened tab look blocked.
+    const newWindow: Window | null =
+      typeof window !== 'undefined' ? window.open('', '_blank') : null;
+    if (newWindow) {
+      newWindow.opener = null;
+    }
+
+    const abortPlaceholder = () => {
+      if (newWindow) {
+        try { newWindow.close(); } catch { /* already closed */ }
+      }
+    };
+
+    try {
+      const { createRoom } = await import('@plannotator/shared/collab/client');
+      const { bytesToBase64url } = await import('@plannotator/shared/collab');
+      const { storeAdminSecret } = await import('@plannotator/ui/utils/adminSecretStorage');
+
+      // `stripRoomAnnotationImages` returns a generic `Omit<T, 'images'>[]`.
+      // RoomAnnotation is defined as Annotation-without-images in the
+      // protocol, so the shape is compatible; we narrow explicitly instead
+      // of `as never` so future protocol drift surfaces as a type error.
+      // Pass globalAttachments so the helper's strippedCount matches the
+      // memoized imageAnnotationsToStrip used for the modal notice and
+      // `&stripped=N` URL handoff (single source of truth). `clean` is
+      // still annotation-shaped — globals are dropped entirely from
+      // room snapshots.
+      const { clean } = stripRoomAnnotationImages(annotations, globalAttachments);
+      const roomAnnotations: import('@plannotator/shared/collab').RoomAnnotation[] =
+        clean as unknown as import('@plannotator/shared/collab').RoomAnnotation[];
+
+      const baseUrl = getRoomBaseUrl();
+
+      const result = await createRoom({
+        baseUrl,
+        expiresInDays: submit.expiresInDays,
+        signal: ctrl.signal,
+        initialSnapshot: {
+          versionId: 'v1',  // RoomSnapshot contract pins versionId to 'v1' in V1
+          planMarkdown: markdown,
+          annotations: roomAnnotations,
+        },
+        user: {
+          id: submit.displayName,
+          name: submit.displayName,
+          color: submit.color,
+        },
+      });
+
+      if (ctrl.signal.aborted) {
+        // User hit Cancel while the create call was in flight; the request
+        // still landed and a room was created on the server, but we must
+        // not navigate. Close the pre-opened placeholder so it doesn't
+        // linger as an empty tab the user can't explain.
+        abortPlaceholder();
+        return;
+      }
+
+      // sessionStorage is per-origin — the value we set here lives only in
+      // the creator's local editor origin and is NOT visible on
+      // room.plannotator.ai. We still write it so same-origin test/dev
+      // scenarios (everything on localhost) keep working; cross-origin
+      // cases rely on the admin fragment in the URL.
+      storeAdminSecret(result.roomId, bytesToBase64url(result.adminSecret));
+
+      // No sessionStorage for stripped-images count — sessionStorage
+      // is per-origin and the navigation crosses from localhost to
+      // room.plannotator.ai. Instead, append &stripped=N to the
+      // fragment. AppRoot on the destination origin reads and strips
+      // it on mount.
+
+      // Auto-copy the PARTICIPANT URL (safe default share target).
+      try {
+        await navigator.clipboard.writeText(result.joinUrl);
+      } catch { /* ignore */ }
+
+      // Creator's destination URL: adminUrl (which already carries
+      // `#key=<roomSecret>&admin=<adminSecret>` in its fragment) plus
+      // an optional `&stripped=N` and an identity handoff. The admin
+      // fragment stays in the URL because useCollabRoom parses it on
+      // every connect; stripping it would force a separate admin-
+      // secret-override injection path.
+      //
+      // Identity handoff (name + color) bridges the cross-origin gap:
+      // localhost ConfigStore cookies are not visible on
+      // room.plannotator.ai, so the creator's confirmed identity
+      // rides along in the URL fragment and is consumed + stripped
+      // by `AppRoot` on arrival. `&admin=` stays (it's the session
+      // credential); `&name=&color=` get stripped after AppRoot
+      // writes them into the room-origin ConfigStore.
+      const appendFragmentParam = (url: string, param: string): string =>
+        `${url}${url.includes('#') ? '&' : '#'}${param}`;
+      let creatorUrl = result.adminUrl;
+      if (imageAnnotationsToStrip > 0) {
+        creatorUrl = appendFragmentParam(
+          creatorUrl,
+          `stripped=${imageAnnotationsToStrip}`,
+        );
+      }
+      if (submit.displayName) {
+        creatorUrl = appendFragmentParam(
+          creatorUrl,
+          `name=${encodeURIComponent(submit.displayName)}`,
+        );
+      }
+      if (submit.color) {
+        creatorUrl = appendFragmentParam(
+          creatorUrl,
+          `color=${encodeURIComponent(submit.color)}`,
+        );
+      }
+
+      // Navigate the pre-opened placeholder tab to the room URL. The
+      // creator's current tab stays on localhost so the blocked hook
+      // has an approval surface. `location.replace` (not `=`) so the
+      // about:blank intermediate doesn't sit in the new tab's back
+      // history. If the browser blocked the synchronous pre-open
+      // above, surface the URL as a copy-able fallback in the modal
+      // rather than silently reassigning the current tab (which would
+      // strand the local hook).
+      if (newWindow) {
+        // Success: new tab takes over the room session. Close the
+        // modal so the localhost tab returns to the editor — prior
+        // behavior relied on `window.location.assign` navigating the
+        // current tab away, which implicitly dismissed the modal.
+        newWindow.location.replace(creatorUrl);
+        setStartRoomInFlight(false);
+        setShowStartRoomModal(false);
+      } else {
+        // Popup blocked: KEEP the modal open so the user can copy
+        // the surfaced URL and open the room themselves.
+        setStartRoomError(
+          `Your browser blocked opening the room in a new tab. ` +
+          `Copy this URL and open it yourself: ${creatorUrl}`,
+        );
+        setStartRoomInFlight(false);
+      }
+    } catch (err) {
+      abortPlaceholder();
+      if (ctrl.signal.aborted) return;  // user cancelled; no error
+      const { redactRoomSecrets } = await import('@plannotator/shared/collab');
+      const msg = err instanceof Error ? err.message : String(err);
+      setStartRoomError(redactRoomSecrets(msg) || 'Failed to start live room');
+      setStartRoomInFlight(false);
+    } finally {
+      if (startRoomAbortRef.current === ctrl) startRoomAbortRef.current = null;
+    }
+  }, [annotations, markdown, imageAnnotationsToStrip, globalAttachments]);
 
   // Annotate mode handler — sends feedback via /api/feedback
   const handleAnnotateFeedback = async () => {
@@ -949,8 +1423,16 @@ const App: React.FC = () => {
     origin, getAgentWarning,
   ]);
 
+  // Room-mode lock: when the admin has locked the room, mutation
+  // affordances must disable at the source instead of letting the user
+  // submit and get a rejected op. Short-circuits add/remove/edit to
+  // no-ops; Viewer/AnnotationPanel also receive `roomIsLocked` to hide
+  // selection toolbars and per-row edit/delete controls.
+  const roomIsLocked = !!annotationController.isLocked;
+
   const handleAddAnnotation = (ann: Annotation) => {
-    setAnnotations(prev => [...prev, ann]);
+    if (roomIsLocked) return;
+    annotationController.add(ann);
     setSelectedAnnotationId(ann.id);
     setIsPanelOpen(true);
   };
@@ -961,12 +1443,80 @@ const App: React.FC = () => {
     if (id && window.innerWidth < 768) setIsPanelOpen(true);
   }, []);
 
-  // Core annotation removal — highlight cleanup + state filter + selection clear
+  // Core annotation removal — highlight cleanup + controller filter + selection clear.
+  //
+  // Local mode: remove the highlight immediately (optimistic). The user
+  // sees instant feedback and there's no server to reject.
+  //
+  // Room mode: do NOT remove the highlight before the server echo. The
+  // room annotation reconciliation effect (above) removes marks when
+  // they disappear from canonical state. Removing early would desync
+  // the DOM if the server rejects (e.g. locked room race): the
+  // annotation would stay canonical but lose its visible mark.
   const removeAnnotation = (id: string) => {
-    viewerRef.current?.removeHighlight(id);
-    setAnnotations(prev => prev.filter(a => a.id !== id));
+    if (roomIsLocked) return;
+    if (!roomModeActive) {
+      viewerRef.current?.removeHighlight(id);
+    }
+    annotationController.remove(id);
     if (selectedAnnotationId === id) setSelectedAnnotationId(null);
   };
+
+  // Room-mode only. Block IDs with an unresolved checkbox op — in
+  // flight (`pending`) or waiting on user Retry/Discard (`failed`).
+  // Two consumers inside `useCheckboxOverrides`:
+  //
+  //   1. Busy gate: rapid same-block toggles stack a second op on
+  //      top of the first; the room controller's one-op-per-id
+  //      pending map can't reconcile that, and the first op may
+  //      still echo as a confirmed annotation for state the user
+  //      thought they undid. The hook's `toggle` short-circuits on
+  //      membership.
+  //
+  //   2. Revert gate: when the user deletes a checkbox annotation
+  //      from the panel in room mode we defer the visual revert
+  //      until the remove actually echoes. The reconciliation
+  //      effect inside the hook keeps the override alive while the
+  //      block is in this set, so a failed remove doesn't strand a
+  //      visually-reverted checkbox with an un-removed canonical
+  //      annotation.
+  //
+  // Pending adds surface through `pendingAdditions` (not yet in
+  // canonical `annotations`). Pending updates/removes and failed
+  // entries of any kind surface through `pending` / `failed` — their
+  // target annotation usually still lives in canonical, so we resolve
+  // blockId there. ID convention is `ann-checkbox-<blockId>-<ts>` —
+  // same as `useCheckboxOverrides`.
+  const pendingCheckboxBlockIds = useMemo<ReadonlySet<string> | undefined>(() => {
+    if (!roomModeActive) return undefined;
+    const blockIds = new Set<string>();
+    const addByIdLookup = (id: string) => {
+      if (!id.startsWith('ann-checkbox-')) return;
+      const optimistic = annotationController.pendingAdditions.get(id);
+      if (optimistic) {
+        blockIds.add(optimistic.blockId);
+        return;
+      }
+      const canonical = annotations.find(a => a.id === id);
+      if (canonical) blockIds.add(canonical.blockId);
+    };
+    for (const id of annotationController.pending.keys()) addByIdLookup(id);
+    for (const id of annotationController.failed.keys()) addByIdLookup(id);
+    // Cover optimistic adds that haven't made it into `pending` yet
+    // (defensive — the controller enqueues them in lockstep, but
+    // iteration is cheap and keeps the set consistent with its
+    // documented meaning).
+    for (const [id, ann] of annotationController.pendingAdditions) {
+      if (id.startsWith('ann-checkbox-')) blockIds.add(ann.blockId);
+    }
+    return blockIds;
+  }, [
+    roomModeActive,
+    annotationController.pending,
+    annotationController.failed,
+    annotationController.pendingAdditions,
+    annotations,
+  ]);
 
   // Interactive checkbox toggling with annotation tracking
   const checkbox = useCheckboxOverrides({
@@ -974,6 +1524,7 @@ const App: React.FC = () => {
     annotations,
     addAnnotation: handleAddAnnotation,
     removeAnnotation,
+    pendingBlockIds: pendingCheckboxBlockIds,
   });
 
   const handleDeleteAnnotation = (id: string) => {
@@ -986,8 +1537,21 @@ const App: React.FC = () => {
       if (selectedAnnotationId === id) setSelectedAnnotationId(null);
       return;
     }
-    // If this is a checkbox annotation, revert the visual override
-    if (id.startsWith('ann-checkbox-')) {
+    // If this is a checkbox annotation, clear the visual override.
+    //
+    // Local mode: synchronous — there's no server to reject the remove,
+    // so revert optimistically in lockstep with the annotation removal.
+    //
+    // Room mode: DO NOT revert here. The override must stay until the
+    // canonical checkbox annotation actually disappears from the room
+    // state (echoed remove). Otherwise a remove that later fails
+    // (disconnect, lock race, server rejection) leaves the annotation
+    // canonical but the checkbox visually reverted — inconsistent.
+    // `useCheckboxOverrides` runs a reconciliation effect that clears
+    // overrides once the backing annotation is gone from BOTH canonical
+    // and pending/failed state, which is exactly when it's safe to
+    // revert in room mode.
+    if (id.startsWith('ann-checkbox-') && !roomModeActive) {
       if (ann) {
         checkbox.revertOverride(ann.blockId);
       }
@@ -996,20 +1560,33 @@ const App: React.FC = () => {
   };
 
   const handleEditAnnotation = (id: string, updates: Partial<Annotation>) => {
+    if (roomIsLocked) return;
     const ann = allAnnotations.find(a => a.id === id);
     if (ann?.source && externalAnnotations.some(e => e.id === id)) {
       updateExternalAnnotation(id, updates);
       return;
     }
-    setAnnotations(prev => prev.map(a =>
-      a.id === id ? { ...a, ...updates } : a
-    ));
+    annotationController.update(id, updates);
   };
 
   const handleIdentityChange = (oldIdentity: string, newIdentity: string) => {
-    setAnnotations(prev => prev.map(ann =>
-      ann.author === oldIdentity ? { ...ann, author: newIdentity } : ann
-    ));
+    // In room mode the joined identity — which stamps new annotations,
+    // labels remote cursors, and keyed presence — is owned by `RoomApp`
+    // and was confirmed at the join gate. Rewriting old annotations
+    // from here while that live identity stays on the prior name
+    // produces a "split" participant: old rows now say "Alice" but
+    // future rows / the cursor flag still say "Bob." Skip rewrites
+    // inside a room. Updating the Settings display name still takes
+    // effect locally and on subsequent rooms; a deliberate live
+    // rename feature (update presence + rename server-side) would be
+    // a RoomApp-owned feature, not a half-rewrite from here.
+    if (roomModeActive) return;
+    // Identity-rename is a bulk update across all matching annotations.
+    for (const ann of annotations) {
+      if (ann.author === oldIdentity) {
+        annotationController.update(ann.id, { author: newIdentity });
+      }
+    }
   };
 
   const handleAddGlobalAttachment = (image: ImageAttachment) => {
@@ -1031,7 +1608,12 @@ const App: React.FC = () => {
     const hasDocAnnotations = Array.from(docAnnotations.values()).some(
       (d) => d.annotations.length > 0 || d.globalAttachments.length > 0
     );
-    const hasPlanAnnotations = allAnnotations.length > 0 || globalAttachments.length > 0;
+    // Room mode: global attachments are local-only (Slice 5 rooms carry
+    // no image payloads), so they must NOT be included in consolidated
+    // feedback — approving with local-only image refs would ship paths
+    // collaborators never saw. Out-of-room keeps existing behavior.
+    const effectiveGlobalAttachments = roomModeActive ? [] : globalAttachments;
+    const hasPlanAnnotations = allAnnotations.length > 0 || effectiveGlobalAttachments.length > 0;
     const hasEditorAnnotations = editorAnnotations.length > 0;
 
     if (!hasPlanAnnotations && !hasDocAnnotations && !hasEditorAnnotations) {
@@ -1039,7 +1621,7 @@ const App: React.FC = () => {
     }
 
     let output = hasPlanAnnotations
-      ? exportAnnotations(blocks, allAnnotations, globalAttachments, annotateSource === 'message' ? 'Message Feedback' : annotateSource === 'folder' ? 'Folder Feedback' : annotateSource === 'file' ? 'File Feedback' : 'Plan Feedback', annotateSource ?? 'plan')
+      ? exportAnnotations(blocks, allAnnotations, effectiveGlobalAttachments, annotateSource === 'message' ? 'Message Feedback' : annotateSource === 'folder' ? 'Folder Feedback' : annotateSource === 'file' ? 'File Feedback' : 'Plan Feedback', annotateSource ?? 'plan')
       : '';
 
     if (hasDocAnnotations) {
@@ -1051,7 +1633,7 @@ const App: React.FC = () => {
     }
 
     return output;
-  }, [blocks, allAnnotations, globalAttachments, linkedDocHook.getDocAnnotations, editorAnnotations]);
+  }, [blocks, allAnnotations, globalAttachments, roomModeActive, linkedDocHook.getDocAnnotations, editorAnnotations]);
 
   // Bot callback config — read once from URL search params (?cb=&ct=)
   const callbackConfig = React.useMemo(() => getCallbackConfig(), []);
@@ -1166,6 +1748,57 @@ const App: React.FC = () => {
     }
     setTimeout(() => setNoteSaveToast(null), 3000);
   };
+
+  // Room-mode copy handlers. Share a single clipboard + toast helper so
+  // the three call sites can't drift (success-vs-error copy, timeout,
+  // toast slot reuse). The `noteSaveToast` slot is reused for both
+  // flows — small grief that two kinds of message share one slot, but
+  // avoids a second toast system for a handful of rare clicks.
+  const copyToClipboardWithToast = React.useCallback(
+    async (text: string, successMessage: string, errorMessage: string) => {
+      try {
+        await navigator.clipboard.writeText(text);
+        setNoteSaveToast({ type: 'success', message: successMessage });
+      } catch {
+        setNoteSaveToast({ type: 'error', message: errorMessage });
+      }
+      setTimeout(() => setNoteSaveToast(null), 2500);
+    },
+    [],
+  );
+  const handleCopyParticipantUrl = React.useCallback(async () => {
+    const url = roomSession?.joinUrl;
+    if (!url) return;
+    await copyToClipboardWithToast(
+      url,
+      'Participant link copied',
+      'Failed to copy link',
+    );
+  }, [roomSession?.joinUrl, copyToClipboardWithToast]);
+  const handleCopyAdminUrl = React.useCallback(async () => {
+    const url = roomSession?.adminUrl;
+    if (!url) return;
+    await copyToClipboardWithToast(
+      url,
+      'Admin link copied',
+      'Failed to copy admin link',
+    );
+  }, [roomSession?.adminUrl, copyToClipboardWithToast]);
+  const handleCopyConsolidatedFeedback = React.useCallback(async () => {
+    // Exclude diff-context annotations from exported feedback — same
+    // filter the prior RoomPanel path used. Global attachments are
+    // empty inside a room (images are stripped at create time).
+    const text = exportAnnotations(
+      blocks,
+      allAnnotations.filter(a => !a.diffContext),
+      [],
+    );
+    await copyToClipboardWithToast(
+      text,
+      'Feedback copied',
+      'Failed to copy feedback',
+    );
+  }, [blocks, allAnnotations, copyToClipboardWithToast]);
 
   // Cmd/Ctrl+S keyboard shortcut — save to default notes app
   useEffect(() => {
@@ -1299,7 +1932,13 @@ const App: React.FC = () => {
               </>
             )}
 
-            {isApiMode && (!linkedDocHook.isActive || annotateMode) && !archive.archiveMode && (
+            {submitError && (
+              <div className="text-xs text-destructive max-w-[260px] truncate" title={submitError}>
+                {submitError}
+              </div>
+            )}
+
+            {approveDenyAvailable && (!linkedDocHook.isActive || annotateMode) && !archive.archiveMode && (
               <>
                 {annotateMode ? (
                   // Annotate mode: Close always visible, Send Annotations when annotations exist
@@ -1374,6 +2013,32 @@ const App: React.FC = () => {
               </>
             )}
 
+            {/*
+              Room mode cluster: conditional status pill (only when
+              state is non-default — locked / reconnecting / offline),
+              peer avatar bubbles, and a Room actions dropdown. Sits
+              between the approve/deny area (hidden in room mode) and
+              the annotations-panel toggle. Replaces the previous
+              floating `RoomPanel` aside — one visually-grouped
+              header cluster instead of a separate fixed card.
+            */}
+            {roomModeActive && roomSession?.room && (
+              <RoomHeaderControls
+                connectionStatus={roomSession.room.connectionStatus}
+                roomStatus={roomSession.room.roomStatus}
+                remotePresence={roomSession.room.remotePresence}
+                isAdmin={roomSession.room.hasAdminCapability}
+                adminUrl={roomSession.adminUrl}
+                pendingAdminAction={roomAdmin.pending}
+                onCopyParticipantUrl={handleCopyParticipantUrl}
+                onCopyAdminUrl={handleCopyAdminUrl}
+                onCopyConsolidatedFeedback={handleCopyConsolidatedFeedback}
+                onLock={() => void roomAdmin.run('lock')}
+                onUnlock={() => void roomAdmin.run('unlock')}
+                onDelete={() => void roomAdmin.run('delete')}
+              />
+            )}
+
             {/* Annotations panel toggle — top-level header button */}
             <button
               onClick={() => setIsPanelOpen(!isPanelOpen)}
@@ -1419,10 +2084,24 @@ const App: React.FC = () => {
               onPrint={() => window.print()}
               onCopyShareLink={handleCopyShareLink}
               onOpenImport={() => setShowImport(true)}
+              onStartLiveRoom={canStartLiveRoom ? handleStartLiveRoom : undefined}
+              isRoomAdmin={roomSession?.room?.hasAdminCapability ?? false}
+              roomIsLocked={roomSession?.room?.roomStatus === 'locked'}
+              // Admin actions live only in the RoomPanel in Slice 5.
+              // Passing undefined here hides the header-menu duplicate
+              // so failures can't silently disappear in the catch
+              // block that used to live behind these callbacks.
+              onRoomLock={undefined}
+              onRoomUnlock={undefined}
+              onRoomDelete={undefined}
               onSaveToObsidian={() => handleQuickSaveToNotes('obsidian')}
               onSaveToBear={() => handleQuickSaveToNotes('bear')}
               onSaveToOctarine={() => handleQuickSaveToNotes('octarine')}
-              sharingEnabled={sharingEnabled}
+              // Static share/import is mutually exclusive with room mode in
+              // Slice 5. When joined to a live room, the "Copy Share Link"
+              // and "Import Review" menu items are hidden; "Start live room"
+              // is also hidden since we're already in one.
+              sharingEnabled={sharingEnabled && !roomModeActive}
               isApiMode={isApiMode}
               agentInstructionsEnabled={isApiMode && !archive.archiveMode && !annotateMode}
               obsidianConfigured={isObsidianConfigured()}
@@ -1431,6 +2110,22 @@ const App: React.FC = () => {
             />
           </div>
         </header>
+
+        {/*
+          Room-mode stripped-images banner. Moved here from the old
+          floating RoomPanel so it sits directly under the header as
+          a one-line callout the first time the creator lands in a
+          room; dismissing it (or refreshing, which clears the
+          window global) removes it for the session.
+        */}
+        {roomModeActive && strippedImagesCount > 0 && (
+          <div className="px-4 pt-3 flex-shrink-0">
+            <ImageStripNotice
+              strippedCount={strippedImagesCount}
+              onDismiss={() => setStrippedImagesCount(0)}
+            />
+          </div>
+        )}
 
         {/* Linked document error banner */}
         {linkedDocHook.error && (
@@ -1611,26 +2306,64 @@ const App: React.FC = () => {
                   mode={editorMode}
                   inputMethod={inputMethod}
                   taterMode={taterMode}
-                  globalAttachments={globalAttachments}
-                  onAddGlobalAttachment={handleAddGlobalAttachment}
-                  onRemoveGlobalAttachment={handleRemoveGlobalAttachment}
+                  readOnly={roomIsLocked}
+                  // Room mode: stamp new annotations with the joined
+                  // display name instead of the cookie-backed Tater
+                  // identity. The Tater cookie lives per-origin; on
+                  // room.plannotator.ai it's either unset or stale,
+                  // so without this override a participant's annotation
+                  // author would not match the name on their cursor.
+                  authorOverride={roomSession?.user?.name}
+                  // Room mode: hide local-only global attachments from the
+                  // Viewer so the creator doesn't see material participants
+                  // don't have. Same motivation as excluding them from
+                  // consolidated feedback. Also strip the attachment
+                  // callbacks in room mode so the add-attachment button
+                  // doesn't render an affordance that would no-op.
+                  globalAttachments={roomModeActive ? [] : globalAttachments}
+                  // Room mode: omit attachment callbacks so Viewer's
+                  // AttachmentsButton gate (`onAdd && onRemove`) yields
+                  // false and the affordance doesn't render at all.
+                  onAddGlobalAttachment={roomModeActive ? undefined : handleAddGlobalAttachment}
+                  onRemoveGlobalAttachment={roomModeActive ? undefined : handleRemoveGlobalAttachment}
+                  // Room mode: hide the per-annotation CommentPopover
+                  // attachments UI too. Live Rooms V1 strips image
+                  // attachments at room-create time and doesn't carry
+                  // new attachments over the wire, so the popover's
+                  // AttachmentsButton would silently drop whatever the
+                  // user added.
+                  attachmentsEnabled={!roomModeActive}
                   repoInfo={repoInfo}
                   stickyActions={uiPrefs.stickyActionsEnabled}
                   planDiffStats={linkedDocHook.isActive ? null : planDiff.diffStats}
                   isPlanDiffActive={isPlanDiffActive}
                   onPlanDiffToggle={() => setIsPlanDiffActive(!isPlanDiffActive)}
                   hasPreviousVersion={!linkedDocHook.isActive && planDiff.hasPreviousVersion}
-                  showDemoBadge={!isApiMode && !isLoadingShared && !isSharedSession}
+                  showDemoBadge={!isApiMode && !isLoadingShared && !isSharedSession && !roomModeActive}
                   maxWidth={planMaxWidth}
-                  onOpenLinkedDoc={handleOpenLinkedDoc}
+                  // Room mode: disable navigation into local documents.
+                  // The room origin (room.plannotator.ai) has no file
+                  // server, so wikilinks and local `.md` markdown
+                  // links would either 404 on the room origin or
+                  // attempt a broken `/api/doc` fetch. `Viewer`
+                  // renders them as plain text when the flag is false.
+                  onOpenLinkedDoc={roomModeActive ? undefined : handleOpenLinkedDoc}
+                  localDocLinksEnabled={!roomModeActive}
                   linkedDocInfo={linkedDocHook.isActive ? { filepath: linkedDocHook.filepath!, onBack: handleLinkedDocBack, label: fileBrowser.dirs.find(d => d.path === fileBrowser.activeDirPath)?.isVault ? 'Vault File' : fileBrowser.activeFile ? 'File' : undefined, backLabel } : null}
                   imageBaseDir={imageBaseDir}
                   copyLabel={annotateSource === 'message' ? 'Copy message' : annotateSource === 'file' || annotateSource === 'folder' ? 'Copy file' : undefined}
                   archiveInfo={archive.currentInfo}
                   sourceInfo={sourceInfo}
-                  onToggleCheckbox={checkbox.toggle}
+                  // Locked rooms: checkbox clicks mutate local override
+                  // state before calling addAnnotation. Even though
+                  // addAnnotation is a no-op in room-locked, setOverrides
+                  // still runs and the checkbox would visually toggle
+                  // locally without a server-backed annotation. Omit the
+                  // callback entirely so the checkbox is non-interactive.
+                  onToggleCheckbox={roomIsLocked ? undefined : checkbox.toggle}
                   checkboxOverrides={checkbox.overrides}
                   actionsLabelMode={actionsLabelMode}
+                  onHighlightSurfaceReset={bumpHighlightSurfaceGeneration}
                 />
               </div>
             </div>
@@ -1659,6 +2392,29 @@ const App: React.FC = () => {
             onShare={shareUrl ? () => { setIsPanelOpen(false); setInitialExportTab('share'); setShowExport(true); } : undefined}
             otherFileAnnotations={otherFileAnnotations}
             onOtherFileAnnotationsClick={handleFlashAnnotatedFiles}
+            // Room-mode pending/failed surface. Local mode provides undefined
+            // Maps/callbacks so AnnotationPanel skips the UI.
+            pendingIds={pendingAnnotationIds}
+            failedIds={roomModeActive ? annotationController.failed : undefined}
+            pendingAdditions={roomModeActive ? annotationController.pendingAdditions : undefined}
+            onRetry={roomModeActive ? annotationController.retry : undefined}
+            onDiscard={roomModeActive ? (id: string) => {
+              // For failed adds, the selection-highlighter may have
+              // created a local <mark> before the op failed. The
+              // controller's discard clears state but not DOM.
+              // removeHighlight is safe to call on ids that don't have
+              // a mark (no-ops internally).
+              const failedOp = annotationController.failed.get(id);
+              if (failedOp?.kind === 'add') {
+                viewerRef.current?.removeHighlight(id);
+              }
+              annotationController.discard?.(id);
+            } : undefined}
+            roomIsLocked={roomIsLocked}
+            // Room mode: "(me)" compares against the joined display
+            // name instead of the per-origin Tater cookie, matching
+            // the override Viewer uses to stamp new annotations.
+            authorOverride={roomSession?.user?.name}
           />
         </div>
         </ScrollViewportContext.Provider>
@@ -1676,10 +2432,14 @@ const App: React.FC = () => {
           annotationsOutput={annotationsOutput}
           annotationCount={allAnnotations.length}
           taterSprite={taterMode ? <TaterSpritePullup /> : undefined}
-          sharingEnabled={sharingEnabled}
+          // Static sharing is mutually exclusive with room mode. Also
+          // flip sharingEnabled on the modal so the Share tab doesn't
+          // default-open with empty/stale hash data.
+          sharingEnabled={sharingEnabled && !roomModeActive}
           markdown={markdown}
           isApiMode={isApiMode}
           initialTab={initialExportTab}
+          onStartLiveRoom={canStartLiveRoom ? handleStartLiveRoom : undefined}
         />
 
         {/* Import Modal */}
@@ -1689,6 +2449,24 @@ const App: React.FC = () => {
           onImport={importFromShareUrl}
           shareBaseUrl={shareBaseUrl}
         />
+
+        {/* Start-live-room modal (local mode only; hidden in room mode).
+            Prefills come from the local-origin ConfigStore — the same
+            identity + color Settings reads/writes. Room creation is a
+            confirmation step, not setup, so a creator who already
+            configured their name/color sees those values preselected
+            and can confirm or tweak per room. */}
+        {showStartRoomModal && !roomModeActive && (
+          <StartRoomModal
+            initialDisplayName={getIdentity()}
+            initialColor={getPresenceColor()}
+            imageAnnotationsToStrip={imageAnnotationsToStrip}
+            inFlight={startRoomInFlight}
+            errorMessage={startRoomError || undefined}
+            onStart={handleConfirmStartRoom}
+            onCancel={handleCancelStartRoom}
+          />
+        )}
 
         {/* Feedback prompt dialog */}
         <ConfirmDialog
@@ -1774,6 +2552,21 @@ const App: React.FC = () => {
           variant="warning"
         />
 
+        {/*
+          Room admin error toast — bottom-right, separated from the
+          top-right `noteSaveToast` slot so a transient "link copied"
+          success doesn't stomp a "Lock failed" that still needs the
+          user's eyes. Provides a Dismiss button; auto-dismisses
+          after 8s so it doesn't stick around indefinitely.
+        */}
+        {roomAdmin.error && (
+          <RoomAdminErrorToast
+            action={roomAdmin.error.action}
+            message={roomAdmin.error.message}
+            onDismiss={roomAdmin.dismissError}
+          />
+        )}
+
         {/* Save-to-notes toast */}
         {noteSaveToast && (
           <div className={`fixed top-16 right-4 z-50 px-3 py-2 rounded-lg text-xs font-medium shadow-lg transition-opacity ${
@@ -1812,14 +2605,20 @@ const App: React.FC = () => {
         {/* Update notification */}
         <UpdateBanner origin={origin} isWSL={isWSL} />
 
-        {/* Image Annotator for pasted images */}
-        <ImageAnnotator
-          isOpen={!!pendingPasteImage}
-          imageSrc={pendingPasteImage?.blobUrl ?? ''}
-          initialName={pendingPasteImage?.initialName}
-          onAccept={handlePasteAnnotatorAccept}
-          onClose={handlePasteAnnotatorClose}
-        />
+        {/* Image Annotator for pasted images — not rendered in room mode
+            because rooms don't support image uploads. The paste handler
+            already short-circuits, but not rendering the component at all
+            prevents any edge case where pendingPasteImage was set before
+            room mode activated. */}
+        {!roomModeActive && (
+          <ImageAnnotator
+            isOpen={!!pendingPasteImage}
+            imageSrc={pendingPasteImage?.blobUrl ?? ''}
+            initialName={pendingPasteImage?.initialName}
+            onAccept={handlePasteAnnotatorAccept}
+            onClose={handlePasteAnnotatorClose}
+          />
+        )}
 
         {/* Permission Mode Setup (Claude Code first-time) */}
         <PermissionModeSetup
@@ -1835,3 +2634,10 @@ const App: React.FC = () => {
 };
 
 export default App;
+
+/** Stable fingerprint for room annotation reconciliation. If any
+ *  display-relevant field changes, the old mark is removed and a
+ *  fresh one applied. */
+function roomAnnFingerprint(a: { id: string; type: string; originalText: string; text?: string }): string {
+  return `${a.type}\0${a.originalText}\0${a.text ?? ''}`;
+}

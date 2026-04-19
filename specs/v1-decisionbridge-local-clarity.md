@@ -1,8 +1,10 @@
-# V1 Local Bridge Trust Boundary
+# V1 Later External-Annotation Forwarding Trust Boundary
 
-This note clarifies the security boundary for local bridge mode. It is a companion to `specs/v1.md` and `specs/v1-decisionbridge.md`.
+This note clarifies the security boundary for the later local external-annotation forwarding mode. It is a companion to `specs/v1.md` and `specs/v1-decisionbridge.md`.
 
-## Local Bridge Flow
+This is not current Slice 5 room behavior. Today, local external annotations stay in the localhost editor, the room tab does not POST to localhost, and Approve/Deny remain local-only actions in the creator's localhost tab.
+
+## Forwarding Flow
 
 ```text
 agent
@@ -29,7 +31,7 @@ the local browser never sees plaintext
 
 ## Trusted And Untrusted Components
 
-Trusted in local bridge mode:
+Trusted in this later forwarding mode:
 
 - the user's browser
 - the user's local machine
@@ -42,7 +44,7 @@ Untrusted / zero-knowledge:
 - Durable Object storage
 - room-service logs and observability
 
-Local bridge mode trusts the local agent and local Plannotator server because they receive or generate plaintext annotations. That is intentional when the user asks their own agent to review the plan.
+This forwarding mode trusts the local agent and local Plannotator server because they receive or generate plaintext annotations. That is intentional when the user asks their own agent to review the plan.
 
 If a participant gives their own agent the room URL, that agent is a direct room client and can decrypt the plan and annotations. This is equivalent to inviting another participant.
 

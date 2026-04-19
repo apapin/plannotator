@@ -1,0 +1,79 @@
+// Slice-5 scoped typecheck — lists the UI files we actively curate
+// for Live Rooms correctness.
+//
+// Explicit curation (the `include` list):
+//   - hooks added for room mode (useCollabRoom, useCollabRoomSession,
+//     useAnnotationController, useRoomMode, usePresenceThrottle)
+//   - hooks whose types changed for Slice 5 (useAnnotationHighlighter
+//     for authorOverride)
+//   - components/collab/** (all new)
+//   - components whose public API changed for Slice 5 (AnnotationPanel
+//     for authorOverride, Viewer for same)
+//   - utils added for Slice 5 (adminSecretStorage, blockTargeting)
+//
+// Transitive reality: the included files pull in siblings via normal
+// imports, and those files ARE type-checked. Errors anywhere in that
+// import closure block `bun run typecheck`. That's the point — this
+// config exists to catch the kind of bug that the old single-file
+// `tsconfig.collab.json` missed (the AnnotationPanel `isMe` scope
+// bug went unflagged for multiple review rounds because the narrower
+// config only loaded `useCollabRoom.ts`).
+//
+// What's intentionally NOT here: the rest of packages/ui. It has
+// pre-existing strict-mode drift unrelated to Live Rooms. A
+// package-wide typecheck is deferred to a later cleanup pass; this
+// config should not grow into one by accident.
+//
+// Replaces the previous `tsconfig.collab.json` (Slice 4, one file).
+// Root `bun run typecheck` references THIS file.
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false,
+    "module": "ESNext",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "skipLibCheck": true,
+    "types": [
+      "node"
+    ],
+    "moduleResolution": "bundler",
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "allowJs": true,
+    "jsx": "react-jsx",
+    "paths": {
+      "@plannotator/ui/*": ["./*"],
+      "@plannotator/shared": ["../shared/index.ts"],
+      "@plannotator/shared/*": ["../shared/*"]
+    },
+    "allowImportingTsExtensions": true,
+    "noEmit": true
+  },
+  "include": [
+    "components/types.d.ts",
+    "hooks/useCollabRoom.ts",
+    "hooks/useCollabRoomSession.ts",
+    "hooks/useAnnotationController.ts",
+    "hooks/useAnnotationHighlighter.ts",
+    "hooks/useRoomMode.ts",
+    "hooks/usePresenceThrottle.ts",
+    "components/collab/**/*.tsx",
+    "components/collab/**/*.ts",
+    "components/AnnotationPanel.tsx",
+    "components/Viewer.tsx",
+    "utils/adminSecretStorage.ts",
+    "utils/blockTargeting.ts"
+  ],
+  "exclude": [
+    // Tests are run through `bun test` with the packages/ui bunfig
+    // preload; pulling them into typecheck brings in `bun:test` types
+    // that aren't part of this scoped config.
+    "**/*.test.ts",
+    "**/*.test.tsx"
+  ]
+}

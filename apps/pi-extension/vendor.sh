@@ -11,6 +11,13 @@ for f in feedback-templates review-core storage draft project pr-provider pr-git
   printf '// @generated — DO NOT EDIT. Source: packages/shared/%s.ts\n' "$f" | cat - "$src" > "generated/$f.ts"
 done
 
+# Vendor collab submodule(s) needed by the Pi server.
+mkdir -p generated/collab
+for f in validation; do
+  src="../../packages/shared/collab/$f.ts"
+  printf '// @generated — DO NOT EDIT. Source: packages/shared/collab/%s.ts\n' "$f" | cat - "$src" > "generated/collab/$f.ts"
+done
+
 # Vendor review agent modules from packages/server/ — rewrite imports for generated/ layout
 for f in codex-review claude-review path-utils; do
   src="../../packages/server/$f.ts"

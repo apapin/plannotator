@@ -41,7 +41,9 @@ jobs:
         run: bun run typecheck
 
       - name: Run tests
-        run: bun test
+        # See .github/workflows/test.yml for why this is `bun run test`
+        # and not raw `bun test`.
+        run: bun run test
 
   build:
     needs: test

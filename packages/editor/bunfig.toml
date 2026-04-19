@@ -1,0 +1,6 @@
+[test]
+# Reuses the UI package's happy-dom bootstrap so `renderHook` and friends
+# have a DOM global. Same shape as packages/ui/bunfig.toml — duplicated
+# intentionally rather than imported so `bun test --cwd packages/editor`
+# resolves the preload from this directory.
+preload = ["../ui/test-setup.ts"]

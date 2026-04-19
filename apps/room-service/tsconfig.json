@@ -10,5 +10,6 @@
     "isolatedModules": true,
     "types": ["@cloudflare/workers-types"]
   },
-  "exclude": ["**/*.test.ts", "scripts/**"]
+  "//exclude": "entry.tsx and vite.config.ts are browser-only and typechecked separately via tsconfig.browser.json (with DOM + React libs). This Worker config stays Cloudflare-scoped.",
+  "exclude": ["**/*.test.ts", "scripts/**", "entry.tsx", "vite.config.ts"]
 }

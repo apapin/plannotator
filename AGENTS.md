@@ -29,10 +29,15 @@ plannotator/
 │   │   ├── index.tsx
 │   │   └── vite.config.ts
 │   ├── room-service/             # Live collaboration rooms (Cloudflare Worker + Durable Object)
-│   │   ├── core/                 # Handler, DO class, validation, CORS, log, types
+│   │   ├── core/                 # Handler, DO class, validation, CORS, log, types, csp
 │   │   ├── targets/cloudflare.ts # Worker entry + DO re-export
+│   │   ├── entry.tsx             # Browser shell entry — mounts AppRoot for /c/:roomId
+│   │   ├── index.html            # Vite template; produces hashed chunks under /assets/
+│   │   ├── vite.config.ts        # Browser shell build (bun run build:shell)
+│   │   ├── tsconfig.browser.json # DOM-lib tsconfig for the shell
+│   │   ├── static/               # Root-level static assets copied into public/ by build:shell (favicon.svg)
 │   │   ├── scripts/smoke.ts      # Integration test against wrangler dev
-│   │   └── wrangler.toml         # SQLite-backed DO binding
+│   │   └── wrangler.toml         # SQLite-backed DO binding + ASSETS binding for built shell
 │   └── vscode-extension/         # VS Code extension — opens plans in editor tabs
 │       ├── bin/                   # Router scripts (open-in-vscode, xdg-open)
 │       ├── src/                   # extension.ts, cookie-proxy.ts, ipc-server.ts, panel-manager.ts, editor-annotations.ts, vscode-theme.ts
@@ -56,9 +61,10 @@ plannotator/
 │   │   ├── components/           # Viewer, Toolbar, Settings, etc.
 │   │   │   ├── icons/            # Shared SVG icon components (themeIcons, etc.)
 │   │   │   ├── plan-diff/        # PlanDiffBadge, PlanDiffViewer, clean/raw diff views
-│   │   │   └── sidebar/          # SidebarContainer, SidebarTabs, VersionBrowser, ArchiveBrowser
-│   │   ├── utils/                # parser.ts, sharing.ts, storage.ts, planSave.ts, agentSwitch.ts, planDiffEngine.ts, planAgentInstructions.ts
-│   │   ├── hooks/                # useAnnotationHighlighter.ts, useSharing.ts, usePlanDiff.ts, useSidebar.ts, useLinkedDoc.ts, useAnnotationDraft.ts, useCodeAnnotationDraft.ts, useArchive.ts, useCollabRoom.ts
+│   │   │   ├── sidebar/          # SidebarContainer, SidebarTabs, VersionBrowser, ArchiveBrowser
+│   │   │   └── collab/           # RoomPanel, RoomStatusBadge, ParticipantAvatars, AdminControls, JoinRoomGate, StartRoomModal, RemoteCursorLayer, ImageStripNotice
+│   │   ├── utils/                # parser.ts, sharing.ts, storage.ts, planSave.ts, agentSwitch.ts, planDiffEngine.ts, planAgentInstructions.ts, adminSecretStorage.ts, blockTargeting.ts
+│   │   ├── hooks/                # useAnnotationHighlighter.ts, useSharing.ts, usePlanDiff.ts, useSidebar.ts, useLinkedDoc.ts, useAnnotationDraft.ts, useCodeAnnotationDraft.ts, useArchive.ts, useCollabRoom.ts, useCollabRoomSession.ts, useAnnotationController.ts, useRoomMode.ts, usePresenceThrottle.ts
 │   │   └── types.ts
 │   ├── ai/                       # Provider-agnostic AI backbone (providers, sessions, endpoints)
 │   ├── shared/                   # Shared types, utilities, and cross-runtime logic
@@ -73,9 +79,15 @@ plannotator/
 │   │       ├── constants.ts      # ROOM_SECRET_LENGTH_BYTES, ADMIN_SECRET_LENGTH_BYTES, WS_CLOSE_ROOM_UNAVAILABLE, WS_CLOSE_REASON_ROOM_DELETED, WS_CLOSE_REASON_ROOM_EXPIRED
 │   │       ├── canonical-json.ts # canonicalJson for admin command proof binding
 │   │       ├── encoding.ts       # base64url helpers
+│   │       ├── strip-images.ts   # toRoomAnnotation, stripRoomAnnotationImages (image stripping for room snapshots)
+│   │       ├── redact-url.ts    # redactRoomSecrets (scrub #key=/#admin= from telemetry/logs)
+│   │       ├── validation.ts     # isBase64Url32ByteString / isValidPermissionMode
 │   │       ├── client.ts         # Client barrel re-exports
 │   │       └── client-runtime/   # CollabRoomClient class, createRoom, joinRoom, apply-event reducer
-│   ├── editor/                   # Plan review App.tsx
+│   ├── editor/                   # Plan review app (App.tsx) + room-mode shell
+│   │   ├── App.tsx               # Plan review editor (local + room-mode prop)
+│   │   ├── AppRoot.tsx           # Mode fork (local | room | invalid-room); package default export
+│   │   └── RoomApp.tsx           # Room-mode shell — identity gate, session, overlays, delete/expired fallbacks
 │   └── review-editor/            # Code review UI
 │       ├── App.tsx               # Main review app
 │       ├── components/           # DiffViewer, FileTree, ReviewSidebar
@@ -207,6 +219,17 @@ During normal plan review, an Archive sidebar tab provides the same browsing via
 
 ### Plan Server (`packages/server/index.ts`)
 
+Live Rooms V1 does NOT support approve/deny from the room origin.
+Approvals always happen on the local editor origin (the tab that
+started the hook). Room-side annotations flow back to the local
+editor via the existing import paths (static share hash, paste short
+URL, "Copy consolidated feedback" → paste).
+
+Local external annotations (`/api/external-annotations` + SSE) remain
+local to the localhost editor in the current room integration.
+Forwarding those annotations into encrypted room ops is later Slice 6
+work; it is not part of the room-origin approve/deny surface.
+
 | Endpoint              | Method | Purpose                                    |
 | --------------------- | ------ | ------------------------------------------ |
 | `/api/plan`           | GET    | Returns `{ plan, origin, previousPlan, versionInfo }` (plan mode) or `{ plan, origin, mode: "archive", archivePlans }` (archive mode) |
@@ -297,7 +320,7 @@ Live-collaboration rooms for encrypted multi-user annotation. Zero-knowledge: th
 | Endpoint              | Method | Purpose                                    |
 | --------------------- | ------ | ------------------------------------------ |
 | `/health`             | GET    | Worker liveness probe                      |
-| `/c/:roomId`          | GET    | Room SPA shell (Slice 5 replaces with the editor bundle) |
+| `/c/:roomId`          | GET    | Room SPA shell — serves the built editor bundle (hashed chunks under `/assets/`). Response carries `ROOM_CSP`, `Cache-Control: no-store` on the HTML, `Referrer-Policy: no-referrer`. `:roomId` is validated against `isRoomId()` before the asset fetch. |
 | `/api/rooms`          | POST   | Create room. Body: `{ roomId, roomVerifier, adminVerifier, initialSnapshotCiphertext, expiresInDays? }`. Returns `201` on success; `409` on duplicate `roomId`. Response body is intentionally not consumed by `createRoom()`. |
 | `/ws/:roomId`         | GET    | WebSocket upgrade into the room Durable Object. `roomId` is validated via `isRoomId()` before `idFromName()` to prevent arbitrary DO instantiation. |
 

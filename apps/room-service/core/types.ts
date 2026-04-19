@@ -15,6 +15,8 @@ import type { RoomStatus } from '@plannotator/shared/collab';
 /** Cloudflare Worker environment bindings. */
 export interface Env {
   ROOM: DurableObjectNamespace;
+  /** Wrangler-managed static asset binding. Serves `./public/index.html` (room shell) + hashed `./public/assets/*` chunks. Populated by `bun run build:shell`. */
+  ASSETS?: { fetch(request: Request): Promise<Response> };
   ALLOWED_ORIGINS?: string;
   ALLOW_LOCALHOST_ORIGINS?: string;
   BASE_URL?: string;

@@ -22,11 +22,11 @@ This matters because plan review is inherently a team activity. An implementatio
 
 **Teammates and domain experts** who are asked "can you look at this plan?" and currently receive a share link, open it, annotate in isolation, and send it back. They have no way to see what others have already said or build on each other's feedback.
 
-**Agents as reviewers.** Claude, Codex, and other agents can already post annotations via the external annotations API. In a live room, an agent with the room URL could participate as a first-class reviewer alongside human teammates, reading the plan and submitting structured feedback in real time.
+**Agents as reviewers.** Claude, Codex, and other agents can already post annotations to the local Plannotator editor via the external annotations API. Later live-room work should let an agent participate as a first-class room client when the user gives it the room URL, reading the plan and submitting structured encrypted feedback in real time.
 
 ## What This Enables
 
-**One URL, one room, everyone annotates together.** The plan creator starts a live room, copies the link, and shares it. Everyone who opens the link sees the same plan, sees each other's cursors, and sees annotations appear in real time. No import/export cycle. No reconciliation.
+**One URL, one room, everyone annotates together.** The plan creator starts a live room, copies the link, and shares it. Everyone who opens the link sees the same plan, sees each other's cursors, and sees annotations appear in real time. No N-way share-link import/export cycle. No manual reconciliation between reviewers.
 
 **The creator retains the decision.** Only the person who started the room (and whose agent is waiting for a response) can approve or deny the plan. Everyone else contributes annotations. This matches the existing Plannotator model: one decision-maker, now with collaborative input.
 
@@ -42,7 +42,7 @@ The plan creator is already in the Plannotator review UI with a plan from their 
 
 Clicking "Start live room" creates the room, uploads the encrypted plan, and produces a room URL. The creator copies and shares this URL however they normally share links -- Slack, email, a call.
 
-The creator's review UI transitions into room mode. They see a presence indicator showing connected participants and a room status badge. Their Approve and Deny buttons remain. They can annotate as usual, and their annotations appear for everyone.
+Starting a live room opens it in a new browser tab; the creator's original localhost tab stays on the review UI (where the agent hook is still blocked). In the room tab they see a presence indicator showing connected participants and a room status badge. They can annotate as usual, and their annotations appear for everyone. Approve and Deny are made from the original localhost tab — not from the room tab — because only the localhost tab can complete the waiting agent hook.
 
 If the plan includes image attachments, the room is created normally but images are stripped from annotations and global attachments. The UI shows a notice that image attachments aren't supported in live rooms yet and that encrypted room assets are on the roadmap.
 
@@ -56,11 +56,13 @@ The teammate does not see Approve or Deny buttons. They see annotation tools and
 
 When any participant creates an annotation -- a comment, a deletion mark, a quick label -- it appears for everyone within moments. Participants can see each other's cursors moving through the document. If someone is focused on a particular section, others can see that and either contribute there or work elsewhere.
 
-Annotations from agents (via the external annotations API or direct room connection) appear the same way, attributed to their source.
+Room annotations appear for everyone in the room, attributed to the participant who created them. Local external annotations continue to work in the creator's localhost editor; forwarding those annotations into a room is later work.
 
 ### Approving with Consolidated Feedback
 
-When the creator is satisfied with the review, they click Approve. The browser gathers all annotations from all participants into a single feedback payload and submits it to their local Plannotator server, which returns the decision to the waiting agent. The room automatically locks -- participants can still read the frozen snapshot but can no longer add annotations.
+When the creator is satisfied with the review, they switch to their localhost tab, paste or import the consolidated room feedback (via the existing share-hash / paste-short-URL import path), and click Approve there. The localhost POST reaches the local Plannotator server, which returns the decision to the waiting agent.
+
+Locking the room after the decision is a separate, explicit creator action in the room tab (Lock control in the room panel). V1 does not auto-lock on approve; the room stays readable as a frozen snapshot only after the creator chooses to lock.
 
 If the creator denies instead, the room stays active for the current plan version while the agent revises outside the room. In V1, reviewing the revised plan requires starting a new live room. The room model intentionally carries `versionId: "v1"` so a future release can support multiple plan versions in the same room without migrating the data model.
 
@@ -78,9 +80,9 @@ Rooms that are never explicitly deleted expire after 30 days.
 
 **Static sharing is unchanged.** Hash-based URLs and paste-service short links continue to work exactly as they do today. They remain the right choice for async, one-way sharing where live presence isn't needed.
 
-**The external annotations API is unchanged.** Agents that post to `localhost:<port>/api/external-annotations` continue to work. When the creator's browser is in a live room, locally received annotations are forwarded into the room as encrypted operations. Annotations that include image attachments are forwarded without the images, since V1 rooms don't support encrypted assets. The agent doesn't need to know about rooms.
+**The external annotations API is unchanged.** Agents that post to `localhost:<port>/api/external-annotations` continue to work in the localhost editor. The current room integration does not automatically forward localhost external annotations into the room; room feedback transfer is explicit through export/copy/import flows. Forwarding local external annotations into encrypted room operations is a later slice.
 
-**The approve/deny flow is unchanged.** The creator's browser still POSTs to their local Plannotator server. `waitForDecision()` still resolves the same way. The agent feedback loop is untouched. The room is a collaboration layer on top of the existing decision flow, not a replacement for it.
+**The approve/deny flow is unchanged.** Approve and Deny are local (same-origin) actions from the creator's localhost tab — the same code path as before live rooms. `waitForDecision()` still resolves the same way. The agent feedback loop is untouched. The room is a collaboration layer on top of the existing local decision flow, not a replacement for it.
 
 **The plan review UI is the same editor.** Room mode adds presence indicators, a room status badge, and the lock/unlock/delete controls. The annotation tools, markdown renderer, sidebar, settings, and themes are the same.
 
@@ -112,8 +114,8 @@ Rooms that are never explicitly deleted expire after 30 days.
 
 The feature succeeds if:
 
-- A team of 2-4 reviewers can annotate the same plan simultaneously without import/export cycles
-- The creator can approve or deny with consolidated multi-party feedback in a single action
+- A team of 2-4 reviewers can annotate the same plan simultaneously without N-way share-link import/export cycles
+- The creator can approve or deny from the localhost tab after bringing consolidated multi-party feedback back through the explicit export/copy/import flow
 - The room server stores only ciphertext -- a server compromise does not expose plan content
 - The feature works without accounts, configuration, or setup beyond sharing a URL
 - Existing single-player review, static sharing, and agent annotation workflows are unaffected
@@ -122,5 +124,5 @@ The feature succeeds if:
 
 Technical implementation: `specs/v1.md`
 Implementation approach: `specs/v1-implementation-approach.md`
-Agent bridge and SSE compatibility: `specs/v1-decisionbridge.md`
-Local bridge trust boundary: `specs/v1-decisionbridge-local-clarity.md`
+Later external-annotation forwarding and direct-agent clients: `specs/v1-decisionbridge.md`
+Later forwarding trust boundary: `specs/v1-decisionbridge-local-clarity.md`

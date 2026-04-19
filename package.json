@@ -20,6 +20,8 @@
     "dev:marketing": "bun run --cwd apps/marketing dev",
     "dev:review": "bun run --cwd apps/review dev",
     "dev:room": "bun run --cwd apps/room-service dev",
+    "dev:live-room": "scripts/dev-live-room-local.sh",
+    "room:fake-presence": "bun run apps/room-service/scripts/fake-presence.ts",
     "build:hook": "bun run --cwd apps/hook build",
     "build:portal": "bun run --cwd apps/portal build",
     "build:marketing": "bun run --cwd apps/marketing build",
@@ -30,8 +32,8 @@
     "dev:vscode": "bun run --cwd apps/vscode-extension watch",
     "build:vscode": "bun run --cwd apps/vscode-extension build",
     "package:vscode": "bun run --cwd apps/vscode-extension package",
-    "test": "bun test",
-    "typecheck": "bunx tsc --noEmit -p packages/shared/tsconfig.json && bunx tsc --noEmit -p packages/ai/tsconfig.json && bunx tsc --noEmit -p packages/server/tsconfig.json && bunx tsc --noEmit -p packages/ui/tsconfig.collab.json"
+    "test": "bun test --path-ignore-patterns 'packages/ui/**' --path-ignore-patterns 'packages/editor/**' && bun test --cwd packages/ui && bun test --cwd packages/editor",
+    "typecheck": "bunx tsc --noEmit -p packages/shared/tsconfig.json && bunx tsc --noEmit -p packages/ai/tsconfig.json && bunx tsc --noEmit -p packages/server/tsconfig.json && bunx tsc --noEmit -p packages/ui/tsconfig.slice5.json && bunx tsc --noEmit -p packages/editor/tsconfig.json"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.92",

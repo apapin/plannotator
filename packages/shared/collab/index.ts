@@ -16,3 +16,5 @@ export * from './canonical-json';
 export * from './crypto';
 export * from './ids';
 export * from './strip-images';
+export * from './redact-url';
+export * from './validation';

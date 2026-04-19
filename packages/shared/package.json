@@ -28,7 +28,8 @@
     "./url-to-markdown": "./url-to-markdown.ts",
     "./collab": "./collab/index.ts",
     "./collab/client": "./collab/client.ts",
-    "./collab/constants": "./collab/constants.ts"
+    "./collab/constants": "./collab/constants.ts",
+    "./collab/validation": "./collab/validation.ts"
   },
   "dependencies": {
     "@joplin/turndown-plugin-gfm": "^1.0.64",

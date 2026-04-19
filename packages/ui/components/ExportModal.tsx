@@ -33,6 +33,13 @@ interface ExportModalProps {
   markdown?: string;
   isApiMode?: boolean;
   initialTab?: Tab;
+  /**
+   * Optional. When present, the Share tab surfaces a primary
+   * "Start live room" CTA above the existing static-share links. Absent
+   * → the existing UI is unchanged (local mode with no room backend
+   * configured).
+   */
+  onStartLiveRoom?: () => void;
 }
 
 type Tab = 'share' | 'annotations' | 'notes';
@@ -56,6 +63,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   markdown,
   isApiMode = false,
   initialTab,
+  onStartLiveRoom,
 }) => {
   const defaultTab = initialTab || (sharingEnabled ? 'share' : 'annotations');
   const [activeTab, setActiveTab] = useState<Tab>(defaultTab);
@@ -252,6 +260,27 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           {/* Tab content */}
           {activeTab === 'share' && sharingEnabled ? (
             <div className="space-y-4">
+              {onStartLiveRoom && (
+                <div className="p-3 rounded-lg border border-accent/40 bg-accent/5 space-y-2">
+                  <div className="text-sm font-medium">Start a live room</div>
+                  <p className="text-xs text-muted-foreground">
+                    Real-time collaborative review. The link you share is participant-only;
+                    admin controls stay with you.
+                  </p>
+                  <button
+                    onClick={() => { onStartLiveRoom(); onClose(); }}
+                    className="w-full px-3 py-1.5 text-sm rounded bg-foreground text-background"
+                    data-testid="share-tab-start-live-room"
+                  >
+                    Start live room…
+                  </button>
+                </div>
+              )}
+              {onStartLiveRoom && (
+                <div className="text-xs text-muted-foreground uppercase tracking-wide pt-1">
+                  Static share
+                </div>
+              )}
               {/* Short URL — primary copy target when available */}
               {shortShareUrl ? (
                 <div>

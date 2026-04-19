@@ -1,6 +1,6 @@
 # Plannotator Live Rooms V1 Implementation Approach
 
-This document describes how to implement Plannotator Live Rooms without turning the work into one oversized change. The product rationale lives in `specs/v1-prd.md`. The protocol and room-service details live in `specs/v1.md`. The agent/SSE bridge details live in `specs/v1-decisionbridge.md`.
+This document describes how to implement Plannotator Live Rooms without turning the work into one oversized change. The product rationale lives in `specs/v1-prd.md`. The protocol and room-service details live in `specs/v1.md`. Later external-annotation forwarding and direct-agent client details live in `specs/v1-decisionbridge.md`.
 
 The implementation should be a stack of reviewable slices. Each slice should create a real, testable building block that the next slice imports instead of reimplementing.
 
@@ -158,22 +158,48 @@ This slice should include:
 - remote annotation ops applied without regenerating IDs
 - image attachment stripping when entering a room, with clear user notice
 - creator/admin controls for lock, unlock, and “Delete room from Plannotator servers”
-- approve flow that consolidates room annotations, POSTs to the local approve endpoint, and locks the room after success
-- deny flow that consolidates room annotations and POSTs to the local deny endpoint while leaving the old room active for the old plan
-- export/copy consolidated feedback for all participants
+- export/copy consolidated feedback for all participants (approve and deny remain local-only actions on the creator's localhost tab; the room tab does not offer them)
 - no changes to existing static sharing behavior
 
 This slice should produce the first human-usable live room.
 
-### Production hardening: rate-limit `POST /api/rooms`
+### Slice 5 Out Of Scope: Deployment Hardening And Broad Security Passes
 
-Room creation is intentionally unauthenticated in the V1 protocol — a room is a capability token pair (roomSecret + adminSecret) the creator generates locally, and `POST /api/rooms` only asserts existence, not identity. Before public deployment, the route MUST be protected by one of:
+Slice 5 is the editor product integration: a human-usable room flow,
+encrypted room annotations, presence, room admin controls, image stripping,
+and explicit export/copy feedback transfer. Keep the following items out
+of Slice 5 implementation unless a separate release/deployment decision
+explicitly pulls them in:
 
-- Cloudflare rate limiting / WAF rule keyed on source IP + path
-- an application-level throttle at the Worker entry (e.g. a shared Durable Object counter or KV-based token bucket)
-- an authenticated proxy in front of the Worker (plannotator.ai app calls it on behalf of signed-in users)
+- **Rate limiting / abuse controls for `POST /api/rooms`.** Room creation
+  is intentionally unauthenticated in the V1 protocol — a room is a
+  capability token pair (roomSecret + adminSecret) the creator generates
+  locally, and `POST /api/rooms` only asserts existence, not identity.
+  Before public deployment, the route MUST be protected by Cloudflare
+  rate limiting / WAF, an application-level throttle, or an authenticated
+  proxy. This is a deployment prerequisite, not Slice 5 product work.
+- **Changing localhost CORS defaults.** The local Plannotator editor runs
+  on random localhost ports and must be able to create rooms against the
+  room service. Do not turn off localhost-origin creation in Slice 5
+  unless a replacement create path exists. Abuse protection belongs to
+  the rate-limit / WAF deployment gate above, not to a CORS-only change.
+- **Broad CSP or security-header hardening.** Slice 5 should preserve the
+  strict room-shell CSP and may fix clear dev-vs-production leaks, such
+  as avoiding dev-only localhost WebSocket `connect-src` entries on the
+  production room origin. Do not expand this into a general CSP/header
+  bikeshed unless it blocks current room behavior.
+- **Secret-minimization refactors beyond the room page contract.** The
+  current contract is: room secrets live in URL fragments, server APIs
+  never receive them, and code must not log or send `window.location.href`
+  without redaction. A broader pass to remove every secret-bearing string
+  from internal React state, DevTools-visible refs, or diagnostic surfaces
+  is worthwhile but out of Slice 5 unless a concrete leak is found.
 
-CORS is NOT abuse protection — it's a browser same-origin policy that does nothing to a direct HTTP client. This is a production requirement, not a Slice 4 runtime gap; the V1 protocol is designed to allow this additive gating without client changes. Recorded here so future reviewers do not re-flag it as a protocol issue.
+CORS is NOT abuse protection — it's a browser same-origin policy that does
+nothing to a direct HTTP client. The V1 protocol is designed so rate
+limiting / WAF / proxy gating can be added without client changes.
+Recorded here so future reviewers do not re-flag deployment hardening as
+a Slice 5 protocol issue.
 
 ### URL-fragment credential hygiene
 
@@ -191,18 +217,18 @@ Verification gate:
 - locked room prevents new annotation mutations and remains readable
 - unlock restores annotation ability
 - delete removes server-side room state and later joins fail
-- approve sends consolidated feedback to the local agent bridge and locks the room on success
-- deny sends consolidated feedback to the local agent bridge and leaves the old room active for the old plan
+- local (same-origin) approve/deny continues to work from the creator's localhost tab exactly as it did before live rooms; the room tab does not offer these controls
+- bringing room annotations back into the local approve payload uses the existing import paths (share-hash, paste-short-URL, "Copy consolidated feedback" → paste)
 - static hash sharing and paste-service short links still work
 - room creation with image attachments strips images, preserves text annotations, and shows the notice
 
-## Slice 6: Agent Bridge And Direct-Agent Hardening
+## Slice 6: External Annotation Forwarding And Direct-Agent Clients
 
-Wire room collaboration into the existing local external-annotations flow and document direct-agent usage.
+Wire room collaboration into the existing local external-annotations flow and document direct-agent usage. This is later V1 work after the Slice 5 room product integration; the current room tab does not POST to localhost and does not offer approve/deny.
 
 This slice should include:
 
-- bridge from existing `/api/external-annotations` SSE events into encrypted room ops when the browser is joined to a room
+- forwarding from existing `/api/external-annotations` SSE events into encrypted room ops when the browser is joined to a room
 - mapping for snapshot/add/update/remove/clear into `annotation.add`, `annotation.update`, `annotation.remove`, and `annotation.clear`
 - source-based cleanup semantics for agent reruns
 - image stripping for local SSE annotations before forwarding as `RoomAnnotation`
@@ -230,7 +256,7 @@ Treat these as stacked PRs:
 3. durable room engine
 4. browser/direct-agent client
 5. editor product integration
-6. agent bridge and direct-agent hardening
+6. external annotation forwarding and direct-agent clients
 
 Do not merge a later slice by inventing temporary protocol shapes that disagree with earlier slices. If a later slice finds a flaw in the shared protocol, update `packages/shared/collab` and its tests first, then adjust dependent slices.
 

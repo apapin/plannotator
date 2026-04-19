@@ -4,7 +4,7 @@
 
 Slices 1-3 built the protocol contract, the room service, and the durable room engine. The `apps/room-service/scripts/smoke.ts` file (390 lines) is the inline reference client — it implements every client behavior using direct WebSocket and crypto calls. Slice 4 refactors those patterns into a reusable `CollabRoomClient` runtime and a React hook, so browsers and direct-agent clients can connect to room.plannotator.ai without duplicating protocol code.
 
-Slice 4 does NOT wire into `packages/editor/App.tsx`, add share UI, cursor overlays, approve/deny, or the local SSE bridge. Those are Slice 5 and Slice 6.
+Slice 4 does NOT wire into `packages/editor/App.tsx`, add share UI, cursor overlays, approve/deny, or local external-annotation forwarding. Those are Slice 5 and Slice 6.
 
 ## File Structure
 
@@ -398,6 +398,6 @@ SMOKE_BASE_URL=http://localhost:8787 bun test packages/shared/collab/client-runt
 - Wire `useCollabRoom` into `packages/editor/App.tsx` — Slice 5
 - Share UI, cursor overlay, approve/deny integration — Slice 5
 - Image attachment support — `RoomAnnotation.images` stays `never`
-- Local `/api/external-annotations` SSE bridge — Slice 6
+- Local `/api/external-annotations` SSE forwarding — Slice 6
 - Direct-agent usage guide or SDK docs — Slice 6
 - Replace `apps/room-service/scripts/smoke.ts` — keep as independent reference

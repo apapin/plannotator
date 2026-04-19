@@ -1,0 +1,65 @@
+// Slice-5 scoped typecheck for the editor package.
+//
+// Explicitly curated entry points:
+//   - AppRoot.tsx (mode fork: local | room | invalid-room)
+//   - RoomApp.tsx (room shell + identity gate + overlays + admin)
+//
+// Transitive reality: AppRoot.tsx does `import App from './App'`, so
+// TypeScript follows that edge and App.tsx IS type-checked here too
+// (including its own transitive imports into `packages/ui`). There is
+// no type-only boundary between AppRoot and App today, and adding one
+// purely to dodge typecheck would be worse than accepting the
+// coverage.
+//
+// What "scoped" actually means in this config:
+//   - The `include` list names the files we want to ACTIVELY CURATE
+//     for Slice-5 correctness — i.e. the ones a Slice-5 reviewer is
+//     expected to keep clean.
+//   - Errors surfacing from App.tsx (or anything further downstream)
+//     are still blocking: they break `bun run typecheck`, so Slice-5
+//     changes that regress App.tsx's types will be caught. But this
+//     config does NOT promise that App.tsx stays debt-free over time;
+//     the broader package-wide typecheck is deferred because
+//     `packages/ui` and `packages/editor` have pre-existing drift
+//     unrelated to Live Rooms.
+//
+// If App.tsx grows new debt as unrelated slices land, a future pass
+// should either fix the debt or carve out a separate baseline — not
+// hide coverage behind the `include` list.
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false,
+    "module": "ESNext",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "skipLibCheck": true,
+    "types": [
+      "node"
+    ],
+    "moduleResolution": "bundler",
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "allowJs": true,
+    "jsx": "react-jsx",
+    "paths": {
+      "@plannotator/editor/*": ["./*"],
+      "@plannotator/ui": ["../ui/index.ts"],
+      "@plannotator/ui/*": ["../ui/*"],
+      "@plannotator/shared": ["../shared/index.ts"],
+      "@plannotator/shared/*": ["../shared/*"]
+    },
+    "allowImportingTsExtensions": true,
+    "noEmit": true
+  },
+  "include": [
+    "../ui/components/types.d.ts",
+    "env.d.ts",
+    "AppRoot.tsx",
+    "RoomApp.tsx"
+  ]
+}

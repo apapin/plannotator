@@ -27,6 +27,7 @@ import { runReadPlan } from './subcommands/read-plan';
 import { runReadAnnotations } from './subcommands/read-annotations';
 import { runReadPresence } from './subcommands/read-presence';
 import { runComment } from './subcommands/comment';
+import { runDemo } from './subcommands/demo';
 import { UsageError } from './subcommands/_lib';
 
 const HELP = `plannotator collab-agent — join Live Rooms as an AI agent
@@ -43,7 +44,10 @@ Subcommands:
   comment            post a block-level comment annotation
                      (--block <id> --text <body>, or --list-blocks
                      to print available block ids + exit)
-  demo               walk headings, leaving comments at each (Phase 6)
+  demo               walk heading blocks in order, anchor the cursor
+                     to each, and post a comment per heading
+                     (--duration <sec>, --comment-template <str>,
+                     --dry-run to skip posting)
 
 Common flags (every subcommand):
   --url <url>        full room URL including #key=... fragment
@@ -68,6 +72,7 @@ const SUBCOMMANDS: Record<string, Subcommand> = {
   'read-annotations': runReadAnnotations,
   'read-presence': runReadPresence,
   comment: runComment,
+  demo: runDemo,
 };
 
 async function main(argv: readonly string[]): Promise<number> {

@@ -26,6 +26,7 @@ import { runJoin } from './subcommands/join';
 import { runReadPlan } from './subcommands/read-plan';
 import { runReadAnnotations } from './subcommands/read-annotations';
 import { runReadPresence } from './subcommands/read-presence';
+import { runComment } from './subcommands/comment';
 import { UsageError } from './subcommands/_lib';
 
 const HELP = `plannotator collab-agent — join Live Rooms as an AI agent
@@ -39,7 +40,9 @@ Subcommands:
                      (add --with-block-ids for block markers)
   read-annotations   print current annotations as JSON
   read-presence      print recent peer presence (not a participant roster)
-  comment            post a block-level comment annotation (Phase 5)
+  comment            post a block-level comment annotation
+                     (--block <id> --text <body>, or --list-blocks
+                     to print available block ids + exit)
   demo               walk headings, leaving comments at each (Phase 6)
 
 Common flags (every subcommand):
@@ -64,6 +67,7 @@ const SUBCOMMANDS: Record<string, Subcommand> = {
   'read-plan': runReadPlan,
   'read-annotations': runReadAnnotations,
   'read-presence': runReadPresence,
+  comment: runComment,
 };
 
 async function main(argv: readonly string[]): Promise<number> {

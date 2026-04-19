@@ -1525,7 +1525,7 @@ const App: React.FC = () => {
           {/* Document Area */}
           <OverlayScrollArea
             element="main"
-            className={`flex-1 min-w-0 bg-grid ${!sidebar.isOpen ? 'lg:pl-[30px]' : ''}`}
+            className={`flex-1 min-w-0 bg-grid relative z-20 ${!sidebar.isOpen ? 'lg:pl-[30px]' : ''}`}
             data-print-region="document"
             onViewportReady={handleViewportReady}
           >
@@ -1539,7 +1539,7 @@ const App: React.FC = () => {
               cancelText="Dismiss"
               showCancel
             />
-            <div ref={planAreaRef} className="min-h-full flex flex-col items-center px-2 py-3 md:px-10 md:py-8 xl:px-16 relative z-20">
+            <div ref={planAreaRef} className="min-h-full flex flex-col items-center px-2 py-3 md:px-10 md:py-8 xl:px-16 relative z-10">
               {/* Sticky header lane — ghost bar that pins the toolstrip +
                   badges at top: 12px once the user scrolls. Invisible at top
                   of doc; original toolstrip/badges remain the source of

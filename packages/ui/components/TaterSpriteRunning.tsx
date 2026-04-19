@@ -25,7 +25,7 @@ export const TaterSpriteRunning: React.FC = () => {
         right: -DISPLAY_WIDTH, // Start off-screen right
         width: DISPLAY_WIDTH,
         height: DISPLAY_HEIGHT,
-        zIndex: 15, // Above sidebar tabs / resize handles (z-10) but below the plan area stack (z-20)
+        zIndex: 15, // Above sidebar tabs / resize handles (z-10), below the <main> plan host (z-20). Plan's own z-10/z-50 are trapped inside overlayscrollbars' z-0 wrapper, so main's z-index — not planAreaRef's — is what actually beats the sprite.
         backgroundImage: `url(${spriteSheet})`,
         backgroundSize: `${TOTAL_SPRITE_WIDTH}px ${DISPLAY_HEIGHT}px`,
         backgroundPosition: 'left center',

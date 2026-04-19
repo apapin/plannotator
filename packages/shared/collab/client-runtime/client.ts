@@ -22,7 +22,7 @@ import {
   encryptSnapshot,
   decryptSnapshot,
 } from '../crypto';
-import { WS_CLOSE_REASON_ROOM_DELETED, WS_CLOSE_REASON_ROOM_EXPIRED, WS_CLOSE_ROOM_UNAVAILABLE } from '../constants';
+import { ADMIN_ERROR_CODES, WS_CLOSE_REASON_ROOM_DELETED, WS_CLOSE_REASON_ROOM_EXPIRED, WS_CLOSE_ROOM_UNAVAILABLE } from '../constants';
 import { generateOpId } from '../ids';
 import type {
   AdminChallenge,
@@ -165,21 +165,19 @@ const ADMIN_COMMAND_TIMEOUT_MS = 5_000;
  * `validation_error` from an event-channel op) are event-channel failures
  * and must not cancel an in-flight admin command.
  *
- * Keep in sync with server sendError() calls in the admin path.
+ * Derived from the shared `ADMIN_ERROR_CODES` tuple so there is exactly
+ * one source of truth across the server (`sendAdminError` call sites in
+ * `room-do.ts`) and this client. Membership check tolerates unknown
+ * strings as non-admin — forward-compatible with servers that add
+ * future codes we don't yet recognize.
  */
-const ADMIN_SCOPED_ERROR_CODES = new Set<string>([
-  'admin_validation_error',
-  'client_id_mismatch',
-  'no_admin_challenge',
-  'unknown_admin_challenge',
-  'admin_challenge_expired',
-  'invalid_admin_proof',
-  'invalid_state',
-  'invalid_snapshot_seq',
-  'delete_failed',
-  'lock_failed',
-  'unlock_failed',
-]);
+// Typed as `Set<string>` (not `Set<AdminErrorCode>`) because we call
+// `.has(msg.code)` where `msg.code: string` arrives from the wire —
+// forward-compatibility with unknown future codes is intentional:
+// they fall through as non-admin, not typecheck errors at the
+// membership site.
+const ADMIN_SCOPED_ERROR_CODES: ReadonlySet<string> =
+  new Set<string>(ADMIN_ERROR_CODES);
 
 
 // ---------------------------------------------------------------------------

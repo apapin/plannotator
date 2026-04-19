@@ -26,6 +26,7 @@ import {
   decryptEventPayload,
 } from '../crypto';
 import { generateClientId, generateRoomSecret, generateAdminSecret, generateChallengeId, generateNonce } from '../ids';
+import { ADMIN_ERROR_CODES } from '../constants';
 import type { AuthChallenge, AuthAccepted, RoomSnapshot, ServerEnvelope, RoomTransportMessage, RoomAnnotation, AuthResponse, AdminChallenge, AdminCommandEnvelope } from '../types';
 import type { CollabRoomState, CollabRoomUser } from './types';
 
@@ -482,6 +483,45 @@ describe('CollabRoomClient — admin', () => {
       const elapsed = Date.now() - start;
       // Must reject immediately (within a few ms), not at the 5s admin timeout.
       expect(elapsed).toBeLessThan(500);
+
+      client.disconnect();
+    }
+  });
+
+  test('contract: every code in ADMIN_ERROR_CODES rejects a pending admin command as admin-scoped', async () => {
+    // Contract test for the shared admin-error-code tuple. Iterates every
+    // code declared in `packages/shared/collab/constants.ts` and asserts
+    // that the runtime treats it as admin-scoped (rejects pending admin
+    // with AdminRejectedError, does not fall through to the 5s timeout).
+    //
+    // This is the single gate that prevents the class of drift where a
+    // server adds a new `sendAdminError` call site with a code the
+    // client's rejection Set doesn't recognize — the tuple is the shared
+    // source of truth, so any new code must land in the tuple first,
+    // and this test forces it to route correctly end-to-end.
+    //
+    // If this test fails after adding a new admin code:
+    //   1. Confirm the code is in AdminErrorCode namespace in constants.ts.
+    //   2. Confirm ADMIN_SCOPED_ERROR_CODES in client.ts derives from the
+    //      tuple (not a duplicate literal).
+    //   3. If both are correct, the runtime's rejection path has a bug —
+    //      not a contract bug.
+    for (const code of ADMIN_ERROR_CODES) {
+      const { client, ws } = await setup({ withAdmin: true });
+
+      const lockPromise = client.lockRoom();
+      await ws.peer.expectFromClient(); // admin.challenge.request
+
+      const start = Date.now();
+      ws.peer.sendFromServer(JSON.stringify({
+        type: 'room.error',
+        code,
+        message: `Server rejected: ${code}`,
+      }));
+
+      await expect(lockPromise).rejects.toThrow(AdminRejectedError);
+      // Reject immediately, not via 5s admin timeout.
+      expect(Date.now() - start).toBeLessThan(500);
 
       client.disconnect();
     }

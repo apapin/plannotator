@@ -27,7 +27,7 @@ import type {
 import { verifyAuthProof, verifyAdminProof, generateChallengeId, generateClientId, generateNonce } from '@plannotator/shared/collab';
 // Shared delete close-signal constants — client matches on the exact literal,
 // so both ends MUST import from the same source.
-import { WS_CLOSE_REASON_ROOM_DELETED, WS_CLOSE_REASON_ROOM_EXPIRED, WS_CLOSE_ROOM_UNAVAILABLE } from '@plannotator/shared/collab/constants';
+import { AdminErrorCode, WS_CLOSE_REASON_ROOM_DELETED, WS_CLOSE_REASON_ROOM_EXPIRED, WS_CLOSE_ROOM_UNAVAILABLE } from '@plannotator/shared/collab/constants';
 import { DurableObject } from 'cloudflare:workers';
 import type { Env, RoomDurableState, WebSocketAttachment } from './types';
 import { clampExpiryDays, hasRoomExpired, validateServerEnvelope, validateAdminCommandEnvelope, isValidationError } from './validation';
@@ -662,7 +662,7 @@ export class RoomDurableObject extends DurableObject<Env> {
       // from event-channel failures (e.g. room_locked fires on the event
       // channel while a lock command is in flight — rejecting pendingAdmin
       // on those would be wrong).
-      this.sendError(ws, 'admin_validation_error', validated.error);
+      this.sendAdminError(ws, AdminErrorCode.ValidationError, validated.error);
       return;
     }
     // isValidationError narrows; `validated` is AdminCommandEnvelope here.
@@ -670,17 +670,17 @@ export class RoomDurableObject extends DurableObject<Env> {
 
     // Reject cross-connection clientId spoofing
     if (cmdEnvelope.clientId !== meta.clientId) {
-      this.sendError(ws, 'client_id_mismatch', 'clientId does not match authenticated connection');
+      this.sendAdminError(ws, AdminErrorCode.ClientIdMismatch, 'clientId does not match authenticated connection');
       return;
     }
 
     // Check pending admin challenge
     if (!meta.pendingAdminChallenge) {
-      this.sendError(ws, 'no_admin_challenge', 'Request an admin challenge first');
+      this.sendAdminError(ws, AdminErrorCode.NoAdminChallenge, 'Request an admin challenge first');
       return;
     }
     if (cmdEnvelope.challengeId !== meta.pendingAdminChallenge.challengeId) {
-      this.sendError(ws, 'unknown_admin_challenge', 'Challenge ID does not match');
+      this.sendAdminError(ws, AdminErrorCode.UnknownAdminChallenge, 'Challenge ID does not match');
       return;
     }
 
@@ -693,7 +693,7 @@ export class RoomDurableObject extends DurableObject<Env> {
 
     // Check expiry
     if (Date.now() > expiresAt) {
-      this.sendError(ws, 'admin_challenge_expired', 'Admin challenge expired');
+      this.sendAdminError(ws, AdminErrorCode.AdminChallengeExpired, 'Admin challenge expired');
       return;
     }
 
@@ -714,7 +714,7 @@ export class RoomDurableObject extends DurableObject<Env> {
 
     if (!valid) {
       safeLog('admin:proof-rejected', { roomId: meta.roomId, clientId: meta.clientId });
-      this.sendError(ws, 'invalid_admin_proof', 'Admin proof verification failed');
+      this.sendAdminError(ws, AdminErrorCode.InvalidAdminProof, 'Admin proof verification failed');
       return;
     }
 
@@ -749,7 +749,7 @@ export class RoomDurableObject extends DurableObject<Env> {
     command: Extract<AdminCommandEnvelope['command'], { type: 'room.lock' }>,
   ): Promise<void> {
     if (roomState.status !== 'active') {
-      this.sendError(ws, 'invalid_state', `Cannot lock room in "${roomState.status}" state`);
+      this.sendAdminError(ws, AdminErrorCode.InvalidState, `Cannot lock room in "${roomState.status}" state`);
       return;
     }
 
@@ -778,7 +778,7 @@ export class RoomDurableObject extends DurableObject<Env> {
       const atSeq = command.finalSnapshotAtSeq;
       const existingSnapshotSeq = roomState.snapshotSeq ?? 0;
       if (atSeq > roomState.seq || atSeq < existingSnapshotSeq) {
-        this.sendError(ws, 'invalid_snapshot_seq', `finalSnapshotAtSeq must be >= ${existingSnapshotSeq} and <= ${roomState.seq}`);
+        this.sendAdminError(ws, AdminErrorCode.InvalidSnapshotSeq, `finalSnapshotAtSeq must be >= ${existingSnapshotSeq} and <= ${roomState.seq}`);
         return;
       }
       if (atSeq > existingSnapshotSeq) {
@@ -802,7 +802,7 @@ export class RoomDurableObject extends DurableObject<Env> {
       // write failure. Send an admin-scoped error so the pending lock
       // rejects cleanly on the caller.
       safeLog('admin:lock-storage-error', { roomId: roomState.roomId, error: String(e) });
-      this.sendError(ws, 'lock_failed', 'Failed to persist locked state');
+      this.sendAdminError(ws, AdminErrorCode.LockFailed, 'Failed to persist locked state');
       return;
     }
 
@@ -817,7 +817,7 @@ export class RoomDurableObject extends DurableObject<Env> {
     roomState: RoomDurableState,
   ): Promise<void> {
     if (roomState.status !== 'locked') {
-      this.sendError(ws, 'invalid_state', `Cannot unlock room in "${roomState.status}" state`);
+      this.sendAdminError(ws, AdminErrorCode.InvalidState, `Cannot unlock room in "${roomState.status}" state`);
       return;
     }
 
@@ -832,7 +832,7 @@ export class RoomDurableObject extends DurableObject<Env> {
       await this.ctx.storage.put('room', next);
     } catch (e) {
       safeLog('admin:unlock-storage-error', { roomId: roomState.roomId, error: String(e) });
-      this.sendError(ws, 'unlock_failed', 'Failed to persist unlocked state');
+      this.sendAdminError(ws, AdminErrorCode.UnlockFailed, 'Failed to persist unlocked state');
       return;
     }
 
@@ -846,7 +846,7 @@ export class RoomDurableObject extends DurableObject<Env> {
     roomState: RoomDurableState,
   ): Promise<void> {
     if (roomState.status === 'deleted' || roomState.status === 'expired') {
-      this.sendError(ws, 'invalid_state', 'Room is already in a terminal state');
+      this.sendAdminError(ws, AdminErrorCode.InvalidState, 'Room is already in a terminal state');
       return;
     }
 
@@ -875,7 +875,7 @@ export class RoomDurableObject extends DurableObject<Env> {
       // the lifecycle (the room is still active server-side). The admin
       // can retry deleteRoom().
       safeLog('room:delete-storage-error', { roomId: roomState.roomId, error: String(e) });
-      this.sendError(ws, 'delete_failed', 'Failed to delete room');
+      this.sendAdminError(ws, AdminErrorCode.DeleteFailed, 'Failed to delete room');
       return;
     }
 
@@ -986,6 +986,19 @@ export class RoomDurableObject extends DurableObject<Env> {
   private sendError(ws: WebSocket, code: string, message: string): void {
     const error: RoomTransportMessage = { type: 'room.error', code, message };
     try { ws.send(JSON.stringify(error)); } catch { /* socket may have closed */ }
+  }
+
+  /**
+   * Admin-scoped error emitter. Every admin-command rejection path
+   * (validate, challenge, proof, state, persist) MUST go through this
+   * wrapper instead of raw `sendError` so the `AdminErrorCode` type
+   * enforces the contract the client's rejection gate relies on
+   * (see `ADMIN_ERROR_CODES` in shared/collab/constants.ts). Adding a
+   * new admin error = add a key to `AdminErrorCode`, use it here;
+   * typos and non-admin codes surface as compile errors.
+   */
+  private sendAdminError(ws: WebSocket, code: AdminErrorCode, message: string): void {
+    this.sendError(ws, code, message);
   }
 
   private closeRoomSockets(reason: string, except?: WebSocket): void {

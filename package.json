@@ -22,6 +22,7 @@
     "dev:room": "bun run --cwd apps/room-service dev",
     "dev:live-room": "scripts/dev-live-room-local.sh",
     "room:fake-presence": "bun run apps/room-service/scripts/fake-presence.ts",
+    "agent:run": "bun run apps/collab-agent/index.ts",
     "build:hook": "bun run --cwd apps/hook build",
     "build:portal": "bun run --cwd apps/portal build",
     "build:marketing": "bun run --cwd apps/marketing build",

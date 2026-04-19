@@ -23,6 +23,7 @@
 import type { RoomAnnotation } from '@plannotator/shared/collab';
 import { parseMarkdownToBlocks } from '@plannotator/ui/utils/parser';
 import {
+  awaitAnnotationEcho,
   awaitInitialSnapshot,
   openAgentSession,
   parseCommonArgs,
@@ -102,37 +103,9 @@ export async function runComment(argv: readonly string[]): Promise<number> {
     author: identity,
   };
 
-  // Resolves when the annotation appears in canonical state (echo
-  // received) OR when a mutation-scoped error arrives referencing
-  // our op. `sendAnnotationAdd`'s own promise resolves on send,
-  // not on echo, so we drive acceptance off the state event.
-  const echo = new Promise<void>((resolve, reject) => {
-    const baselineErrorId = client.getState().lastErrorId;
-    const timer = setTimeout(() => {
-      off();
-      reject(new Error(`Timed out waiting for server echo after ${ECHO_TIMEOUT_MS}ms`));
-    }, ECHO_TIMEOUT_MS);
-    const off = client.on('state', state => {
-      if (state.annotations.some(a => a.id === annotationId)) {
-        clearTimeout(timer);
-        off();
-        resolve();
-        return;
-      }
-      // Mutation scope errors arrive when the server rejects an op
-      // we sent (e.g. room locked). lastErrorId advances on each new
-      // error; scope='mutation' is the admin-unscoped channel.
-      if (
-        state.lastErrorId > baselineErrorId &&
-        state.lastError?.scope === 'mutation'
-      ) {
-        clearTimeout(timer);
-        off();
-        reject(new Error(`${state.lastError.code}: ${state.lastError.message}`));
-      }
-    });
-  });
-
+  // Subscribe BEFORE sending — shared helper awaits echo in
+  // canonical state, rejecting on mutation-scope errors or timeout.
+  const echo = awaitAnnotationEcho(client, annotationId, ECHO_TIMEOUT_MS);
   await client.sendAnnotationAdd([annotation]);
 
   try {

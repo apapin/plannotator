@@ -188,6 +188,62 @@ export function awaitInitialSnapshot(
 }
 
 /**
+ * Resolve when `annotationId` appears in canonical state (server
+ * echoed the op back), reject when a mutation-scoped error arrives
+ * after the call site or on timeout. Use this to gate subcommand
+ * success on "the server accepted the op", not merely "we sent the
+ * bytes" (which is all `sendAnnotationAdd` resolves on — see the
+ * `Resolves when queued/sent to the server` comment in
+ * `packages/shared/collab/client-runtime/client.ts:493`).
+ *
+ * IMPORTANT: subscribe BEFORE calling `sendAnnotationAdd`. The
+ * state event for our echo can land faster than a macrotask, so
+ * a late subscriber will miss it. Canonical usage:
+ *
+ *     const echo = awaitAnnotationEcho(client, id);  // subscribe first
+ *     await client.sendAnnotationAdd([annotation]);
+ *     await echo;
+ *
+ * @param timeoutMs  defaults to 10s; matches the admin-command
+ *                   timeout the server honours so we wait at
+ *                   least as long as any valid server response
+ *                   could take.
+ */
+export function awaitAnnotationEcho(
+  client: CollabRoomClient,
+  annotationId: string,
+  timeoutMs = 10_000,
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const baselineErrorId = client.getState().lastErrorId;
+    const timer = setTimeout(() => {
+      off();
+      reject(new Error(`Timed out waiting for echo of ${annotationId} after ${timeoutMs}ms`));
+    }, timeoutMs);
+    const off = client.on('state', state => {
+      if (state.annotations.some(a => a.id === annotationId)) {
+        clearTimeout(timer);
+        off();
+        resolve();
+        return;
+      }
+      // Only mutation-scoped errors apply here; admin / event /
+      // presence / snapshot / join errors are unrelated to our
+      // pending op. A fresh mutation error (id advanced past the
+      // baseline) is the rejection signal from the server.
+      if (
+        state.lastErrorId > baselineErrorId &&
+        state.lastError?.scope === 'mutation'
+      ) {
+        clearTimeout(timer);
+        off();
+        reject(new Error(`${state.lastError.code}: ${state.lastError.message}`));
+      }
+    });
+  });
+}
+
+/**
  * Wire SIGINT + SIGTERM to a graceful `client.disconnect()`. Returns
  * a function that removes the handlers — call it after disconnect
  * completes in the non-signal path so we don't accumulate listeners

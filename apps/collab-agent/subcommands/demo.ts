@@ -28,6 +28,7 @@ import type { PresenceState, RoomAnnotation } from '@plannotator/shared/collab';
 import { parseMarkdownToBlocks } from '@plannotator/ui/utils/parser';
 import { startHeartbeat } from '../heartbeat';
 import {
+  awaitAnnotationEcho,
   awaitInitialSnapshot,
   openAgentSession,
   parseCommonArgs,
@@ -42,6 +43,12 @@ const DEFAULT_DURATION_SEC = 120;
 const DEFAULT_COMMENT_TEMPLATE = '[demo] reviewing {heading}';
 const MIN_PAUSE_MS = 3_000;
 const MAX_PAUSE_MS = 6_000;
+// Per-heading echo wait. Shorter than the 10s default in the
+// comment subcommand because demo is time-boxed; if the server is
+// healthy an echo arrives in <100ms, and a full 10s wait on every
+// heading would dominate the demo's wall time when something is
+// genuinely wrong (e.g. the room is locked).
+const DEMO_ECHO_TIMEOUT_MS = 5_000;
 
 export async function runDemo(argv: readonly string[]): Promise<number> {
   const args = parseCommonArgs(argv);
@@ -101,15 +108,35 @@ export async function runDemo(argv: readonly string[]): Promise<number> {
     }),
   );
 
+  interface CommentFailure {
+    blockId: string;
+    reason: string;
+  }
+  const failures: CommentFailure[] = [];
+
   try {
     for (const heading of headings) {
       // Anchor cursor to the heading block. Observer's
       // RemoteCursorLayer resolves block-space cursors against its
       // own rendered block rect, so the agent's cursor label lands
       // on the heading regardless of the observer's viewport size.
+      //
+      // x/y are randomized per visit so that multiple agents in
+      // the same room don't stack their cursor labels at the same
+      // pixel when they both anchor to a heading. Range 20–200 px
+      // horizontally covers most block widths without often
+      // spilling past the right edge (and RemoteCursorLayer clamps
+      // or shows an edge indicator if it does). 0–24 px vertically
+      // keeps the cursor near the heading text baseline without
+      // wandering into the next block.
       const presence: PresenceState = {
         user: { id: identity, name: identity, color },
-        cursor: { coordinateSpace: 'block', blockId: heading.id, x: 0, y: 0 },
+        cursor: {
+          coordinateSpace: 'block',
+          blockId: heading.id,
+          x: Math.floor(20 + Math.random() * 180),
+          y: Math.floor(Math.random() * 24),
+        },
       };
       heartbeat.update(presence);
       await client.sendPresence(presence);
@@ -123,8 +150,10 @@ export async function runDemo(argv: readonly string[]): Promise<number> {
         }),
       );
 
-      // Natural pause. Use the full per-heading window so the
-      // observer has time to notice the cursor, then post.
+      // Natural pause before posting. Observer has time to notice
+      // the cursor move, then the comment appears at the end of
+      // the pause window plus the echo round-trip (typically tens
+      // of ms on a healthy server).
       await new Promise<void>(r => setTimeout(r, perHeadingMs));
 
       if (!dryRun) {
@@ -143,12 +172,29 @@ export async function runDemo(argv: readonly string[]): Promise<number> {
           createdA: Date.now(),
           author: identity,
         };
-        // Fire-and-forget: `sendAnnotationAdd` resolves on send,
-        // not echo. Waiting for echo per heading would slow the
-        // demo noticeably. A silent failure still surfaces via
-        // the `error` event stream below — demo isn't the right
-        // place to enforce strict per-op accounting.
-        void client.sendAnnotationAdd([annotation]);
+
+        // Subscribe before sending; await echo. Confirming per
+        // heading means demo's exit code reflects whether every
+        // comment actually posted, not just "we sent the bytes".
+        // A locked room, disconnect, or server-side rejection
+        // arrives as a rejection here — we record the failure,
+        // log it, and keep walking so the observer still sees
+        // the tour complete. Final exit code reflects whether
+        // ANY comment failed.
+        const echo = awaitAnnotationEcho(client, annotationId, DEMO_ECHO_TIMEOUT_MS);
+        try {
+          await client.sendAnnotationAdd([annotation]);
+          await echo;
+          console.log(
+            JSON.stringify({ event: 'demo.comment', blockId: heading.id, annotationId }),
+          );
+        } catch (err) {
+          const reason = (err as Error).message;
+          failures.push({ blockId: heading.id, reason });
+          console.error(
+            JSON.stringify({ event: 'demo.comment.failed', blockId: heading.id, reason }),
+          );
+        }
       }
     }
   } catch (err) {
@@ -169,6 +215,16 @@ export async function runDemo(argv: readonly string[]): Promise<number> {
   unwireSignals();
   await new Promise<void>(r => setTimeout(r, 100));
 
-  console.log(JSON.stringify({ event: 'demo.end' }));
-  return 0;
+  console.log(
+    JSON.stringify({
+      event: 'demo.end',
+      headings: headings.length,
+      failed: failures.length,
+      failures,
+    }),
+  );
+  // Non-zero exit when any comment failed to echo, so an invoking
+  // script can distinguish "cursor walk visible but no comments
+  // landed" from a clean run.
+  return failures.length > 0 ? 1 : 0;
 }

@@ -62,12 +62,12 @@ export function JoinRoomGate({
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-background/95"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-background/80 backdrop-blur-sm p-4"
       data-testid="join-room-gate"
     >
       <form
         onSubmit={handleSubmit}
-        className="w-[380px] max-w-[90vw] rounded-lg p-5 border bg-card space-y-4"
+        className="bg-card border border-border rounded-xl shadow-2xl w-[380px] max-w-[90vw] p-5 space-y-4"
       >
         <h2 className="text-base font-semibold">Join live review</h2>
 

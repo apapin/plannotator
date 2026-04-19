@@ -7,7 +7,6 @@ import { ExportModal } from '@plannotator/ui/components/ExportModal';
 import { ImportModal } from '@plannotator/ui/components/ImportModal';
 import { ConfirmDialog } from '@plannotator/ui/components/ConfirmDialog';
 import { Annotation, Block, EditorMode, type InputMethod, type ImageAttachment, type ActionsLabelMode } from '@plannotator/ui/types';
-import { ThemeProvider } from '@plannotator/ui/components/ThemeProvider';
 import { AnnotationToolstrip } from '@plannotator/ui/components/AnnotationToolstrip';
 import { StickyHeaderLane } from '@plannotator/ui/components/StickyHeaderLane';
 import { TaterSpriteRunning } from '@plannotator/ui/components/TaterSpriteRunning';
@@ -1603,8 +1602,7 @@ const App: React.FC<AppProps> = ({ roomSession }) => {
 
 
   return (
-    <ThemeProvider defaultTheme="dark">
-      <div data-print-region="root" className="h-screen flex flex-col bg-background overflow-hidden">
+    <div data-print-region="root" className="h-screen flex flex-col bg-background overflow-hidden">
         {/* Minimal Header */}
         <header className="h-12 flex items-center justify-between px-2 md:px-4 border-b border-border/50 bg-card/50 backdrop-blur-xl sticky top-0 z-[50]">
           <div className="flex items-center gap-2 md:gap-3">
@@ -2356,8 +2354,7 @@ const App: React.FC<AppProps> = ({ roomSession }) => {
             setShowPermissionModeSetup(false);
           }}
         />
-      </div>
-    </ThemeProvider>
+    </div>
   );
 };
 

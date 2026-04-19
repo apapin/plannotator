@@ -15,6 +15,7 @@ import React from 'react';
 import App from './App';
 import { RoomApp } from './RoomApp';
 import { useRoomMode } from '@plannotator/ui/hooks/collab/useRoomMode';
+import { ThemeProvider } from '@plannotator/ui/components/ThemeProvider';
 import { isBase64Url32ByteString } from '@plannotator/shared/collab/validation';
 import { storeAdminSecret, loadAdminSecret } from '@plannotator/ui/utils/adminSecretStorage';
 import { captureCreatorIdentityFromFragment } from './roomIdentityHandoff';
@@ -100,7 +101,21 @@ extractStrippedImagesFromFragment();
 captureAdminSecretFromFragment();
 captureCreatorIdentityFromFragment();
 
-export function AppRoot(): React.ReactElement {
+/**
+ * Inner fork (mode selection). Wrapped by `<ThemeProvider>` in the
+ * exported `AppRoot` below so every branch — including the pre-join
+ * gate in room mode and the invalid-room terminal screen — renders
+ * with the theme class on `<html>` and theme-token-based Tailwind
+ * classes (`bg-background`, `bg-card`, `text-muted-foreground`…) resolve
+ * to real colors.
+ *
+ * Earlier the `ThemeProvider` lived inside `<App>` itself, which meant
+ * `<JoinRoomGate>` (rendered by `<RoomApp>` BEFORE it mounts App) had
+ * no theme class applied yet — every theme-token-driven style
+ * collapsed to the browser default and the gate looked unstyled.
+ * Hoisting up fixes that and the invalid-room screen in one shot.
+ */
+function AppRootContent(): React.ReactElement {
   const mode = useRoomMode();
 
   if (mode.mode === 'local') {
@@ -136,6 +151,14 @@ export function AppRoot(): React.ReactElement {
       originatedLocally={false}
       renderEditor={({ roomSession }) => <App roomSession={roomSession} />}
     />
+  );
+}
+
+export function AppRoot(): React.ReactElement {
+  return (
+    <ThemeProvider defaultTheme="dark">
+      <AppRootContent />
+    </ThemeProvider>
   );
 }
 

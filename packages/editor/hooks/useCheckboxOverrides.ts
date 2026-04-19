@@ -8,6 +8,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Annotation, AnnotationType, Block } from '@plannotator/ui/types';
+import type { AnnotationController } from '@plannotator/ui/types/annotationController';
 
 export interface UseCheckboxOverridesOptions {
   blocks: Block[];
@@ -190,4 +191,49 @@ export function useCheckboxOverrides({
   }, []);
 
   return { overrides, toggle, revertOverride };
+}
+
+/**
+ * Compute the set of block IDs whose checkbox annotation has an
+ * unresolved server op — either in flight (pending add / update /
+ * remove) or waiting on user Retry/Discard after a failure.
+ *
+ * Consumers feed this into `useCheckboxOverrides`'s `pendingBlockIds`
+ * option, which uses it both as a busy gate (drops rapid-click toggles
+ * that would stack ops the controller can't reconcile) and as a
+ * revert gate (keeps the visual override alive while a deletion is
+ * un-echoed or failed). Co-located with the hook because the ID
+ * convention (`ann-checkbox-<blockId>-<ts>`) is a private protocol
+ * between these two pieces.
+ *
+ * Lookup strategy: `pending` / `failed` only carry ids; we resolve
+ * each id to a blockId via `pendingAdditions` first (optimistic row
+ * for adds the server hasn't echoed) and fall back to the canonical
+ * `controller.annotations` list (for updates/removes of echoed rows).
+ * Then we walk `pendingAdditions` again so purely-optimistic adds
+ * that haven't made it into `pending` yet are still covered — the
+ * controller enqueues them in lockstep, so this is defensive, but
+ * iteration is cheap and keeps the set consistent with its documented
+ * meaning.
+ */
+export function derivePendingCheckboxBlockIds(
+  controller: AnnotationController,
+): ReadonlySet<string> {
+  const blockIds = new Set<string>();
+  const addByIdLookup = (id: string) => {
+    if (!id.startsWith('ann-checkbox-')) return;
+    const optimistic = controller.pendingAdditions.get(id);
+    if (optimistic) {
+      blockIds.add(optimistic.blockId);
+      return;
+    }
+    const canonical = controller.annotations.find(a => a.id === id);
+    if (canonical) blockIds.add(canonical.blockId);
+  };
+  for (const id of controller.pending.keys()) addByIdLookup(id);
+  for (const id of controller.failed.keys()) addByIdLookup(id);
+  for (const [id, ann] of controller.pendingAdditions) {
+    if (id.startsWith('ann-checkbox-')) blockIds.add(ann.blockId);
+  }
+  return blockIds;
 }

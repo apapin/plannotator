@@ -75,7 +75,7 @@ import type { ArchivedPlan } from '@plannotator/ui/components/sidebar/ArchiveBro
 import { PlanDiffViewer } from '@plannotator/ui/components/plan-diff/PlanDiffViewer';
 import type { PlanDiffMode } from '@plannotator/ui/components/plan-diff/PlanDiffModeSwitcher';
 import { DEMO_PLAN_CONTENT } from './demoPlan';
-import { useCheckboxOverrides } from './hooks/useCheckboxOverrides';
+import { useCheckboxOverrides, derivePendingCheckboxBlockIds } from './hooks/useCheckboxOverrides';
 import { useAnnotationController } from '@plannotator/ui/hooks/useAnnotationController';
 import { StartRoomModal } from '@plannotator/ui/components/collab/StartRoomModal';
 import { useStartLiveRoom } from './hooks/collab/useStartLiveRoom';
@@ -1232,61 +1232,19 @@ const App: React.FC<AppProps> = ({ roomSession }) => {
     if (selectedAnnotationId === id) setSelectedAnnotationId(null);
   };
 
-  // Room-mode only. Block IDs with an unresolved checkbox op — in
-  // flight (`pending`) or waiting on user Retry/Discard (`failed`).
-  // Two consumers inside `useCheckboxOverrides`:
-  //
-  //   1. Busy gate: rapid same-block toggles stack a second op on
-  //      top of the first; the room controller's one-op-per-id
-  //      pending map can't reconcile that, and the first op may
-  //      still echo as a confirmed annotation for state the user
-  //      thought they undid. The hook's `toggle` short-circuits on
-  //      membership.
-  //
-  //   2. Revert gate: when the user deletes a checkbox annotation
-  //      from the panel in room mode we defer the visual revert
-  //      until the remove actually echoes. The reconciliation
-  //      effect inside the hook keeps the override alive while the
-  //      block is in this set, so a failed remove doesn't strand a
-  //      visually-reverted checkbox with an un-removed canonical
-  //      annotation.
-  //
-  // Pending adds surface through `pendingAdditions` (not yet in
-  // canonical `annotations`). Pending updates/removes and failed
-  // entries of any kind surface through `pending` / `failed` — their
-  // target annotation usually still lives in canonical, so we resolve
-  // blockId there. ID convention is `ann-checkbox-<blockId>-<ts>` —
-  // same as `useCheckboxOverrides`.
-  const pendingCheckboxBlockIds = useMemo<ReadonlySet<string> | undefined>(() => {
-    if (!roomModeActive) return undefined;
-    const blockIds = new Set<string>();
-    const addByIdLookup = (id: string) => {
-      if (!id.startsWith('ann-checkbox-')) return;
-      const optimistic = annotationController.pendingAdditions.get(id);
-      if (optimistic) {
-        blockIds.add(optimistic.blockId);
-        return;
-      }
-      const canonical = annotations.find(a => a.id === id);
-      if (canonical) blockIds.add(canonical.blockId);
-    };
-    for (const id of annotationController.pending.keys()) addByIdLookup(id);
-    for (const id of annotationController.failed.keys()) addByIdLookup(id);
-    // Cover optimistic adds that haven't made it into `pending` yet
-    // (defensive — the controller enqueues them in lockstep, but
-    // iteration is cheap and keeps the set consistent with its
-    // documented meaning).
-    for (const [id, ann] of annotationController.pendingAdditions) {
-      if (id.startsWith('ann-checkbox-')) blockIds.add(ann.blockId);
-    }
-    return blockIds;
-  }, [
-    roomModeActive,
-    annotationController.pending,
-    annotationController.failed,
-    annotationController.pendingAdditions,
-    annotations,
-  ]);
+  // Room-mode only. Delegates to `derivePendingCheckboxBlockIds`
+  // (same file as `useCheckboxOverrides`) — busy-gate + revert-gate
+  // semantics documented on the helper.
+  const pendingCheckboxBlockIds = useMemo<ReadonlySet<string> | undefined>(
+    () => (roomModeActive ? derivePendingCheckboxBlockIds(annotationController) : undefined),
+    [
+      roomModeActive,
+      annotationController.pending,
+      annotationController.failed,
+      annotationController.pendingAdditions,
+      annotationController.annotations,
+    ],
+  );
 
   // Interactive checkbox toggling with annotation tracking
   const checkbox = useCheckboxOverrides({

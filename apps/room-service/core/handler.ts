@@ -6,7 +6,7 @@
  */
 
 import type { Env } from './types';
-import { validateCreateRoomRequest, isValidationError } from './validation';
+import { isRoomId, validateCreateRoomRequest, isValidationError } from './validation';
 import { safeLog } from './log';
 
 const ROOM_PATH_RE = /^\/c\/([^/]+)$/;
@@ -31,13 +31,36 @@ export async function handleRequest(
     return Response.json({ ok: true }, { headers: cors });
   }
 
-  // Room SPA shell placeholder (Slice 5 serves the real editor bundle)
+  // Room SPA shell placeholder (Slice 5 serves the real editor bundle).
+  //
+  // Defense-in-depth header: Referrer-Policy: no-referrer.
+  // Note: browsers already do NOT include the URL fragment (#key=…&admin=…)
+  // in outbound Referer headers, so the header isn't plugging a fragment
+  // leak per se. What it does is belt-and-braces: it strips the *path*
+  // (which contains the room id) from Referer on any outbound navigation
+  // or subresource fetch the page performs, reducing room-id exposure to
+  // third parties. The actual credential-leak risk for this page is
+  // JavaScript telemetry reading `window.location.href` — Slice 5 editor
+  // code must scrub `#key=` and `#admin=` from any telemetry /
+  // error-reporting payload.
   const roomMatch = pathname.match(ROOM_PATH_RE);
   if (roomMatch && method === 'GET') {
     const roomId = roomMatch[1];
+    // Validate up front so invalid URLs never reach the room shell (or,
+    // in Slice 5, the editor bundle). Matches the /ws/:roomId validation.
+    if (!isRoomId(roomId)) {
+      return new Response('Not Found', { status: 404, headers: cors });
+    }
     return new Response(
       `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Plannotator Room</title></head><body><p>Room: ${escapeHtml(roomId)}</p><!-- Slice 5 replaces this with the editor bundle --></body></html>`,
-      { status: 200, headers: { ...cors, 'Content-Type': 'text/html; charset=utf-8' } },
+      {
+        status: 200,
+        headers: {
+          ...cors,
+          'Content-Type': 'text/html; charset=utf-8',
+          'Referrer-Policy': 'no-referrer',
+        },
+      },
     );
   }
 
@@ -69,6 +92,26 @@ export async function handleRequest(
 
 // ---------------------------------------------------------------------------
 // Room Creation
+//
+// PRODUCTION HARDENING (required before public deployment, not in V1 scope):
+// `POST /api/rooms` is intentionally unauthenticated in the V1 protocol. A
+// room is a capability-token pair (roomSecret + adminSecret) the creator
+// generates locally; this endpoint only asserts existence on the server, not
+// identity. That means anyone who can reach the Worker can create rooms —
+// fine for local dev and gated staging, NOT fine for the open internet.
+//
+// Before this Worker is exposed publicly it MUST be gated by one of:
+//   - Cloudflare rate limiting / WAF rule keyed on source IP + path
+//   - application-level throttle at the Worker entry (shared Durable Object
+//     counter or KV-based token bucket)
+//   - authenticated proxy (plannotator.ai app calls on behalf of signed-in users)
+//
+// CORS is NOT abuse protection — it's a browser same-origin policy and does
+// nothing to a direct HTTP client. Any future reviewer flagging "this
+// endpoint is unauthenticated" should be pointed HERE and to
+// `specs/v1-implementation-approach.md` → "Production hardening: rate-limit
+// POST /api/rooms". The protocol design accommodates this gating without
+// client changes.
 // ---------------------------------------------------------------------------
 
 async function handleCreateRoom(
@@ -124,6 +167,16 @@ async function handleWebSocket(
     return Response.json(
       { error: 'Expected WebSocket upgrade' },
       { status: 426, headers: cors },
+    );
+  }
+
+  // Validate roomId BEFORE idFromName(). idFromName on arbitrary attacker
+  // input would instantiate a fresh DO and hit storage on every request —
+  // a cheap abuse surface. Reject malformed IDs up front.
+  if (!isRoomId(roomId)) {
+    return Response.json(
+      { error: 'Invalid roomId' },
+      { status: 400, headers: cors },
     );
   }
 

@@ -28,6 +28,11 @@ plannotator/
 │   │   ├── index.html
 │   │   ├── index.tsx
 │   │   └── vite.config.ts
+│   ├── room-service/             # Live collaboration rooms (Cloudflare Worker + Durable Object)
+│   │   ├── core/                 # Handler, DO class, validation, CORS, log, types
+│   │   ├── targets/cloudflare.ts # Worker entry + DO re-export
+│   │   ├── scripts/smoke.ts      # Integration test against wrangler dev
+│   │   └── wrangler.toml         # SQLite-backed DO binding
 │   └── vscode-extension/         # VS Code extension — opens plans in editor tabs
 │       ├── bin/                   # Router scripts (open-in-vscode, xdg-open)
 │       ├── src/                   # extension.ts, cookie-proxy.ts, ipc-server.ts, panel-manager.ts, editor-annotations.ts, vscode-theme.ts
@@ -53,13 +58,23 @@ plannotator/
 │   │   │   ├── plan-diff/        # PlanDiffBadge, PlanDiffViewer, clean/raw diff views
 │   │   │   └── sidebar/          # SidebarContainer, SidebarTabs, VersionBrowser, ArchiveBrowser
 │   │   ├── utils/                # parser.ts, sharing.ts, storage.ts, planSave.ts, agentSwitch.ts, planDiffEngine.ts, planAgentInstructions.ts
-│   │   ├── hooks/                # useAnnotationHighlighter.ts, useSharing.ts, usePlanDiff.ts, useSidebar.ts, useLinkedDoc.ts, useAnnotationDraft.ts, useCodeAnnotationDraft.ts, useArchive.ts
+│   │   ├── hooks/                # useAnnotationHighlighter.ts, useSharing.ts, usePlanDiff.ts, useSidebar.ts, useLinkedDoc.ts, useAnnotationDraft.ts, useCodeAnnotationDraft.ts, useArchive.ts, useCollabRoom.ts
 │   │   └── types.ts
 │   ├── ai/                       # Provider-agnostic AI backbone (providers, sessions, endpoints)
 │   ├── shared/                   # Shared types, utilities, and cross-runtime logic
 │   │   ├── storage.ts            # Plan saving, version history, archive listing (node:fs only)
 │   │   ├── draft.ts              # Annotation draft persistence (node:fs only)
-│   │   └── project.ts            # Pure string helpers (sanitizeTag, extractRepoName, extractDirName)
+│   │   ├── project.ts            # Pure string helpers (sanitizeTag, extractRepoName, extractDirName)
+│   │   └── collab/               # Live Rooms protocol, crypto, validators, client runtime, React hook
+│   │       ├── types.ts          # Protocol types + runtime validators (isRoomAnnotation, isRoomSnapshot, isPresenceState, ...)
+│   │       ├── crypto.ts         # HKDF key derivation, HMAC proofs, AES-GCM payload encrypt/decrypt
+│   │       ├── ids.ts            # roomId/secret/opId/clientId generators
+│   │       ├── url.ts            # parseRoomUrl / buildRoomJoinUrl / buildAdminRoomUrl (client-only)
+│   │       ├── constants.ts      # ROOM_SECRET_LENGTH_BYTES, ADMIN_SECRET_LENGTH_BYTES, WS_CLOSE_ROOM_UNAVAILABLE, WS_CLOSE_REASON_ROOM_DELETED, WS_CLOSE_REASON_ROOM_EXPIRED
+│   │       ├── canonical-json.ts # canonicalJson for admin command proof binding
+│   │       ├── encoding.ts       # base64url helpers
+│   │       ├── client.ts         # Client barrel re-exports
+│   │       └── client-runtime/   # CollabRoomClient class, createRoom, joinRoom, apply-event reducer
 │   ├── editor/                   # Plan review App.tsx
 │   └── review-editor/            # Code review UI
 │       ├── App.tsx               # Main review app
@@ -274,6 +289,19 @@ All servers use random ports locally or fixed port (`19432`) in remote mode.
 | `/api/paste/:id`      | GET    | Retrieve stored compressed data            |
 
 Runs as a separate service on port `19433` (self-hosted) or as a Cloudflare Worker (hosted).
+
+### Room Service (`apps/room-service/`)
+
+Live-collaboration rooms for encrypted multi-user annotation. Zero-knowledge: the Worker + Durable Object stores and relays ciphertext only. Clients hold the room secret in the URL fragment and derive `authKey`/`eventKey`/`presenceKey`/`adminKey` locally.
+
+| Endpoint              | Method | Purpose                                    |
+| --------------------- | ------ | ------------------------------------------ |
+| `/health`             | GET    | Worker liveness probe                      |
+| `/c/:roomId`          | GET    | Room SPA shell (Slice 5 replaces with the editor bundle) |
+| `/api/rooms`          | POST   | Create room. Body: `{ roomId, roomVerifier, adminVerifier, initialSnapshotCiphertext, expiresInDays? }`. Returns `201` on success; `409` on duplicate `roomId`. Response body is intentionally not consumed by `createRoom()`. |
+| `/ws/:roomId`         | GET    | WebSocket upgrade into the room Durable Object. `roomId` is validated via `isRoomId()` before `idFromName()` to prevent arbitrary DO instantiation. |
+
+Protocol contract lives in `packages/shared/collab/`; the Worker/DO never imports client-only URL helpers.
 
 ## Plan Version History
 

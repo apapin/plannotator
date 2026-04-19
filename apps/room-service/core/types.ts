@@ -51,7 +51,18 @@ export interface RoomDurableState {
  * Both variants carry roomId so webSocketMessage() can access it without a storage read.
  */
 export type WebSocketAttachment =
-  | { authenticated: false; roomId: string; challengeId: string; nonce: string; expiresAt: number }
+  | {
+      authenticated: false;
+      roomId: string;
+      challengeId: string;
+      nonce: string;
+      expiresAt: number;
+      /** Server-assigned ephemeral client id for this connection. Included in
+       *  the auth challenge so the client's proof binds to it; prevents a
+       *  malicious participant from choosing another user's clientId at auth
+       *  time and overwriting their presence slot after auth. */
+      clientId: string;
+    }
   | {
       authenticated: true;
       roomId: string;

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { parseRoomUrl, buildRoomJoinUrl } from './url';
-import { generateRoomSecret, generateRoomId } from './ids';
+import { parseRoomUrl, buildRoomJoinUrl, buildAdminRoomUrl } from './url';
+import { generateRoomSecret, generateAdminSecret, generateRoomId } from './ids';
 
 describe('parseRoomUrl', () => {
   test('parses valid room URL', () => {
@@ -88,5 +88,80 @@ describe('round-trip', () => {
     expect(parsed).not.toBeNull();
     expect(parsed!.roomId).toBe(roomId);
     expect(parsed!.roomSecret).toEqual(secret);
+  });
+});
+
+describe('buildAdminRoomUrl', () => {
+  test('constructs URL with both key and admin', () => {
+    const secret = generateRoomSecret();
+    const adminSecret = generateAdminSecret();
+    const url = buildAdminRoomUrl('my-room', secret, adminSecret);
+    expect(url).toContain('/c/my-room#key=');
+    expect(url).toContain('&admin=');
+  });
+
+  test('rejects non-32-byte admin secret', () => {
+    expect(() => buildAdminRoomUrl('room', generateRoomSecret(), new Uint8Array(31)))
+      .toThrow('Invalid admin secret');
+  });
+
+  test('rejects non-32-byte room secret', () => {
+    expect(() => buildAdminRoomUrl('room', new Uint8Array(31), generateAdminSecret()))
+      .toThrow('Invalid room secret');
+  });
+
+  test('round-trip: parseRoomUrl recovers admin secret', () => {
+    const roomId = generateRoomId();
+    const secret = generateRoomSecret();
+    const adminSecret = generateAdminSecret();
+    const url = buildAdminRoomUrl(roomId, secret, adminSecret);
+    const parsed = parseRoomUrl(url);
+
+    expect(parsed).not.toBeNull();
+    expect(parsed!.roomId).toBe(roomId);
+    expect(parsed!.roomSecret).toEqual(secret);
+    expect(parsed!.adminSecret).toEqual(adminSecret);
+  });
+
+  test('parseRoomUrl without admin leaves adminSecret undefined', () => {
+    const secret = generateRoomSecret();
+    const url = buildRoomJoinUrl('room-abc', secret);
+    const parsed = parseRoomUrl(url);
+    expect(parsed!.adminSecret).toBeUndefined();
+  });
+
+  test('parseRoomUrl rejects malformed admin (wrong length)', () => {
+    // Manually construct URL with 1-byte admin
+    const secret = generateRoomSecret();
+    const url = buildRoomJoinUrl('room', secret) + '&admin=AQ';
+    expect(parseRoomUrl(url)).toBeNull();
+  });
+});
+
+describe('URL building — trailing slash hygiene (P3)', () => {
+  test('buildRoomJoinUrl strips trailing slash from baseUrl', () => {
+    const roomSecret = generateRoomSecret();
+    const withSlash = buildRoomJoinUrl('room-42', roomSecret, 'https://example.com/');
+    const withoutSlash = buildRoomJoinUrl('room-42', roomSecret, 'https://example.com');
+    expect(withSlash).toBe(withoutSlash);
+    expect(withSlash).not.toContain('com//c/');
+  });
+
+  test('buildAdminRoomUrl strips trailing slash from baseUrl', () => {
+    const roomSecret = generateRoomSecret();
+    const adminSecret = generateAdminSecret();
+    const withSlash = buildAdminRoomUrl('r', roomSecret, adminSecret, 'https://example.com/');
+    const withoutSlash = buildAdminRoomUrl('r', roomSecret, adminSecret, 'https://example.com');
+    expect(withSlash).toBe(withoutSlash);
+  });
+
+  test('round-trips the constructed URL through parseRoomUrl regardless of trailing slash', () => {
+    const roomSecret = generateRoomSecret();
+    const roomId = generateRoomId();
+    const url = buildRoomJoinUrl(roomId, roomSecret, 'https://example.com/');
+    const parsed = parseRoomUrl(url);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.roomId).toBe(roomId);
+    expect(parsed!.roomSecret).toEqual(roomSecret);
   });
 });

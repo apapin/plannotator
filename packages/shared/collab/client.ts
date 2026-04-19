@@ -8,3 +8,9 @@
 
 export * from './index';
 export * from './url';
+
+// Client runtime (WebSocket + stateful client)
+export * from './client-runtime/client';
+export * from './client-runtime/create-room';
+export * from './client-runtime/join-room';
+export * from './client-runtime/types';

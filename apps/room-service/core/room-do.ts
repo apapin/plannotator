@@ -24,24 +24,51 @@ import type {
   SequencedEnvelope,
   RoomTransportMessage,
 } from '@plannotator/shared/collab';
-import { verifyAuthProof, verifyAdminProof, generateChallengeId, generateNonce } from '@plannotator/shared/collab';
+import { verifyAuthProof, verifyAdminProof, generateChallengeId, generateClientId, generateNonce } from '@plannotator/shared/collab';
+// Shared delete close-signal constants — client matches on the exact literal,
+// so both ends MUST import from the same source.
+import { WS_CLOSE_REASON_ROOM_DELETED, WS_CLOSE_REASON_ROOM_EXPIRED, WS_CLOSE_ROOM_UNAVAILABLE } from '@plannotator/shared/collab/constants';
 import { DurableObject } from 'cloudflare:workers';
 import type { Env, RoomDurableState, WebSocketAttachment } from './types';
 import { clampExpiryDays, hasRoomExpired, validateServerEnvelope, validateAdminCommandEnvelope, isValidationError } from './validation';
-import type { ValidationError } from './validation';
 import { safeLog } from './log';
 
 const CHALLENGE_TTL_MS = 30_000;
 const ADMIN_CHALLENGE_TTL_MS = 30_000;
 const DELETE_BATCH_SIZE = 128; // Cloudflare DO storage.delete() max keys per call
+/**
+ * Page size for reconnect replay. Bounds peak DO memory during replay —
+ * storage.list() without a limit reads all matching rows at once, which
+ * fails for large/noisy rooms. Each page is streamed out to the WebSocket,
+ * then released. 128 is a conservative starting point well within DO memory
+ * budgets even if each event ciphertext is a few KB.
+ */
+const REPLAY_PAGE_SIZE = 128;
 
-// WebSocket close codes
+/**
+ * Abuse/failure containment: per-room WebSocket cap. Not about expected
+ * normal room sizes — V1 rooms are small — but bounds broadcast fanout
+ * and runaway reconnect loops if a misbehaving client (or attacker with
+ * the room URL) opens sockets without releasing them. Returns 429 Too
+ * Many Requests when exceeded; honest clients see this only if the room
+ * is already saturated.
+ */
+const MAX_CONNECTIONS_PER_ROOM = 100;
+
+/** Pre-auth length caps on the auth.response message. Real values are
+ *  much smaller (challengeId ~22 chars, clientId server-assigned, proof
+ *  ~43 chars for HMAC-SHA-256 base64url). Generous caps bound the
+ *  unauthenticated work the server is willing to do per connection. */
+const AUTH_CHALLENGE_ID_MAX_LENGTH = 64;
+const AUTH_CLIENT_ID_MAX_LENGTH = 64;
+const AUTH_PROOF_MAX_LENGTH = 128;
+
+// WebSocket close codes (room-service-internal; shared close codes come from constants.ts)
 const WS_CLOSE_AUTH_REQUIRED = 4001;
 const WS_CLOSE_UNKNOWN_CHALLENGE = 4002;
 const WS_CLOSE_CHALLENGE_EXPIRED = 4003;
 const WS_CLOSE_INVALID_PROOF = 4004;
 const WS_CLOSE_PROTOCOL_ERROR = 4005;
-const WS_CLOSE_ROOM_UNAVAILABLE = 4006;
 
 /** Zero-pad a seq number to 10 digits for lexicographic storage ordering. */
 function padSeq(seq: number): string {
@@ -141,12 +168,22 @@ export class RoomDurableObject extends DurableObject<Env> {
       return Response.json({ error: 'Room expired' }, { status: 410 });
     }
 
+    // Per-room connection cap — see MAX_CONNECTIONS_PER_ROOM for rationale.
+    if (this.ctx.getWebSockets().length >= MAX_CONNECTIONS_PER_ROOM) {
+      safeLog('ws:room-full', { roomId: roomState.roomId, cap: MAX_CONNECTIONS_PER_ROOM });
+      return Response.json({ error: 'Room is full' }, { status: 429 });
+    }
+
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
 
     const challengeId = generateChallengeId();
     const nonce = generateNonce();
     const expiresAt = Date.now() + CHALLENGE_TTL_MS;
+    // Server-assigned clientId — see WebSocketAttachment docstring. The auth
+    // proof is bound to this value, so a participant cannot choose an active
+    // peer's clientId at auth time.
+    const clientId = generateClientId();
 
     this.ctx.acceptWebSocket(server);
 
@@ -156,6 +193,7 @@ export class RoomDurableObject extends DurableObject<Env> {
       challengeId,
       nonce,
       expiresAt,
+      clientId,
     };
     server.serializeAttachment(attachment);
 
@@ -164,6 +202,7 @@ export class RoomDurableObject extends DurableObject<Env> {
       challengeId,
       nonce,
       expiresAt,
+      clientId,
     };
     server.send(JSON.stringify(challenge));
 
@@ -203,6 +242,22 @@ export class RoomDurableObject extends DurableObject<Env> {
         typeof msg.proof !== 'string' || !msg.proof
       ) {
         ws.close(WS_CLOSE_PROTOCOL_ERROR, 'Malformed auth response');
+        return;
+      }
+      // Pre-auth length caps. Proofs + IDs are small in practice
+      // (challengeId ~22 chars, clientId server-assigned, proof 43 chars).
+      // Without caps, an unauthenticated peer can allocate/verify oversized
+      // strings. Match the admin-envelope caps for consistency.
+      if (msg.challengeId.length > AUTH_CHALLENGE_ID_MAX_LENGTH) {
+        ws.close(WS_CLOSE_PROTOCOL_ERROR, 'challengeId too long');
+        return;
+      }
+      if (msg.clientId.length > AUTH_CLIENT_ID_MAX_LENGTH) {
+        ws.close(WS_CLOSE_PROTOCOL_ERROR, 'clientId too long');
+        return;
+      }
+      if (msg.proof.length > AUTH_PROOF_MAX_LENGTH) {
+        ws.close(WS_CLOSE_PROTOCOL_ERROR, 'proof too long');
         return;
       }
       // Validate lastSeq as non-negative integer if provided
@@ -277,17 +332,17 @@ export class RoomDurableObject extends DurableObject<Env> {
       return null;
     }
     if (roomState.status === 'deleted') {
-      ws.close(WS_CLOSE_ROOM_UNAVAILABLE, 'Room deleted');
+      ws.close(WS_CLOSE_ROOM_UNAVAILABLE, WS_CLOSE_REASON_ROOM_DELETED);
       return null;
     }
     if (roomState.status === 'expired') {
-      ws.close(WS_CLOSE_ROOM_UNAVAILABLE, 'Room expired');
+      ws.close(WS_CLOSE_ROOM_UNAVAILABLE, WS_CLOSE_REASON_ROOM_EXPIRED);
       return null;
     }
     // Lazy expiry: active/locked room past retention deadline
     if (hasRoomExpired(roomState.expiresAt)) {
       await this.markExpired(roomState, ws);
-      ws.close(WS_CLOSE_ROOM_UNAVAILABLE, 'Room expired');
+      ws.close(WS_CLOSE_ROOM_UNAVAILABLE, WS_CLOSE_REASON_ROOM_EXPIRED);
       return null;
     }
     return roomState;
@@ -304,11 +359,12 @@ export class RoomDurableObject extends DurableObject<Env> {
   ): Promise<void> {
     const validated = validateServerEnvelope(msg);
     if (isValidationError(validated)) {
-      this.sendError(ws, 'validation_error', (validated as ValidationError).error);
+      this.sendError(ws, 'validation_error', validated.error);
       return;
     }
+    // isValidationError narrows; `validated` is ServerEnvelope here.
     const envelope: ServerEnvelope = {
-      ...validated as ServerEnvelope,
+      ...validated,
       clientId: meta.clientId, // Override — prevent spoofing
     };
 
@@ -322,28 +378,48 @@ export class RoomDurableObject extends DurableObject<Env> {
         return;
       }
 
-      // Sequence the event
-      roomState.seq++;
+      // Sequence the event on an IMMUTABLE next-state object. If the
+      // durable write fails, we must NOT have already bumped roomState.seq
+      // in memory — the next event must reuse the current seq, not a gap'd
+      // one. Nor may we broadcast an event that was never persisted.
+      const nextSeq = roomState.seq + 1;
       const sequenced: SequencedEnvelope = {
-        seq: roomState.seq,
+        seq: nextSeq,
         receivedAt: Date.now(),
         envelope,
       };
+      const nextRoomState: RoomDurableState = { ...roomState, seq: nextSeq };
 
-      // Atomic write: event key + room metadata in one put
-      await this.ctx.storage.put({
-        [`event:${padSeq(roomState.seq)}`]: sequenced,
-        'room': roomState,
-      } as Record<string, unknown>);
+      // Atomic write: event key + room metadata in one put.
+      try {
+        await this.ctx.storage.put({
+          [`event:${padSeq(nextSeq)}`]: sequenced,
+          'room': nextRoomState,
+        } as Record<string, unknown>);
+      } catch (e) {
+        // Persistence failed. Surface a clean error to the sender so their
+        // sendAnnotation* promise rejects (or their UI sees lastError) —
+        // otherwise they'd think the op landed on the wire. Do NOT bump
+        // in-memory seq, do NOT broadcast.
+        safeLog('room:event-persist-error', {
+          roomId: roomState.roomId,
+          attemptedSeq: nextSeq,
+          clientId: meta.clientId,
+          error: String(e),
+        });
+        this.sendError(ws, 'event_persist_failed', 'Failed to persist event');
+        return;
+      }
 
-      // Broadcast to ALL (including sender for lastSeq advancement)
+      // Durable write succeeded — commit in-memory state and broadcast.
+      Object.assign(roomState, nextRoomState);
       const transport: RoomTransportMessage = {
         type: 'room.event',
         seq: sequenced.seq,
         receivedAt: sequenced.receivedAt,
         envelope: sequenced.envelope,
       };
-      this.broadcastToAll(transport);
+      this.broadcast(transport);
 
       safeLog('room:event-sequenced', { roomId: roomState.roomId, seq: roomState.seq, clientId: meta.clientId });
     } else {
@@ -352,7 +428,7 @@ export class RoomDurableObject extends DurableObject<Env> {
         type: 'room.presence',
         envelope,
       };
-      this.broadcastToOthers(ws, transport);
+      this.broadcast(transport, ws);
     }
   }
 
@@ -371,26 +447,26 @@ export class RoomDurableObject extends DurableObject<Env> {
       return;
     }
 
+    // The clientId in auth.response MUST match the server-assigned clientId
+    // from this connection's challenge. This prevents a participant from
+    // choosing another peer's clientId at auth time and overwriting their
+    // presence slot.
+    if (authResponse.clientId !== meta.clientId) {
+      safeLog('ws:auth-rejected', { reason: 'clientId-mismatch', roomId: meta.roomId });
+      ws.close(WS_CLOSE_INVALID_PROOF, 'clientId does not match challenge');
+      return;
+    }
+
     if (Date.now() > meta.expiresAt) {
       safeLog('ws:auth-rejected', { reason: 'expired', roomId: meta.roomId });
       ws.close(WS_CLOSE_CHALLENGE_EXPIRED, 'Challenge expired');
       return;
     }
 
-    const roomState = await this.ctx.storage.get<RoomDurableState>('room');
-    if (!roomState) {
-      ws.close(WS_CLOSE_ROOM_UNAVAILABLE, 'Room unavailable');
-      return;
-    }
-    if (roomState.status === 'deleted') {
-      ws.close(WS_CLOSE_ROOM_UNAVAILABLE, 'Room deleted');
-      return;
-    }
-    if (roomState.status === 'expired' || hasRoomExpired(roomState.expiresAt)) {
-      await this.markExpired(roomState, ws);
-      ws.close(WS_CLOSE_ROOM_UNAVAILABLE, 'Room expired');
-      return;
-    }
+    // Delegate lifecycle checks (deleted / expired / lazy-expiry) to the
+    // shared helper so this path doesn't drift from the post-auth path.
+    const roomState = await this.checkRoomLifecycle(ws, meta.roomId);
+    if (!roomState) return;
 
     const valid = await verifyAuthProof(
       roomState.roomVerifier,
@@ -437,6 +513,19 @@ export class RoomDurableObject extends DurableObject<Env> {
     roomState: RoomDurableState,
     lastSeq: number | undefined,
   ): Promise<void> {
+    // Local helper: single place that constructs and sends a room.snapshot
+    // transport message. Keeps the message shape in one place so any future
+    // field addition lands once.
+    const sendSnapshotToSocket = (): void => {
+      if (!roomState.snapshotCiphertext) return;
+      const snapshotMsg: RoomTransportMessage = {
+        type: 'room.snapshot',
+        snapshotSeq: roomState.snapshotSeq ?? 0,
+        snapshotCiphertext: roomState.snapshotCiphertext,
+      };
+      ws.send(JSON.stringify(snapshotMsg));
+    };
+
     // Determine replay strategy
     let sendSnapshot = false;
     let replayFrom: number;
@@ -452,13 +541,8 @@ export class RoomDurableObject extends DurableObject<Env> {
       safeLog('ws:replay-anomaly', { roomId: roomState.roomId, lastSeq, currentSeq: roomState.seq });
     } else if (lastSeq === roomState.seq) {
       // Fully caught up — still send snapshot if seq is 0 (fresh room, no events yet)
-      if (roomState.seq === 0 && roomState.snapshotCiphertext) {
-        const snapshotMsg: RoomTransportMessage = {
-          type: 'room.snapshot',
-          snapshotSeq: roomState.snapshotSeq ?? 0,
-          snapshotCiphertext: roomState.snapshotCiphertext,
-        };
-        ws.send(JSON.stringify(snapshotMsg));
+      if (roomState.seq === 0) {
+        sendSnapshotToSocket();
       }
       return;
     } else {
@@ -476,31 +560,47 @@ export class RoomDurableObject extends DurableObject<Env> {
       }
     }
 
-    // Send snapshot if needed
-    if (sendSnapshot && roomState.snapshotCiphertext) {
-      const snapshotMsg: RoomTransportMessage = {
-        type: 'room.snapshot',
-        snapshotSeq: roomState.snapshotSeq ?? 0,
-        snapshotCiphertext: roomState.snapshotCiphertext,
-      };
-      ws.send(JSON.stringify(snapshotMsg));
+    if (sendSnapshot) {
+      sendSnapshotToSocket();
     }
 
-    // Replay events from storage (if any exist)
+    // Replay events from storage (if any exist). Paginated so large rooms
+    // don't load the full event log into DO memory at reconnect time —
+    // storage.list() without a limit can blow memory in rooms with many
+    // retained events (V1 retains all events for the room lifetime).
     if (roomState.seq > 0 && replayFrom <= roomState.seq) {
-      const startKey = `event:${padSeq(replayFrom)}`;
-      const events = await this.ctx.storage.list<SequencedEnvelope>({
-        prefix: 'event:',
-        start: startKey,
-      });
-      for (const [, sequenced] of events) {
-        const transport: RoomTransportMessage = {
-          type: 'room.event',
-          seq: sequenced.seq,
-          receivedAt: sequenced.receivedAt,
-          envelope: sequenced.envelope,
-        };
-        ws.send(JSON.stringify(transport));
+      let cursor = `event:${padSeq(replayFrom)}`;
+      const end = `event:${padSeq(roomState.seq)}\uffff`;  // inclusive of roomState.seq
+      while (true) {
+        const page = await this.ctx.storage.list<SequencedEnvelope>({
+          prefix: 'event:',
+          start: cursor,
+          end,
+          limit: REPLAY_PAGE_SIZE,
+        });
+        if (page.size === 0) break;
+        let lastKey = cursor;
+        for (const [key, sequenced] of page) {
+          const transport: RoomTransportMessage = {
+            type: 'room.event',
+            seq: sequenced.seq,
+            receivedAt: sequenced.receivedAt,
+            envelope: sequenced.envelope,
+          };
+          ws.send(JSON.stringify(transport));
+          lastKey = key;
+        }
+        if (page.size < REPLAY_PAGE_SIZE) break;
+        // Advance cursor past the last emitted key. `storage.list({ start })`
+        // is INCLUSIVE, so passing `lastKey` would re-emit the final event.
+        // Appending U+0000 (the smallest Unicode code point) produces a string
+        // strictly greater than `lastKey` but strictly less than any valid
+        // next key — because padded numeric seq keys are ASCII digits only
+        // and never contain a null byte, no real key can fall between them.
+        // Using `\uffff` (max code point) here would be WRONG: it would skip
+        // all keys lexicographically between `lastKey` and `lastKey\uffff`,
+        // dropping legitimate events from the replay.
+        cursor = `${lastKey}\u0000`;
       }
     }
   }
@@ -544,12 +644,29 @@ export class RoomDurableObject extends DurableObject<Env> {
     meta: Extract<WebSocketAttachment, { authenticated: true }>,
     msg: Record<string, unknown>,
   ): Promise<void> {
+    // ADMIN ERROR-CODE CONTRACT
+    // -------------------------
+    // Every error code emitted from this method AND from helpers it calls
+    // (applyLock, applyUnlock, applyDelete, admin-scoped branches of
+    // handleAdminChallengeRequest) must be listed in the client's
+    // ADMIN_SCOPED_ERROR_CODES Set in packages/shared/collab/client-runtime/client.ts.
+    // That Set gates which room.error payloads reject a pending admin promise;
+    // a code that fires here but is missing from the Set leaves the client
+    // hanging until AdminTimeoutError. A code that fires on the event channel
+    // but is ADDED to the Set (e.g. room_locked) wrongly cancels unrelated
+    // in-flight admin commands. When adding/renaming/removing admin-path
+    // codes, update the client Set in the same change.
     const validated = validateAdminCommandEnvelope(msg);
     if (isValidationError(validated)) {
-      this.sendError(ws, 'validation_error', (validated as ValidationError).error);
+      // Admin-scoped code so the client can distinguish admin-flow failures
+      // from event-channel failures (e.g. room_locked fires on the event
+      // channel while a lock command is in flight — rejecting pendingAdmin
+      // on those would be wrong).
+      this.sendError(ws, 'admin_validation_error', validated.error);
       return;
     }
-    const cmdEnvelope = validated as AdminCommandEnvelope;
+    // isValidationError narrows; `validated` is AdminCommandEnvelope here.
+    const cmdEnvelope = validated;
 
     // Reject cross-connection clientId spoofing
     if (cmdEnvelope.clientId !== meta.clientId) {
@@ -612,6 +729,13 @@ export class RoomDurableObject extends DurableObject<Env> {
       case 'room.delete':
         await this.applyDelete(ws, roomState);
         break;
+      default: {
+        // Compile-time exhaustiveness guard: if a new admin command is added
+        // to the union and a case here is missed, TypeScript fails here.
+        const _exhaustive: never = cmdEnvelope.command;
+        void _exhaustive;
+        break;
+      }
     }
   }
 
@@ -629,22 +753,62 @@ export class RoomDurableObject extends DurableObject<Env> {
       return;
     }
 
-    // Store final snapshot if provided
+    // Build a NEW state object immutably so a storage.put failure leaves the
+    // in-memory roomState reference unchanged and the caller can't observe
+    // a partially-applied lock.
+    const next: RoomDurableState = {
+      ...roomState,
+      status: 'locked',
+      lockedAt: Date.now(),
+    };
+
+    // Store final snapshot if provided. Rules:
+    //   - atSeq > roomState.seq → reject (claims a position beyond what the
+    //     server has durably sequenced).
+    //   - atSeq < existingSnapshotSeq → reject (would regress the baseline).
+    //   - atSeq === existingSnapshotSeq → accept the lock but IGNORE the
+    //     redundant snapshot payload. Overwriting at the same seq would
+    //     reintroduce the split-brain risk we explicitly blocked (two
+    //     different ciphertexts labeled with the same seq); rejecting the
+    //     whole lock would break the realistic lock → unlock → lock flow
+    //     where no events arrive between the two locks and client.seq still
+    //     equals the previous snapshotSeq.
+    //   - atSeq > existingSnapshotSeq → accept, write the new snapshot.
     if (command.finalSnapshotCiphertext && command.finalSnapshotAtSeq !== undefined) {
       const atSeq = command.finalSnapshotAtSeq;
-      if (atSeq > roomState.seq || atSeq < (roomState.snapshotSeq ?? 0)) {
-        this.sendError(ws, 'invalid_snapshot_seq', `finalSnapshotAtSeq must be between ${roomState.snapshotSeq ?? 0} and ${roomState.seq}`);
+      const existingSnapshotSeq = roomState.snapshotSeq ?? 0;
+      if (atSeq > roomState.seq || atSeq < existingSnapshotSeq) {
+        this.sendError(ws, 'invalid_snapshot_seq', `finalSnapshotAtSeq must be >= ${existingSnapshotSeq} and <= ${roomState.seq}`);
         return;
       }
-      roomState.snapshotCiphertext = command.finalSnapshotCiphertext;
-      roomState.snapshotSeq = atSeq;
+      if (atSeq > existingSnapshotSeq) {
+        next.snapshotCiphertext = command.finalSnapshotCiphertext;
+        next.snapshotSeq = atSeq;
+      } else {
+        // atSeq === existingSnapshotSeq: keep the existing stored snapshot;
+        // log so this is visible in ops even though it's expected behavior.
+        safeLog('admin:lock-snapshot-redundant', {
+          roomId: roomState.roomId,
+          atSeq,
+          existingSnapshotSeq,
+        });
+      }
     }
 
-    roomState.status = 'locked';
-    roomState.lockedAt = Date.now();
-    await this.ctx.storage.put('room', roomState);
+    try {
+      await this.ctx.storage.put('room', next);
+    } catch (e) {
+      // Do NOT broadcast room.status or mutate in-memory state on durable
+      // write failure. Send an admin-scoped error so the pending lock
+      // rejects cleanly on the caller.
+      safeLog('admin:lock-storage-error', { roomId: roomState.roomId, error: String(e) });
+      this.sendError(ws, 'lock_failed', 'Failed to persist locked state');
+      return;
+    }
 
-    this.broadcastToAll({ type: 'room.status', status: 'locked' });
+    // Durable write succeeded — now safe to sync in-memory state and broadcast.
+    Object.assign(roomState, next);
+    this.broadcast({ type: 'room.status', status: 'locked' });
     safeLog('admin:room-locked', { roomId: roomState.roomId });
   }
 
@@ -657,11 +821,23 @@ export class RoomDurableObject extends DurableObject<Env> {
       return;
     }
 
-    roomState.status = 'active';
-    roomState.lockedAt = undefined;
-    await this.ctx.storage.put('room', roomState);
+    // Immutable next-state + gated broadcast, matching applyLock.
+    const next: RoomDurableState = {
+      ...roomState,
+      status: 'active',
+      lockedAt: undefined,
+    };
 
-    this.broadcastToAll({ type: 'room.status', status: 'active' });
+    try {
+      await this.ctx.storage.put('room', next);
+    } catch (e) {
+      safeLog('admin:unlock-storage-error', { roomId: roomState.roomId, error: String(e) });
+      this.sendError(ws, 'unlock_failed', 'Failed to persist unlocked state');
+      return;
+    }
+
+    Object.assign(roomState, next);
+    this.broadcast({ type: 'room.status', status: 'active' });
     safeLog('admin:room-unlocked', { roomId: roomState.roomId });
   }
 
@@ -693,9 +869,13 @@ export class RoomDurableObject extends DurableObject<Env> {
     try {
       await this.ctx.storage.put('room', deletedState);
     } catch (e) {
+      // Tombstone write failed — the room is still ALIVE. Tell the admin
+      // caller the delete failed, but do NOT close other clients: kicking
+      // everyone into a terminal "room unavailable" state would lie about
+      // the lifecycle (the room is still active server-side). The admin
+      // can retry deleteRoom().
       safeLog('room:delete-storage-error', { roomId: roomState.roomId, error: String(e) });
       this.sendError(ws, 'delete_failed', 'Failed to delete room');
-      this.closeRoomSockets('Room delete failed');
       return;
     }
 
@@ -706,8 +886,10 @@ export class RoomDurableObject extends DurableObject<Env> {
       safeLog('room:delete-purge-error', { roomId: roomState.roomId, error: String(e) });
     }
 
-    this.broadcastToAll({ type: 'room.status', status: 'deleted' });
-    this.closeRoomSockets('Room deleted');
+    this.broadcast({ type: 'room.status', status: 'deleted' });
+    // Use the shared constant — the client matches this literal to decide
+    // that deleteRoom() succeeded even if the status broadcast was missed.
+    this.closeRoomSockets(WS_CLOSE_REASON_ROOM_DELETED);
     safeLog('admin:room-deleted', { roomId: roomState.roomId });
   }
 
@@ -715,15 +897,20 @@ export class RoomDurableObject extends DurableObject<Env> {
   // Storage Helpers
   // ---------------------------------------------------------------------------
 
-  /** Delete all event keys from storage in batches of DELETE_BATCH_SIZE. */
+  /**
+   * Delete all event keys from storage in batches. Paginated for the same
+   * reason as replay: avoid loading the full event log into DO memory.
+   * Less latency-sensitive than replay but the memory bound still matters.
+   */
   private async purgeEventKeys(): Promise<void> {
-    const events = await this.ctx.storage.list({ prefix: 'event:' });
-    if (events.size === 0) return;
-
-    const keys = [...events.keys()];
-    for (let i = 0; i < keys.length; i += DELETE_BATCH_SIZE) {
-      const batch = keys.slice(i, i + DELETE_BATCH_SIZE);
-      await this.ctx.storage.delete(batch);
+    while (true) {
+      const page = await this.ctx.storage.list({
+        prefix: 'event:',
+        limit: DELETE_BATCH_SIZE,
+      });
+      if (page.size === 0) break;
+      await this.ctx.storage.delete([...page.keys()]);
+      if (page.size < DELETE_BATCH_SIZE) break;
     }
   }
 
@@ -771,7 +958,7 @@ export class RoomDurableObject extends DurableObject<Env> {
       safeLog('room:expire-purge-error', { roomId: roomState.roomId, error: String(e) });
     }
 
-    this.closeRoomSockets('Room expired', except);
+    this.closeRoomSockets(WS_CLOSE_REASON_ROOM_EXPIRED, except);
     safeLog('room:expired', { roomId: roomState.roomId });
     return true;
   }
@@ -780,17 +967,12 @@ export class RoomDurableObject extends DurableObject<Env> {
   // Broadcast Helpers
   // ---------------------------------------------------------------------------
 
-  private broadcastToAll(message: RoomTransportMessage): void {
-    const json = JSON.stringify(message);
-    for (const socket of this.ctx.getWebSockets()) {
-      const att = socket.deserializeAttachment() as WebSocketAttachment | null;
-      if (att?.authenticated) {
-        try { socket.send(json); } catch { /* socket may have closed */ }
-      }
-    }
-  }
-
-  private broadcastToOthers(exclude: WebSocket, message: RoomTransportMessage): void {
+  /**
+   * Send a transport message to every authenticated socket in the room,
+   * optionally excluding one (e.g. the sender for presence relay). Send
+   * failures are intentionally ignored — the target socket may have closed.
+   */
+  private broadcast(message: RoomTransportMessage, exclude?: WebSocket): void {
     const json = JSON.stringify(message);
     for (const socket of this.ctx.getWebSockets()) {
       if (socket === exclude) continue;

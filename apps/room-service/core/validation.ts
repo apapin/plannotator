@@ -38,6 +38,13 @@ function isNonEmptyString(value: unknown): value is string {
  */
 const ROOM_ID_RE = /^[A-Za-z0-9_-]{22}$/;
 
+/** Runtime check for the roomId shape. Exported for use in WebSocket upgrade
+ *  paths where invalid IDs must be rejected BEFORE idFromName/DO instantiation
+ *  to avoid arbitrary DO names and storage reads on attacker-controlled input. */
+export function isRoomId(s: unknown): s is string {
+  return typeof s === 'string' && ROOM_ID_RE.test(s);
+}
+
 /**
  * HMAC-SHA-256 output is 32 bytes, which base64url-encodes to 43 chars without padding.
  * Verifiers must match this exact shape.
@@ -99,6 +106,34 @@ export function isValidationError<T>(result: T | ValidationError): result is Val
 const VALID_CHANNELS = new Set(['event', 'presence']);
 const VALID_ADMIN_COMMANDS = new Set(['room.lock', 'room.unlock', 'room.delete']);
 
+/**
+ * Max opId length on inbound event-channel envelopes. opId is stored DURABLY
+ * inside sequenced envelopes, so an authenticated participant could otherwise
+ * bloat replay bandwidth/storage by sending oversized opIds. generateOpId()
+ * produces 22-char base64url values (128 bits); 64 gives comfortable headroom
+ * without enabling amplification.
+ */
+const MAX_OP_ID_LENGTH = 64;
+/**
+ * Max clientId length. Server overrides envelope.clientId with the
+ * authenticated meta.clientId before persistence, but we still cap inbound
+ * values to keep validation symmetric and avoid storing oversized strings
+ * if the override is ever removed.
+ */
+const MAX_CLIENT_ID_LENGTH = 64;
+
+/**
+ * Max adminProof length. HMAC-SHA-256 base64url-encodes to 43 chars; the
+ * generous cap guards against pathological input without rejecting any
+ * legitimate client. Prevents an authenticated peer from spamming
+ * oversized proof strings to blow up verification cost / log volume.
+ */
+const MAX_ADMIN_PROOF_LENGTH = 128;
+
+/** Max challengeId length. generateChallengeId() produces 16-byte base64url
+ *  (22 chars); the cap leaves generous headroom without legitimizing abuse. */
+const MAX_CHALLENGE_ID_LENGTH = 64;
+
 /** Validate a ServerEnvelope from an authenticated WebSocket message. */
 export function validateServerEnvelope(
   msg: Record<string, unknown>,
@@ -106,8 +141,14 @@ export function validateServerEnvelope(
   if (!isNonEmptyString(msg.clientId)) {
     return { error: 'Missing or empty "clientId"', status: 400 };
   }
+  if (msg.clientId.length > MAX_CLIENT_ID_LENGTH) {
+    return { error: `"clientId" exceeds max length ${MAX_CLIENT_ID_LENGTH}`, status: 400 };
+  }
   if (!isNonEmptyString(msg.opId)) {
     return { error: 'Missing or empty "opId"', status: 400 };
+  }
+  if (msg.opId.length > MAX_OP_ID_LENGTH) {
+    return { error: `"opId" exceeds max length ${MAX_OP_ID_LENGTH}`, status: 400 };
   }
   if (!isNonEmptyString(msg.channel) || !VALID_CHANNELS.has(msg.channel)) {
     return { error: '"channel" must be "event" or "presence"', status: 400 };
@@ -138,11 +179,23 @@ export function validateAdminCommandEnvelope(
   if (!isNonEmptyString(msg.challengeId)) {
     return { error: 'Missing or empty "challengeId"', status: 400 };
   }
+  // Cap string inputs that flow into proof verification and command dispatch.
+  // Prevents an authenticated peer from spamming oversized identifiers that
+  // would otherwise hit canonicalJson / log volume on every admin attempt.
+  if (msg.challengeId.length > MAX_CHALLENGE_ID_LENGTH) {
+    return { error: `"challengeId" exceeds max length ${MAX_CHALLENGE_ID_LENGTH}`, status: 400 };
+  }
   if (!isNonEmptyString(msg.clientId)) {
     return { error: 'Missing or empty "clientId"', status: 400 };
   }
+  if (msg.clientId.length > MAX_CLIENT_ID_LENGTH) {
+    return { error: `"clientId" exceeds max length ${MAX_CLIENT_ID_LENGTH}`, status: 400 };
+  }
   if (!isNonEmptyString(msg.adminProof)) {
     return { error: 'Missing or empty "adminProof"', status: 400 };
+  }
+  if (msg.adminProof.length > MAX_ADMIN_PROOF_LENGTH) {
+    return { error: `"adminProof" exceeds max length ${MAX_ADMIN_PROOF_LENGTH}`, status: 400 };
   }
 
   if (!msg.command || typeof msg.command !== 'object') {
@@ -154,7 +207,16 @@ export function validateAdminCommandEnvelope(
     return { error: `Unknown command type: ${String(cmd.type)}`, status: 400 };
   }
 
-  // Validate room.lock snapshot pair — both present or both absent
+  // Build a SANITIZED command with exactly the expected fields. Extra fields
+  // on the inbound payload are dropped. This is defense-in-depth:
+  // - The admin proof is computed over canonicalJson(command), so if a client
+  //   smuggles extra fields into the payload, their proof is bound to
+  //   `canonicalJson(dirty)` while the server's re-verification will be
+  //   computed over `canonicalJson(sanitized)` — proof verification fails.
+  //   Honest clients serialize clean commands and their proofs verify.
+  // - Downstream code (logging, storage, proof recomputation) only ever sees
+  //   the narrow shape its type says it does.
+  let sanitizedCommand: AdminCommandEnvelope['command'];
   if (cmd.type === 'room.lock') {
     const hasCiphertext = isNonEmptyString(cmd.finalSnapshotCiphertext);
     const hasAtSeq = typeof cmd.finalSnapshotAtSeq === 'number';
@@ -167,13 +229,29 @@ export function validateAdminCommandEnvelope(
     if (hasAtSeq && ((cmd.finalSnapshotAtSeq as number) < 0 || !Number.isInteger(cmd.finalSnapshotAtSeq))) {
       return { error: '"finalSnapshotAtSeq" must be a non-negative integer', status: 400 };
     }
+    sanitizedCommand = hasCiphertext && hasAtSeq
+      ? {
+          type: 'room.lock',
+          finalSnapshotCiphertext: cmd.finalSnapshotCiphertext as string,
+          finalSnapshotAtSeq: cmd.finalSnapshotAtSeq as number,
+        }
+      : { type: 'room.lock' };
+  } else if (cmd.type === 'room.unlock') {
+    sanitizedCommand = { type: 'room.unlock' };
+  } else if (cmd.type === 'room.delete') {
+    sanitizedCommand = { type: 'room.delete' };
+  } else {
+    // Explicit fallback: if a future admin command is added to
+    // VALID_ADMIN_COMMANDS without a branch here, reject rather than
+    // accidentally aliasing to room.delete.
+    return { error: `Unknown command type: ${String(cmd.type)}`, status: 400 };
   }
 
   return {
     type: 'admin.command',
     challengeId: msg.challengeId,
     clientId: msg.clientId,
-    command: msg.command as AdminCommandEnvelope['command'],
+    command: sanitizedCommand,
     adminProof: msg.adminProof,
   };
 }

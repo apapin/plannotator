@@ -20,10 +20,10 @@ import {
   computeAdminProof,
   encryptSnapshot,
   encryptPayload,
+  encryptPresence,
   generateRoomId,
   generateRoomSecret,
   generateAdminSecret,
-  generateClientId,
   generateOpId,
 } from '@plannotator/shared/collab/client';
 
@@ -74,8 +74,11 @@ async function connectAndAuth(
 ): Promise<AuthedSocket> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`${WS_BASE}/ws/${roomId}`);
-    const clientId = generateClientId();
-    const result: AuthedSocket = { ws, clientId, messages: [], closed: false };
+    // clientId is now assigned by the server in the auth.challenge message;
+    // we adopt it here instead of self-generating (see PresenceImpersonation
+    // fix). Placeholder until challenge arrives.
+    let clientId = '';
+    const result: AuthedSocket = { ws, clientId: '', messages: [], closed: false };
     let authed = false;
 
     const timeout = setTimeout(() => {
@@ -86,6 +89,8 @@ async function connectAndAuth(
       const msg = JSON.parse(String(event.data));
 
       if (!authed && msg.type === 'auth.challenge') {
+        clientId = msg.clientId;
+        result.clientId = clientId;
         const proof = await computeAuthProof(roomVerifier, roomId, clientId, msg.challengeId, msg.nonce);
         ws.send(JSON.stringify({ type: 'auth.response', challengeId: msg.challengeId, clientId, proof, lastSeq }));
         return;
@@ -135,7 +140,7 @@ async function run(): Promise<void> {
   const roomSecret = generateRoomSecret();
   const adminSecret = generateAdminSecret();
 
-  const { authKey, eventKey } = await deriveRoomKeys(roomSecret);
+  const { authKey, eventKey, presenceKey } = await deriveRoomKeys(roomSecret);
   const adminKey = await deriveAdminKey(adminSecret);
 
   const roomVerifier = await computeRoomVerifier(authKey, roomId);
@@ -191,8 +196,19 @@ async function run(): Promise<void> {
   client1.messages.length = 0;
   client2.messages.length = 0;
 
-  // Client1 sends an event
-  const eventCiphertext = await encryptPayload(eventKey, JSON.stringify({ type: 'annotation.add', annotations: [] }));
+  // Client1 sends an event. Use a real annotation — empty annotation.add is
+  // rejected by conforming clients (no-op would burn a durable seq).
+  const realAnnotation = {
+    id: 'smoke-ann-1',
+    blockId: 'block-1',
+    startOffset: 0,
+    endOffset: 5,
+    type: 'COMMENT' as const,
+    originalText: 'hello',
+    createdA: Date.now(),
+    text: 'smoke test annotation',
+  };
+  const eventCiphertext = await encryptPayload(eventKey, JSON.stringify({ type: 'annotation.add', annotations: [realAnnotation] }));
   client1.ws.send(JSON.stringify({
     clientId: client1.clientId,
     opId: generateOpId(),
@@ -213,7 +229,13 @@ async function run(): Promise<void> {
   client1.messages.length = 0;
   client2.messages.length = 0;
 
-  const presenceCiphertext = await encryptPayload(eventKey, '{}');
+  // Presence MUST be encrypted with presenceKey (not eventKey) and carry a
+  // valid PresenceState shape — conforming clients reject malformed presence.
+  const validPresence = {
+    user: { id: 'smoke-u1', name: 'smoke', color: '#f00' },
+    cursor: null,
+  };
+  const presenceCiphertext = await encryptPresence(presenceKey, validPresence);
   client1.ws.send(JSON.stringify({
     clientId: client1.clientId,
     opId: generateOpId(),

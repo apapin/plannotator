@@ -17,8 +17,8 @@
 
 import { bytesToBase64url, base64urlToBytes } from './encoding';
 import { canonicalJson } from './canonical-json';
-import { ROOM_SECRET_LENGTH_BYTES } from './constants';
-import type { AdminCommand, PresenceState, RoomClientOp, RoomSnapshot } from './types';
+import { ADMIN_SECRET_LENGTH_BYTES, ROOM_SECRET_LENGTH_BYTES } from './constants';
+import type { AdminCommand, PresenceState, RoomEventClientOp, RoomSnapshot } from './types';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -135,8 +135,8 @@ export async function deriveRoomKeys(roomSecret: Uint8Array): Promise<{
 
 /** Derive the admin HMAC key from an admin secret. */
 export async function deriveAdminKey(adminSecret: Uint8Array): Promise<CryptoKey> {
-  if (adminSecret.length !== ROOM_SECRET_LENGTH_BYTES) {
-    throw new Error(`Invalid admin secret: expected ${ROOM_SECRET_LENGTH_BYTES} bytes`);
+  if (adminSecret.length !== ADMIN_SECRET_LENGTH_BYTES) {
+    throw new Error(`Invalid admin secret: expected ${ADMIN_SECRET_LENGTH_BYTES} bytes`);
   }
   const material = await importKeyMaterial(adminSecret);
   return deriveHmacKey(material, LABELS.admin);
@@ -265,8 +265,10 @@ export async function decryptPayload(key: CryptoKey, ciphertext: string): Promis
 // Channel convenience wrappers
 // ---------------------------------------------------------------------------
 
-/** Encrypt a RoomClientOp for the event channel. */
-export async function encryptEventOp(eventKey: CryptoKey, op: RoomClientOp): Promise<string> {
+/** Encrypt a RoomEventClientOp for the event channel.
+ *  Presence is intentionally NOT accepted here — the presence channel ships
+ *  a raw PresenceState via encryptPresence(). */
+export async function encryptEventOp(eventKey: CryptoKey, op: RoomEventClientOp): Promise<string> {
   return encryptPayload(eventKey, JSON.stringify(op));
 }
 
@@ -281,10 +283,14 @@ export async function encryptPresence(presenceKey: CryptoKey, presence: Presence
   return encryptPayload(presenceKey, JSON.stringify(presence));
 }
 
-/** Decrypt a presence channel ciphertext. */
-export async function decryptPresence(presenceKey: CryptoKey, ciphertext: string): Promise<PresenceState> {
+/**
+ * Decrypt a presence channel ciphertext. Returns `unknown` — encryption only
+ * proves the sender had the presence key. Callers MUST validate the shape
+ * (via isPresenceState) before entering state.
+ */
+export async function decryptPresence(presenceKey: CryptoKey, ciphertext: string): Promise<unknown> {
   const plaintext = await decryptPayload(presenceKey, ciphertext);
-  return JSON.parse(plaintext) as PresenceState;
+  return JSON.parse(plaintext);
 }
 
 /** Encrypt a RoomSnapshot with the event key. */
@@ -292,8 +298,11 @@ export async function encryptSnapshot(eventKey: CryptoKey, snapshot: RoomSnapsho
   return encryptPayload(eventKey, JSON.stringify(snapshot));
 }
 
-/** Decrypt a snapshot ciphertext. */
-export async function decryptSnapshot(eventKey: CryptoKey, ciphertext: string): Promise<RoomSnapshot> {
+/**
+ * Decrypt a snapshot ciphertext. Returns `unknown` — same reasoning as
+ * decryptPresence. Callers MUST validate via isRoomSnapshot before use.
+ */
+export async function decryptSnapshot(eventKey: CryptoKey, ciphertext: string): Promise<unknown> {
   const plaintext = await decryptPayload(eventKey, ciphertext);
-  return JSON.parse(plaintext) as RoomSnapshot;
+  return JSON.parse(plaintext);
 }

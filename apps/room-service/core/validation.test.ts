@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { validateCreateRoomRequest, isValidationError, clampExpiryDays, hasRoomExpired } from './validation';
+import {
+  validateCreateRoomRequest,
+  isValidationError,
+  clampExpiryDays,
+  hasRoomExpired,
+  isRoomId,
+  validateServerEnvelope,
+  validateAdminCommandEnvelope,
+} from './validation';
 
 describe('validateCreateRoomRequest', () => {
   // 22-char base64url room ID (matches generateRoomId() output: 16 random bytes)
@@ -168,5 +176,146 @@ describe('hasRoomExpired', () => {
 
   test('returns true after expiry', () => {
     expect(hasRoomExpired(2_000, 2_001)).toBe(true);
+  });
+});
+
+describe('isRoomId', () => {
+  test('accepts valid 22-char base64url ids', () => {
+    expect(isRoomId('ABCDEFGHIJKLMNOPQRSTUv')).toBe(true);
+    expect(isRoomId('abcdef_ghij-klmnopqrst')).toBe(true);
+  });
+  test('rejects wrong-length ids', () => {
+    expect(isRoomId('short')).toBe(false);
+    expect(isRoomId('A'.repeat(21))).toBe(false);
+    expect(isRoomId('A'.repeat(23))).toBe(false);
+  });
+  test('rejects ids containing disallowed characters', () => {
+    expect(isRoomId('A'.repeat(21) + '!')).toBe(false);
+    expect(isRoomId('A'.repeat(21) + '/')).toBe(false);
+    expect(isRoomId('A'.repeat(21) + '=')).toBe(false);
+  });
+  test('rejects non-string inputs', () => {
+    expect(isRoomId(undefined)).toBe(false);
+    expect(isRoomId(42 as unknown as string)).toBe(false);
+    expect(isRoomId(null)).toBe(false);
+  });
+});
+
+describe('validateAdminCommandEnvelope — strips extra fields (P2)', () => {
+  const validBase = {
+    type: 'admin.command',
+    challengeId: 'cid',
+    clientId: 'client',
+    adminProof: 'proof',
+  };
+  test('room.unlock strips extras from command', () => {
+    const r = validateAdminCommandEnvelope({
+      ...validBase,
+      command: { type: 'room.unlock', extra: 'smuggled', maliciousField: 42 },
+    });
+    expect(isValidationError(r)).toBe(false);
+    if (!isValidationError(r)) {
+      expect(r.command).toEqual({ type: 'room.unlock' });
+      expect(Object.keys(r.command)).toEqual(['type']);
+    }
+  });
+  test('room.delete strips extras from command', () => {
+    const r = validateAdminCommandEnvelope({
+      ...validBase,
+      command: { type: 'room.delete', piggyback: 'value' },
+    });
+    expect(isValidationError(r)).toBe(false);
+    if (!isValidationError(r)) {
+      expect(r.command).toEqual({ type: 'room.delete' });
+    }
+  });
+  test('room.lock without snapshot strips extras', () => {
+    const r = validateAdminCommandEnvelope({
+      ...validBase,
+      command: { type: 'room.lock', unexpected: 'junk' },
+    });
+    expect(isValidationError(r)).toBe(false);
+    if (!isValidationError(r)) {
+      expect(r.command).toEqual({ type: 'room.lock' });
+    }
+  });
+  test('room.lock with snapshot keeps exactly the two snapshot fields', () => {
+    const r = validateAdminCommandEnvelope({
+      ...validBase,
+      command: {
+        type: 'room.lock',
+        finalSnapshotCiphertext: 'ct',
+        finalSnapshotAtSeq: 5,
+        extra: 'ignored',
+      },
+    });
+    expect(isValidationError(r)).toBe(false);
+    if (!isValidationError(r) && r.command.type === 'room.lock') {
+      expect(r.command).toEqual({
+        type: 'room.lock',
+        finalSnapshotCiphertext: 'ct',
+        finalSnapshotAtSeq: 5,
+      });
+    }
+  });
+  test('rejects unknown command type', () => {
+    const r = validateAdminCommandEnvelope({
+      ...validBase,
+      command: { type: 'room.explode' },
+    });
+    expect(isValidationError(r)).toBe(true);
+  });
+
+  test('rejects overlong adminProof', () => {
+    const r = validateAdminCommandEnvelope({
+      ...validBase,
+      adminProof: 'x'.repeat(129),
+      command: { type: 'room.unlock' },
+    });
+    expect(isValidationError(r)).toBe(true);
+    if (isValidationError(r)) expect(r.error).toMatch(/adminProof/);
+  });
+
+  test('rejects overlong challengeId', () => {
+    const r = validateAdminCommandEnvelope({
+      ...validBase,
+      challengeId: 'x'.repeat(65),
+      command: { type: 'room.unlock' },
+    });
+    expect(isValidationError(r)).toBe(true);
+    if (isValidationError(r)) expect(r.error).toMatch(/challengeId/);
+  });
+
+  test('rejects overlong clientId', () => {
+    const r = validateAdminCommandEnvelope({
+      ...validBase,
+      clientId: 'x'.repeat(65),
+      command: { type: 'room.unlock' },
+    });
+    expect(isValidationError(r)).toBe(true);
+    if (isValidationError(r)) expect(r.error).toMatch(/clientId/);
+  });
+});
+
+describe('validateServerEnvelope — length caps (P3)', () => {
+  const validBase = {
+    clientId: 'c123',
+    opId: 'o123',
+    channel: 'event' as const,
+    ciphertext: 'abc',
+  };
+  test('accepts valid envelope', () => {
+    const r = validateServerEnvelope({ ...validBase });
+    expect(isValidationError(r)).toBe(false);
+  });
+  test('rejects opId over 64 chars (replay amplification surface)', () => {
+    const r = validateServerEnvelope({ ...validBase, opId: 'x'.repeat(65) });
+    expect(isValidationError(r)).toBe(true);
+    if (isValidationError(r)) expect(r.error).toMatch(/opId/);
+  });
+  test('rejects clientId over 64 chars', () => {
+    const r = validateServerEnvelope({ ...validBase, clientId: 'x'.repeat(65) });
+    expect(isValidationError(r)).toBe(true);
+    if (isValidationError(r)) expect(r.error).toMatch(/clientId/);
   });
 });

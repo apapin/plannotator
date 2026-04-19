@@ -17,7 +17,7 @@ import {
   encryptSnapshot,
   decryptSnapshot,
 } from './crypto';
-import type { AdminCommand, PresenceState, RoomClientOp, RoomSnapshot } from './types';
+import type { AdminCommand, PresenceState, RoomEventClientOp, RoomSnapshot } from './types';
 
 // Stable test secret (32 bytes)
 const TEST_SECRET = new Uint8Array(32);
@@ -281,7 +281,7 @@ describe('encryptPayload / decryptPayload', () => {
 describe('encryptEventOp / decryptEventPayload', () => {
   test('round-trip with annotation.add', async () => {
     const { eventKey } = await deriveRoomKeys(TEST_SECRET);
-    const op: RoomClientOp = {
+    const op: RoomEventClientOp = {
       type: 'annotation.add',
       annotations: [{
         id: 'ann-1',

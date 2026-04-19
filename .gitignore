@@ -49,3 +49,7 @@ plannotator-local
 
 # Cloudflare Wrangler local state (Miniflare SQLite, caches)
 .wrangler/
+
+# Claude Code local scratch files (per-session locks, etc.). Intentionally
+# ignored so they can't be committed accidentally.
+.claude/scheduled_tasks.lock

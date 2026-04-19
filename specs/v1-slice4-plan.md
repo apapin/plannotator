@@ -58,7 +58,7 @@ We accept that delay because V1 has no op-specific `ack` / `reject` message and 
 
 This prevents the class of bug where a caller thinks a lock succeeded when the server actually rejected it for invalid proof/state/seq.
 
-**Presence uses `presenceKey`, not `eventKey`.** The smoke.ts reference incorrectly uses `eventKey` for both channels — the DO is zero-knowledge so it doesn't notice. The protocol spec derives a distinct `presenceKey` via HKDF with label `plannotator:v1:presence`. The runtime must use the correct key per channel. Unit test: presence ciphertext encrypted with presenceKey must NOT decrypt with eventKey.
+**Presence uses `presenceKey`, not `eventKey`.** The protocol spec derives a distinct `presenceKey` via HKDF with label `plannotator:v1:presence`; events use `eventKey`. The DO is zero-knowledge so it wouldn't notice if a client mixed them, but the runtime must use the correct key per channel. `apps/room-service/scripts/smoke.ts` exercises both paths correctly (presence encrypted with `presenceKey` at its call site; events with `eventKey`). Unit test: presence ciphertext encrypted with `presenceKey` must NOT decrypt with `eventKey`.
 
 **`clientId` is regenerated per connection.** Every `connect()` call generates a fresh `clientId` via `generateClientId()` (random per socket). On reconnect, a new `clientId` is minted — reusing one across reconnects would turn server-visible metadata into a longer-lived participant identifier. Stable identity across reconnects lives inside encrypted `PresenceState.user.id`, which the DO never sees.
 

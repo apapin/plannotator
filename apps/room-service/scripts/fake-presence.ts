@@ -44,6 +44,7 @@ import type {
   AuthChallenge,
   PresenceState,
 } from '@plannotator/shared/collab';
+import { PRESENCE_SWATCHES } from '@plannotator/ui/utils/presenceColor';
 
 import { readFileSync } from 'node:fs';
 
@@ -120,13 +121,11 @@ function fail(msg: string): never {
 // Visual variety
 // ---------------------------------------------------------------------------
 
-// Match the UI's swatch palette so fakes look like real participants.
-// Duplicated here rather than imported from packages/ui to keep the
-// script free of DOM-bound transitive deps.
-const SWATCHES = [
-  '#2563eb', '#f97316', '#10b981', '#ef4444',
-  '#8b5cf6', '#eab308', '#06b6d4', '#ec4899',
-] as const;
+// Uses the same swatch palette the UI defaults to, imported from
+// `@plannotator/ui/utils/presenceColor`. That module is pure (no
+// React, no DOM, no ConfigStore — see its header) so it's safe to
+// pull into a Bun script without dragging UI runtime deps along.
+const SWATCHES = PRESENCE_SWATCHES;
 
 const NAMES = [
   'Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot',

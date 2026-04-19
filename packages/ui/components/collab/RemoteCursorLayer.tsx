@@ -89,10 +89,11 @@ function findBlockRect(blockId: string, root: ParentNode): DOMRect | null {
 /**
  * Find the plan's scroll viewport element. App tags it with
  * `data-plan-scroll-viewport` when the OverlayScrollbars instance
- * settles. `document` cursors are resolved against this element's
- * rect + scroll offset — that's the coordinate space LocalPresenceEmitter
- * now writes to, so every participant resolves the same content point
- * regardless of their own scroll position.
+ * settles. Used to resolve `document`-space cursors (protocol supports
+ * all three coordinate spaces) — the bundled UI's LocalPresenceEmitter
+ * emits `block`-space with a sticky anchor, but a direct-agent or
+ * future client could still use `document`, and the layer handles
+ * both uniformly via `resolveCursor` below.
  *
  * Fall-through to `null` is safe — the caller skips rendering when
  * `resolveCursor` returns null, so the cursor waits for the scroll
@@ -125,8 +126,10 @@ function resolveCursor(
       };
     }
     case 'block': {
-      // Kept for any direct-agent or future client that still emits
-      // block coords; our bundled UI no longer emits this case.
+      // The bundled UI's LocalPresenceEmitter writes block-space with
+      // a sticky anchor (same block until the pointer crosses into a
+      // new one), so this is the hot path for same-app peers. Also
+      // honors direct-agent clients that send block coords.
       if (!cursor.blockId) return null;
       const blockRect = findBlockRect(cursor.blockId, root);
       if (!blockRect) return null;

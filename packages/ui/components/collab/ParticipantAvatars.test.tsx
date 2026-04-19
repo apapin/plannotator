@@ -57,4 +57,29 @@ describe('ParticipantAvatars', () => {
     const avatars = container.querySelectorAll('[data-participant-id]');
     expect(avatars[0].textContent).toBe('G');  // falls through to "Guest" → "G"
   });
+
+  test('marks agent peers with the agent indicator', () => {
+    const { container } = render(
+      <ParticipantAvatars
+        remotePresence={{
+          human: peer('Alice'),
+          bot: peer('alice-agent-claude'),
+        }}
+      />,
+    );
+    const avatars = container.querySelectorAll<HTMLElement>('[data-participant-id]');
+    const kinds = Array.from(avatars).map(a => a.dataset.participantKind);
+    // deriveParticipants sorts by name; 'Alice' < 'alice-agent-claude' (case-insensitive localeCompare)
+    expect(kinds).toEqual(['human', 'agent']);
+
+    // The agent avatar has the marker; the human avatar does not.
+    const humanMarker = avatars[0].querySelector('[data-testid="participant-agent-marker"]');
+    const agentMarker = avatars[1].querySelector('[data-testid="participant-agent-marker"]');
+    expect(humanMarker).toBeNull();
+    expect(agentMarker).not.toBeNull();
+
+    // Agent tooltip includes the type.
+    expect(avatars[1].getAttribute('title')).toContain('agent');
+    expect(avatars[1].getAttribute('title')).toContain('claude');
+  });
 });

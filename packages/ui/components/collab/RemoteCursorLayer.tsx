@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import type { PresenceState, CursorState } from '@plannotator/shared/collab';
+import { isAgentIdentity } from '@plannotator/ui/utils/agentIdentity';
 
 /**
  * Absolute-positioned overlay that renders remote cursor flags. Parent
@@ -344,12 +345,14 @@ export function RemoteCursorLayer({
         const p = remotePresence[clientId];
         const name = p?.user?.name ?? 'Guest';
         const color = p?.user?.color ?? '#888';
+        const isAgent = isAgentIdentity(p?.user?.name);
         return (
           <RemoteCursor
             key={clientId}
             clientId={clientId}
             name={name}
             color={color}
+            isAgent={isAgent}
             nodeRefsRef={nodeRefsRef}
           />
         );
@@ -373,11 +376,13 @@ function RemoteCursor({
   clientId,
   name,
   color,
+  isAgent,
   nodeRefsRef,
 }: {
   clientId: string;
   name: string;
   color: string;
+  isAgent: boolean;
   nodeRefsRef: React.RefObject<Map<string, HTMLDivElement>>;
 }): React.ReactElement {
   // Callback ref keyed by clientId. Each mount/unmount registers or
@@ -393,6 +398,7 @@ function RemoteCursor({
     <div
       ref={setRef}
       data-client-id={clientId}
+      data-client-kind={isAgent ? 'agent' : 'human'}
       data-edge-direction="none"
       className="remote-cursor absolute top-0 left-0 will-change-transform"
       style={{ display: 'none' }}  // hidden until the first rAF tick resolves position
@@ -420,6 +426,7 @@ function RemoteCursor({
             lineHeight: 1.2,
           }}
         >
+          {isAgent && <span aria-hidden style={{ marginRight: 3 }}>⚙</span>}
           {name}
         </div>
       </div>
@@ -445,6 +452,7 @@ function RemoteCursor({
         <span className="remote-cursor-arrow" aria-hidden>
           {/* Placeholder; CSS rewrites via ::before based on direction. */}
         </span>
+        {isAgent && <span aria-hidden style={{ marginRight: 3 }}>⚙</span>}
         <span>{name}</span>
       </div>
     </div>

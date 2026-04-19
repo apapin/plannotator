@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import type { PresenceState } from '@plannotator/shared/collab';
+import { isAgentIdentity, getAgentType } from '@plannotator/ui/utils/agentIdentity';
 
 /**
  * Pure avatar stack for room participants. Reads from `remotePresence`
@@ -8,6 +9,11 @@ import type { PresenceState } from '@plannotator/shared/collab';
  *
  * Overflow: show at most `maxVisible` avatars; the rest are summarized
  * as "+N" with a tooltip listing the extra names.
+ *
+ * Agent peers (identity ending in `-agent-<type>`) render with a small
+ * marker overlay so observers can tell them apart from human peers.
+ * Detection is purely identity-based via `isAgentIdentity` — no other
+ * protocol fields are consulted.
  */
 
 export interface ParticipantAvatarsProps {
@@ -21,6 +27,8 @@ interface Participant {
   name: string;
   color: string;
   initial: string;
+  isAgent: boolean;
+  agentType: string | undefined;
 }
 
 function deriveParticipants(
@@ -31,7 +39,9 @@ function deriveParticipants(
     const name = (p.user?.name ?? '').trim() || 'Guest';
     const color = p.user?.color ?? '#888';
     const initial = name.charAt(0).toUpperCase() || '?';
-    out.push({ clientId, name, color, initial });
+    const isAgent = isAgentIdentity(name);
+    const agentType = getAgentType(name);
+    out.push({ clientId, name, color, initial, isAgent, agentType });
   }
   // Stable sort by name so order doesn't thrash when presence maps rehydrate.
   out.sort((a, b) => a.name.localeCompare(b.name));
@@ -58,12 +68,27 @@ export function ParticipantAvatars({
       {visible.map(p => (
         <span
           key={p.clientId}
-          title={p.name}
-          className="inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-medium text-white ring-2 ring-background"
+          // Tooltip distinguishes agents so hover reveals the type; the
+          // marker itself is the glyph at the corner of the avatar chip.
+          title={p.isAgent ? `${p.name} (agent · ${p.agentType ?? 'unknown'})` : p.name}
+          className="relative inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-medium text-white ring-2 ring-background"
           style={{ backgroundColor: p.color }}
           data-participant-id={p.clientId}
+          data-participant-kind={p.isAgent ? 'agent' : 'human'}
         >
           {p.initial}
+          {p.isAgent && (
+            <span
+              aria-hidden
+              // Small ⚙ marker pinned to the bottom-right corner. Theme
+              // tokens so it stays legible on both light and dark
+              // themes; no color prop needed.
+              className="absolute -bottom-0.5 -right-0.5 inline-flex items-center justify-center w-3 h-3 rounded-full text-[8px] leading-none bg-background text-foreground ring-1 ring-border"
+              data-testid="participant-agent-marker"
+            >
+              ⚙
+            </span>
+          )}
         </span>
       ))}
       {overflow.length > 0 && (

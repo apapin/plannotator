@@ -10,11 +10,17 @@ Plannotator integration for the [Pi coding agent](https://github.com/badlogic/pi
 pi install npm:@plannotator/pi-extension
 ```
 
+**From git** (fork-friendly monorepo install):
+
+```bash
+pi install git:github.com/apapin/plannotator
+```
+
 **From source:**
 
 ```bash
-git clone https://github.com/backnotprop/plannotator.git
-pi install ./plannotator/apps/pi-extension
+git clone https://github.com/apapin/plannotator.git
+pi install ./plannotator
 ```
 
 **Try without installing:**

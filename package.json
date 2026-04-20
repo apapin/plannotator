@@ -13,6 +13,11 @@
   "bugs": {
     "url": "https://github.com/backnotprop/plannotator/issues"
   },
+  "keywords": ["pi-package", "plannotator", "code-review", "annotation", "plan-review"],
+  "pi": {
+    "extensions": ["apps/pi-extension/index.ts"],
+    "skills": ["apps/pi-extension/skills"]
+  },
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {
     "dev:hook": "bun run --cwd apps/hook dev",

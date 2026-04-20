@@ -165,7 +165,7 @@ export async function openPlanReviewBrowser(
 
 export async function openCodeReview(
 	ctx: ExtensionContext,
-	options: { cwd?: string; defaultBranch?: string; diffType?: DiffType; prUrl?: string } = {},
+	options: { cwd?: string; defaultBranch?: string; diffType?: DiffType; prUrl?: string; summary?: string } = {},
 ): Promise<{ approved: boolean; feedback?: string; annotations?: unknown[]; agentSwitch?: string; exit?: boolean }> {
 	if (!ctx.hasUI || !reviewHtmlContent) {
 		throw new Error("Plannotator code review browser is unavailable in this session.");
@@ -347,6 +347,7 @@ export async function openCodeReview(
 	const server = await startReviewServer({
 		rawPatch,
 		gitRef,
+		summary: options.summary,
 		error: diffError,
 		origin: "pi",
 		diffType,

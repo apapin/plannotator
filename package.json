@@ -1,56 +1,54 @@
 {
-  "name": "plannotator",
+  "name": "@plannotator/pi-extension",
   "version": "0.18.0",
-  "private": true,
-  "description": "Interactive Plan Review for Claude Code - annotate plans visually, share with team, automatically send feedback",
+  "type": "module",
+  "description": "Plannotator extension for Pi coding agent - interactive plan review with visual annotation",
   "author": "backnotprop",
   "license": "MIT OR Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/apapin/plannotator.git"
+    "url": "git+https://github.com/apapin/plannotator.git",
+    "directory": "apps/pi-extension"
   },
   "homepage": "https://github.com/apapin/plannotator",
   "bugs": {
     "url": "https://github.com/apapin/plannotator/issues"
   },
-  "keywords": ["pi-package", "plannotator", "code-review", "annotation", "plan-review"],
+  "keywords": ["pi-package", "plannotator", "plan-review", "ai-agent", "coding-agent"],
   "pi": {
-    "extensions": ["apps/pi-extension/index.ts"],
-    "skills": ["apps/pi-extension/skills"]
+    "extensions": ["./"],
+    "skills": ["./skills"]
   },
-  "workspaces": ["apps/*", "packages/*"],
+  "files": [
+    "index.ts",
+    "plannotator-browser.ts",
+    "plannotator-events.ts",
+    "server.ts",
+    "tool-scope.ts",
+    "config.ts",
+    "plannotator.json",
+    "server/",
+    "generated/",
+    "README.md",
+    "plannotator.html",
+    "review-editor.html",
+    "skills/"
+  ],
   "scripts": {
-    "dev:hook": "bun run --cwd apps/hook dev",
-    "dev:portal": "bun run --cwd apps/portal dev",
-    "dev:marketing": "bun run --cwd apps/marketing dev",
-    "dev:review": "bun run --cwd apps/review dev",
-    "build:hook": "bun run --cwd apps/hook build",
-    "build:portal": "bun run --cwd apps/portal build",
-    "build:marketing": "bun run --cwd apps/marketing build",
-    "build:opencode": "bun run --cwd apps/opencode-plugin build",
-    "build:review": "bun run --cwd apps/review build",
-    "build:pi": "bun run build:review && bun run build:hook && bun run --cwd apps/pi-extension build",
-    "build": "bun run build:hook && bun run build:opencode",
-    "dev:vscode": "bun run --cwd apps/vscode-extension watch",
-    "build:vscode": "bun run --cwd apps/vscode-extension build",
-    "package:vscode": "bun run --cwd apps/vscode-extension package",
-    "test": "bun test",
-    "typecheck": "bash apps/pi-extension/vendor.sh && tsc --noEmit -p packages/shared/tsconfig.json && tsc --noEmit -p packages/ai/tsconfig.json && tsc --noEmit -p packages/server/tsconfig.json && tsc --noEmit -p apps/pi-extension/tsconfig.json"
+    "build": "cp ../hook/dist/index.html plannotator.html && cp ../hook/dist/review.html review-editor.html && rm -rf skills && cp -r ../skills skills && bash vendor.sh",
+    "prepublishOnly": "cd ../.. && bun run build:pi"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.92",
-    "@openai/codex-sdk": "^0.118.0",
-    "@opencode-ai/sdk": "^1.3.0",
-    "@pierre/diffs": "^1.1.12",
-    "diff": "^8.0.4",
-    "dockview-react": "^5.2.0",
-    "dompurify": "^3.3.3",
-    "marked": "^17.0.6"
+    "turndown": "^7.2.4",
+    "@joplin/turndown-plugin-gfm": "^1.0.64"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": ">=0.53.0"
   },
   "devDependencies": {
-    "@types/dompurify": "^3.2.0",
-    "@types/node": "^25.5.2",
-    "@types/turndown": "^5.0.6",
-    "bun-types": "^1.3.11"
+    "@mariozechner/pi-coding-agent": ">=0.53.0",
+    "@mariozechner/pi-agent-core": ">=0.53.0",
+    "@mariozechner/pi-ai": ">=0.53.0",
+    "@mariozechner/pi-tui": ">=0.53.0"
   }
 }

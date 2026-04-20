@@ -53,42 +53,60 @@ function renderContent(content: string): React.ReactNode {
 }
 
 /** Render a simplified block-level markdown view (no annotation infrastructure). */
-export function MarkdownBody({ markdown }: { markdown: string }) {
+export function MarkdownBody({ markdown, variant = 'default' }: { markdown: string; variant?: 'default' | 'sidebar' }) {
   const blocks = useMemo(() => parseMarkdownToBlocks(markdown), [markdown]);
+  const isSidebar = variant === 'sidebar';
+  const bodyClass = isSidebar
+    ? 'space-y-3 text-sm text-foreground/90 leading-relaxed'
+    : 'space-y-2.5 text-xs text-foreground/90 leading-relaxed';
+  const headingSizes: Record<number, string> = isSidebar
+    ? {
+        1: 'text-lg font-bold',
+        2: 'text-base font-semibold',
+        3: 'text-sm font-semibold',
+      }
+    : {
+        1: 'text-base font-bold',
+        2: 'text-sm font-semibold',
+        3: 'text-xs font-semibold',
+      };
+  const fallbackHeadingSize = isSidebar ? 'text-sm font-medium' : 'text-xs font-medium';
+  const codeClass = isSidebar
+    ? 'bg-muted/50 rounded-md p-2.5 text-xs font-mono overflow-x-auto whitespace-pre-wrap'
+    : 'bg-muted/50 rounded-md p-2 text-[11px] font-mono overflow-x-auto whitespace-pre-wrap';
+  const listGapClass = isSidebar ? 'flex gap-2' : 'flex gap-1.5';
+  const blockquoteClass = isSidebar
+    ? 'border-l-2 border-border pl-3 text-muted-foreground italic'
+    : 'border-l-2 border-border pl-2 text-muted-foreground italic';
 
   return (
-    <div className="space-y-2.5 text-xs text-foreground/90 leading-relaxed">
+    <div className={bodyClass}>
       {blocks.map((block) => {
         switch (block.type) {
           case 'heading': {
             const Tag = `h${Math.min(block.level ?? 1, 6)}` as keyof JSX.IntrinsicElements;
-            const sizes: Record<number, string> = {
-              1: 'text-base font-bold',
-              2: 'text-sm font-semibold',
-              3: 'text-xs font-semibold',
-            };
             return (
-              <Tag key={block.id} className={`${sizes[block.level ?? 1] ?? 'text-xs font-medium'} text-foreground`}>
+              <Tag key={block.id} className={`${headingSizes[block.level ?? 1] ?? fallbackHeadingSize} text-foreground`}>
                 {renderContent(block.content)}
               </Tag>
             );
           }
           case 'code':
             return (
-              <pre key={block.id} className="bg-muted/50 rounded-md p-2 text-[11px] font-mono overflow-x-auto whitespace-pre-wrap">
+              <pre key={block.id} className={codeClass}>
                 <code>{block.content}</code>
               </pre>
             );
           case 'list-item':
             return (
-              <div key={block.id} className="flex gap-1.5" style={{ paddingLeft: (block.level ?? 0) * 12 }}>
+              <div key={block.id} className={listGapClass} style={{ paddingLeft: (block.level ?? 0) * 12 }}>
                 <span className="text-muted-foreground shrink-0">{block.checked !== undefined ? (block.checked ? '☑' : '☐') : '•'}</span>
                 <span>{renderContent(block.content)}</span>
               </div>
             );
           case 'blockquote':
             return (
-              <blockquote key={block.id} className="border-l-2 border-border pl-2 text-muted-foreground italic">
+              <blockquote key={block.id} className={blockquoteClass}>
                 {renderContent(block.content)}
               </blockquote>
             );

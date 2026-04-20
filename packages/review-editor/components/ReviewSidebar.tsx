@@ -295,7 +295,7 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = /* React.memo */({
                   <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                     Review brief
                   </div>
-                  <MarkdownBody markdown={reviewSummary} />
+                  <MarkdownBody markdown={reviewSummary} variant="sidebar" />
                 </div>
               )}
               {totalCount === 0 ? (

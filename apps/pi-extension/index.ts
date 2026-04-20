@@ -53,6 +53,7 @@ import {
 } from "./plannotator-events.js";
 import {
 	getToolsForPhase,
+	isPlanWritePathAllowed,
 	PLAN_SUBMIT_TOOL,
 	type Phase,
 	stripPlanningOnlyTools,
@@ -703,24 +704,13 @@ export default function plannotator(pi: ExtensionAPI): void {
 	pi.on("tool_call", async (event, ctx) => {
 		if (phase !== "planning") return;
 
-		if (event.toolName === "write") {
-			const targetPath = resolve(ctx.cwd, event.input.path as string);
-			const allowedPath = resolvePlanPath(ctx.cwd);
-			if (targetPath !== allowedPath) {
+		if (event.toolName === "write" || event.toolName === "edit") {
+			const inputPath = event.input.path as string;
+			if (!isPlanWritePathAllowed(planFilePath, inputPath, ctx.cwd)) {
+				const verb = event.toolName === "write" ? "writes" : "edits";
 				return {
 					block: true,
-					reason: `Plannotator: writes are restricted to ${planFilePath} during planning. Blocked: ${event.input.path}`,
-				};
-			}
-		}
-
-		if (event.toolName === "edit") {
-			const targetPath = resolve(ctx.cwd, event.input.path as string);
-			const allowedPath = resolvePlanPath(ctx.cwd);
-			if (targetPath !== allowedPath) {
-				return {
-					block: true,
-					reason: `Plannotator: edits are restricted to ${planFilePath} during planning. Blocked: ${event.input.path}`,
+					reason: `Plannotator: ${verb} are restricted to ${planFilePath} during planning. Blocked: ${inputPath}`,
 				};
 			}
 		}

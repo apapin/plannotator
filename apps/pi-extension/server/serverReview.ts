@@ -141,6 +141,7 @@ export function runGitDiff(
 export async function startReviewServer(options: {
 	rawPatch: string;
 	gitRef: string;
+	summary?: string;
 	htmlContent: string;
 	origin?: string;
 	diffType?: DiffType;
@@ -477,6 +478,7 @@ export async function startReviewServer(options: {
 			json(res, {
 				rawPatch: currentPatch,
 				gitRef: currentGitRef,
+				summary: options.summary,
 				origin: options.origin ?? "pi",
 				diffType: hasLocalAccess ? currentDiffType : undefined,
 				gitContext: hasLocalAccess ? options.gitContext : undefined,
@@ -513,6 +515,7 @@ export async function startReviewServer(options: {
 				json(res, {
 					rawPatch: currentPatch,
 					gitRef: currentGitRef,
+					summary: options.summary,
 					diffType: currentDiffType,
 					...(currentError ? { error: currentError } : {}),
 				});

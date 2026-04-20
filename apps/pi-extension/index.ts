@@ -474,6 +474,130 @@ export default function plannotator(pi: ExtensionAPI): void {
 		},
 	});
 
+	pi.registerTool({
+		name: "request_code_review",
+		label: "Request Code Review",
+		description:
+			"Open the Plannotator code review UI so the user can review current git changes. " +
+			"Use after completing an implementation task, before creating a PR, or when the user " +
+			"asks you to prepare changes for review.",
+		parameters: Type.Object({
+			summary: Type.Optional(
+				Type.String({
+					description:
+						"Brief summary of what changed, shown in the Plannotator review sidebar",
+				}),
+			),
+		}) as any,
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			if (!hasReviewBrowserHtml()) {
+				const message = "Code review UI not available. Run 'bun run build' in the pi-extension directory.";
+				return { content: [{ type: "text", text: message }], details: { approved: false } };
+			}
+
+			try {
+				const result = await openCodeReview(ctx, { summary: params.summary });
+				if (result.exit) {
+					return {
+						content: [{ type: "text", text: "Code review closed — no feedback from user." }],
+						details: { approved: false, hasFeedback: false },
+					};
+				}
+				if (result.feedback) {
+					if (result.approved) {
+						pi.sendUserMessage(
+							"# Code Review\n\nCode review completed — no changes requested.",
+							{ deliverAs: "followUp" },
+						);
+					} else {
+						pi.sendUserMessage(
+							`${result.feedback}\n\nPlease address this feedback.`,
+							{ deliverAs: "followUp" },
+						);
+					}
+					return {
+						content: [{
+							type: "text",
+							text: result.approved
+								? "Code review approved. Feedback will arrive as a follow-up message."
+								: "Code review feedback received. The feedback will arrive as a follow-up message.",
+						}],
+						details: { approved: result.approved, hasFeedback: true },
+					};
+				}
+				return {
+					content: [{ type: "text", text: "Code review closed — no feedback from user." }],
+					details: { approved: false, hasFeedback: false },
+				};
+			} catch (err) {
+				const message = `Failed to start code review UI: ${getStartupErrorMessage(err)}`;
+				return { content: [{ type: "text", text: message }], details: { approved: false } };
+			}
+		},
+	});
+
+	pi.registerTool({
+		name: "request_annotation",
+		label: "Request Annotation",
+		description:
+			"Open a markdown file in the Plannotator annotation UI so the user can review " +
+			"and annotate it. Use for design docs, implementation plans, READMEs, or any " +
+			"markdown file that benefits from visual review with inline comments.",
+		parameters: Type.Object({
+			file: Type.String({
+				description: "Path to the markdown file to annotate",
+			}),
+			summary: Type.Optional(
+				Type.String({
+					description: "Brief context for what the user should focus on",
+				}),
+			),
+		}) as any,
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			if (!hasPlanBrowserHtml()) {
+				const message = "Annotation UI not available. Run 'bun run build' in the pi-extension directory.";
+				return { content: [{ type: "text", text: message }], details: { hasFeedback: false } };
+			}
+
+			const filePath = params.file.replace(/^@/, "");
+			const absolutePath = resolveUserPath(filePath, ctx.cwd);
+			if (!existsSync(absolutePath)) {
+				return { content: [{ type: "text", text: `File not found: ${absolutePath}` }], details: { hasFeedback: false } };
+			}
+			if (statSync(absolutePath).isDirectory()) {
+				return { content: [{ type: "text", text: `Path is a directory, not a markdown file: ${absolutePath}` }], details: { hasFeedback: false } };
+			}
+
+			try {
+				const markdown = readFileSync(absolutePath, "utf-8");
+				const result = await openMarkdownAnnotation(ctx, absolutePath, markdown, "annotate", undefined, basename(absolutePath));
+				if (result.exit) {
+					return {
+						content: [{ type: "text", text: `Annotation closed for ${filePath} — no feedback from user.` }],
+						details: { file: filePath, hasFeedback: false },
+					};
+				}
+				if (result.feedback) {
+					pi.sendUserMessage(
+						`# Markdown Annotations\n\nFile: ${absolutePath}\n\n${result.feedback}\n\nPlease address the annotation feedback above.`,
+						{ deliverAs: "followUp" },
+					);
+					return {
+						content: [{ type: "text", text: `Annotation feedback received for ${filePath}. The feedback will arrive as a follow-up message.` }],
+						details: { file: filePath, hasFeedback: true },
+					};
+				}
+				return {
+					content: [{ type: "text", text: `Annotation closed for ${filePath} — no feedback from user.` }],
+					details: { file: filePath, hasFeedback: false },
+				};
+			} catch (err) {
+				const message = `Failed to start annotation UI: ${getStartupErrorMessage(err)}`;
+				return { content: [{ type: "text", text: message }], details: { file: filePath, hasFeedback: false } };
+			}
+		},
+	});
+
 	pi.registerCommand("plannotator-archive", {
 		description: "Browse saved plan decisions",
 		handler: async (_args, ctx) => {

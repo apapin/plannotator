@@ -68,6 +68,7 @@ interface DiffData {
   files: DiffFile[];
   rawPatch: string;
   gitRef: string;
+  summary?: string;
   origin?: Origin;
   diffType?: string;
   gitContext?: GitContext;
@@ -664,6 +665,7 @@ const ReviewApp: React.FC = () => {
       .then((data: {
         rawPatch: string;
         gitRef: string;
+        summary?: string;
         origin?: Origin;
         diffType?: string;
         gitContext?: GitContext;
@@ -686,6 +688,7 @@ const ReviewApp: React.FC = () => {
           files: apiFiles,
           rawPatch: data.rawPatch,
           gitRef: data.gitRef,
+          summary: data.summary,
           origin: data.origin,
           diffType: data.diffType,
           gitContext: data.gitContext,
@@ -718,6 +721,7 @@ const ReviewApp: React.FC = () => {
           files: demoFiles,
           rawPatch: DEMO_DIFF,
           gitRef: 'demo',
+          summary: undefined,
         });
         setFiles(demoFiles);
       })
@@ -940,6 +944,7 @@ const ReviewApp: React.FC = () => {
       const data = await res.json() as {
         rawPatch: string;
         gitRef: string;
+        summary?: string;
         diffType: string;
         error?: string;
       };
@@ -947,7 +952,7 @@ const ReviewApp: React.FC = () => {
       const nextFiles = parseDiffToFiles(data.rawPatch);
       dockApi?.getPanel(REVIEW_DIFF_PANEL_ID)?.api.close();
       needsInitialDiffPanel.current = true;
-      setDiffData(prev => prev ? { ...prev, rawPatch: data.rawPatch, gitRef: data.gitRef, diffType: data.diffType } : prev);
+      setDiffData(prev => prev ? { ...prev, rawPatch: data.rawPatch, gitRef: data.gitRef, summary: data.summary ?? prev.summary, diffType: data.diffType } : prev);
       setFiles(nextFiles);
       setDiffType(data.diffType);
       setActiveFileIndex(0);
@@ -1804,6 +1809,7 @@ const ReviewApp: React.FC = () => {
             selectedAnnotationId={selectedAnnotationId}
             onSelectAnnotation={handleSelectAnnotation}
             onDeleteAnnotation={handleDeleteAnnotation}
+            reviewSummary={diffData?.summary}
             feedbackMarkdown={feedbackMarkdown}
             width={panelResize.width}
             editorAnnotations={editorAnnotations}

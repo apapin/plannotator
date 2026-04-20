@@ -15,6 +15,7 @@ import { AgentsTab } from '@plannotator/ui/components/AgentsTab';
 import type { PRMetadata } from '@plannotator/shared/pr-provider';
 import { OverlayScrollArea } from '@plannotator/ui/components/OverlayScrollArea';
 import type { AIChatEntry } from '../hooks/useAIChat';
+import { MarkdownBody } from './PRSummaryTab';
 import type { AgentJobInfo, AgentCapabilities } from '@plannotator/ui/types';
 import type { DiffFile } from '../types';
 
@@ -30,6 +31,7 @@ interface ReviewSidebarProps {
   selectedAnnotationId: string | null;
   onSelectAnnotation: (id: string | null) => void;
   onDeleteAnnotation: (id: string) => void;
+  reviewSummary?: string;
   feedbackMarkdown?: string;
   width?: number;
   editorAnnotations?: EditorAnnotation[];
@@ -117,6 +119,7 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = /* React.memo */({
   selectedAnnotationId,
   onSelectAnnotation,
   onDeleteAnnotation,
+  reviewSummary,
   feedbackMarkdown,
   width,
   editorAnnotations,
@@ -287,6 +290,14 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = /* React.memo */({
           {/* Annotations tab */}
           {activeTab === 'annotations' && (
             <div className="p-2 space-y-1.5">
+              {reviewSummary && (
+                <div className="rounded-lg border border-border/50 bg-muted/20 p-3 space-y-2">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Review brief
+                  </div>
+                  <MarkdownBody markdown={reviewSummary} />
+                </div>
+              )}
               {totalCount === 0 ? (
                 <div className="flex flex-col items-center justify-center h-40 text-center px-4">
                   <div className="w-10 h-10 rounded-full bg-muted/50 flex items-center justify-center mb-3">

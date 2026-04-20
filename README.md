@@ -192,6 +192,12 @@ This also clears any cached plugin versions. Then restart OpenCode.
 ## Install for Pi
 
 ```bash
+pi install git:github.com/apapin/plannotator
+```
+
+Or, if you specifically want the upstream npm package instead of this fork:
+
+```bash
 pi install npm:@plannotator/pi-extension
 ```
 

@@ -507,20 +507,20 @@ export default function plannotator(pi: ExtensionAPI): void {
 					if (result.approved) {
 						pi.sendUserMessage(
 							"# Code Review\n\nCode review completed — no changes requested.",
-							{ deliverAs: "followUp" },
+							{ deliverAs: "steer" },
 						);
 					} else {
 						pi.sendUserMessage(
 							`${result.feedback}\n\nPlease address this feedback.`,
-							{ deliverAs: "followUp" },
+							{ deliverAs: "steer" },
 						);
 					}
 					return {
 						content: [{
 							type: "text",
 							text: result.approved
-								? "Code review approved. Feedback will arrive as a follow-up message."
-								: "Code review feedback received. The feedback will arrive as a follow-up message.",
+								? "Code review approved. Feedback was sent to the agent immediately."
+								: "Code review feedback was sent to the agent immediately.",
 						}],
 						details: { approved: result.approved, hasFeedback: true },
 					};
@@ -580,10 +580,10 @@ export default function plannotator(pi: ExtensionAPI): void {
 				if (result.feedback) {
 					pi.sendUserMessage(
 						`# Markdown Annotations\n\nFile: ${absolutePath}\n\n${result.feedback}\n\nPlease address the annotation feedback above.`,
-						{ deliverAs: "followUp" },
+						{ deliverAs: "steer" },
 					);
 					return {
-						content: [{ type: "text", text: `Annotation feedback received for ${filePath}. The feedback will arrive as a follow-up message.` }],
+						content: [{ type: "text", text: `Annotation feedback for ${filePath} was sent to the agent immediately.` }],
 						details: { file: filePath, hasFeedback: true },
 					};
 				}

@@ -420,9 +420,6 @@ const ReviewApp: React.FC = () => {
           setAiAvailable(true);
           const providers = data.providers ?? [];
           setAiProviders(providers);
-          if (providers.length > 0 && needsAISetup()) {
-            setShowAISetup(true);
-          }
         }
         setAiCheckComplete(true);
       })

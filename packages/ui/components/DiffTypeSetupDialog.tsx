@@ -3,22 +3,23 @@ import { createPortal } from 'react-dom';
 import type { DefaultDiffType } from '@plannotator/shared/config';
 import { markDiffTypeSetupDone } from '../utils/diffTypeSetup';
 import { configStore } from '../config';
+import diffOptionsImg from '../assets/diff-options.png';
 
 const OPTIONS: { value: DefaultDiffType; label: string; description: string }[] = [
   {
-    value: 'unstaged',
-    label: 'Unstaged',
-    description: "Only changes you haven't staged yet",
-  },
-  {
     value: 'uncommitted',
     label: 'All Changes',
-    description: "Everything you've changed since your last commit",
+    description: "Everything you've changed since your last commit — staged and unstaged",
+  },
+  {
+    value: 'unstaged',
+    label: 'Unstaged',
+    description: "Only changes you haven't staged yet (git diff)",
   },
   {
     value: 'staged',
     label: 'Staged',
-    description: "Only changes you've staged for commit",
+    description: "Only changes you've staged for commit (git diff --staged)",
   },
   {
     value: 'merge-base',
@@ -49,10 +50,10 @@ export const DiffTypeSetupDialog: React.FC<DiffTypeSetupDialogProps> = ({
       <div className="bg-card border border-border rounded-xl w-full max-w-lg shadow-2xl">
         {/* Header */}
         <div className="p-5 border-b border-border">
-          <h3 className="font-semibold text-base mb-2">Default Diff View</h3>
+          <h3 className="font-semibold text-base mb-2">Set Your Default Diff View</h3>
           <p className="text-sm text-muted-foreground">
-            Choose which changes to show when you open a code review.
-            You can always switch between views during a session.
+            Pick which changes you want to see when you open a code review.
+            This is just the default — you can switch anytime using the dropdown in the toolbar.
           </p>
         </div>
 
@@ -84,11 +85,22 @@ export const DiffTypeSetupDialog: React.FC<DiffTypeSetupDialogProps> = ({
           ))}
         </div>
 
+        {/* Inline hint with screenshot */}
+        <div className="px-4 pb-3">
+          <div className="flex items-start gap-3 rounded-lg bg-muted/50 border border-border/50 p-3">
+            <img
+              src={diffOptionsImg}
+              alt="Diff type dropdown in the toolbar"
+              className="w-28 rounded border border-border/50 flex-shrink-0"
+            />
+            <p className="text-[11px] text-muted-foreground leading-relaxed pt-0.5">
+              You can switch between diff views at any point during a review using this dropdown in the toolbar. The option you pick here just sets your starting view.
+            </p>
+          </div>
+        </div>
+
         {/* Footer */}
-        <div className="p-4 border-t border-border flex justify-between items-center gap-3">
-          <p className="text-[10px] text-muted-foreground/70 flex-1">
-            You can change this later in Settings &gt; Git.
-          </p>
+        <div className="p-4 border-t border-border flex justify-end">
           <button
             onClick={handleDone}
             className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 transition-opacity flex-shrink-0"

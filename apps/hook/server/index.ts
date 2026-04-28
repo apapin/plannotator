@@ -67,7 +67,7 @@ import { type DiffType, getVcsContext, runVcsDiff, gitRuntime } from "@plannotat
 import { loadConfig, resolveDefaultDiffType, resolveUseJina } from "@plannotator/shared/config";
 import { stripAtPrefix, resolveAtReference } from "@plannotator/shared/at-reference";
 import { htmlToMarkdown } from "@plannotator/shared/html-to-markdown";
-import { urlToMarkdown } from "@plannotator/shared/url-to-markdown";
+import { urlToMarkdown, isConvertedSource } from "@plannotator/shared/url-to-markdown";
 import { fetchRef, createWorktree, removeWorktree, ensureObjectAvailable } from "@plannotator/shared/worktree";
 import { createWorktreePool, type WorktreePool } from "@plannotator/shared/worktree-pool";
 import { parsePRUrl, checkPRAuth, fetchPR, getCliName, getCliInstallUrl, getMRLabel, getMRNumberLabel, getDisplayRepo } from "@plannotator/server/pr";
@@ -580,6 +580,7 @@ if (args[0] === "sessions") {
   let folderPath: string | undefined;
   let annotateMode: "annotate" | "annotate-folder" = "annotate";
   let sourceInfo: string | undefined;
+  let sourceConverted = false;
 
   // --- URL annotation ---
   const isUrl = /^https?:\/\//i.test(filePath);
@@ -590,6 +591,7 @@ if (args[0] === "sessions") {
     try {
       const result = await urlToMarkdown(filePath, { useJina });
       markdown = result.markdown;
+      sourceConverted = isConvertedSource(result.source);
       if (process.env.PLANNOTATOR_DEBUG) {
         console.error(`[DEBUG] Fetched via ${result.source} (${markdown.length} chars)`);
       }
@@ -636,6 +638,7 @@ if (args[0] === "sessions") {
         markdown = htmlToMarkdown(html);
         absolutePath = resolvedArg;
         sourceInfo = path.basename(resolvedArg);
+        sourceConverted = true;
         console.error(`Converted: ${absolutePath}`);
       } else {
         // Single markdown file annotation mode
@@ -674,6 +677,7 @@ if (args[0] === "sessions") {
     mode: annotateMode,
     folderPath,
     sourceInfo,
+    sourceConverted,
     sharingEnabled,
     shareBaseUrl,
     pasteApiUrl,

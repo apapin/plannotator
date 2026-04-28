@@ -25,7 +25,7 @@ import { resolveMarkdownFile, resolveUserPath, hasMarkdownFiles } from "@plannot
 import { FILE_BROWSER_EXCLUDED } from "@plannotator/shared/reference-common";
 import { htmlToMarkdown } from "@plannotator/shared/html-to-markdown";
 import { parseAnnotateArgs } from "@plannotator/shared/annotate-args";
-import { urlToMarkdown } from "@plannotator/shared/url-to-markdown";
+import { urlToMarkdown, isConvertedSource } from "@plannotator/shared/url-to-markdown";
 import { statSync } from "fs";
 import path from "path";
 
@@ -170,6 +170,7 @@ export async function handleAnnotateCommand(
   let folderPath: string | undefined;
   let annotateMode: "annotate" | "annotate-folder" = "annotate";
   let sourceInfo: string | undefined;
+  let sourceConverted = false;
 
   // --- URL annotation ---
   const isUrl = /^https?:\/\//i.test(filePath);
@@ -180,6 +181,7 @@ export async function handleAnnotateCommand(
     try {
       const result = await urlToMarkdown(filePath, { useJina });
       markdown = result.markdown;
+      sourceConverted = isConvertedSource(result.source);
     } catch (err) {
       client.app.log({ level: "error", message: `Failed to fetch URL: ${err instanceof Error ? err.message : String(err)}` });
       return;
@@ -223,6 +225,7 @@ export async function handleAnnotateCommand(
       markdown = htmlToMarkdown(html);
       absolutePath = resolvedArg;
       sourceInfo = path.basename(resolvedArg);
+      sourceConverted = true;
       client.app.log({ level: "info", message: `Converted: ${absolutePath}` });
     } else {
       // Markdown file annotation
@@ -258,6 +261,7 @@ export async function handleAnnotateCommand(
     mode: annotateMode,
     folderPath,
     sourceInfo,
+    sourceConverted,
     sharingEnabled: await getSharingEnabled(),
     shareBaseUrl: getShareBaseUrl(),
     pasteApiUrl: getPasteApiUrl(),

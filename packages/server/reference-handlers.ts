@@ -45,8 +45,9 @@ export async function handleDoc(req: Request): Promise<Response> {
 			const file = Bun.file(fromBase);
 			if (await file.exists()) {
 				const raw = await file.text();
-				const markdown = /\.html?$/i.test(requestedPath) ? htmlToMarkdown(raw) : raw;
-				return Response.json({ markdown, filepath: fromBase });
+				const isHtml = /\.html?$/i.test(requestedPath);
+				const markdown = isHtml ? htmlToMarkdown(raw) : raw;
+				return Response.json({ markdown, filepath: fromBase, isConverted: isHtml });
 			}
 		} catch {
 			/* fall through to standard resolution */
@@ -65,7 +66,7 @@ export async function handleDoc(req: Request): Promise<Response> {
 			if (await file.exists()) {
 				const html = await file.text();
 				const markdown = htmlToMarkdown(html);
-				return Response.json({ markdown, filepath: resolvedHtml });
+				return Response.json({ markdown, filepath: resolvedHtml, isConverted: true });
 			}
 		} catch { /* fall through */ }
 		return Response.json({ error: `File not found: ${requestedPath}` }, { status: 404 });

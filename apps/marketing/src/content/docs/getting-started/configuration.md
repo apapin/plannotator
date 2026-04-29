@@ -99,9 +99,9 @@ Approved and denied plans are saved to `~/.plannotator/plans/` by default. You c
 
 ## Config file
 
-Plannotator also reads `~/.plannotator/config.json` for persistent settings and feature-specific overrides.
+Plannotator reads `~/.plannotator/config.json` for persistent settings. This includes display name, diff options, conventional comment labels, and feedback message customization.
 
-For example, code review approval prompts can be customized there. See the code review docs for the prompt shape and supported runtime keys.
+You can customize the messages Plannotator sends to the agent when you approve, deny, or annotate plans and documents. See the [custom feedback guide](/docs/guides/custom-feedback/) for the full config shape, template variables, and runtime-specific overrides.
 
 ## Remote mode
 

@@ -31,9 +31,7 @@ export interface CCLabelConfig {
   blocking: boolean;
 }
 
-export interface ReviewPromptOverrides {
-  approved?: string;
-}
+export type PromptSectionOverrides = Record<string, string | undefined>;
 
 export type PromptRuntime =
   | "claude-code"
@@ -43,12 +41,30 @@ export type PromptRuntime =
   | "codex"
   | "gemini-cli";
 
+interface PromptSectionConfig {
+  [key: string]: string | Partial<Record<PromptRuntime, PromptSectionOverrides>> | undefined;
+  runtimes?: Partial<Record<PromptRuntime, PromptSectionOverrides>>;
+}
+
 export interface PromptConfig {
-  review?: {
+  review?: PromptSectionConfig & {
     approved?: string;
-    runtimes?: Partial<Record<PromptRuntime, ReviewPromptOverrides>>;
+    denied?: string;
+  };
+  plan?: PromptSectionConfig & {
+    approved?: string;
+    approvedWithNotes?: string;
+    autoApproved?: string;
+    denied?: string;
+  };
+  annotate?: PromptSectionConfig & {
+    fileFeedback?: string;
+    messageFeedback?: string;
+    approved?: string;
   };
 }
+
+const PROMPT_SECTIONS = ["review", "plan", "annotate"] as const;
 
 export function mergePromptConfig(
   current?: PromptConfig,
@@ -56,24 +72,23 @@ export function mergePromptConfig(
 ): PromptConfig | undefined {
   if (!current && !partial) return undefined;
 
-  const currentReview = current?.review;
-  const partialReview = partial?.review;
+  const result: Record<string, any> = { ...current, ...partial };
 
-  const mergedReview = (currentReview || partialReview)
-    ? {
-        ...currentReview,
-        ...partialReview,
-        runtimes: (currentReview?.runtimes || partialReview?.runtimes)
-          ? { ...currentReview?.runtimes, ...partialReview?.runtimes }
+  for (const section of PROMPT_SECTIONS) {
+    const cur = current?.[section];
+    const par = partial?.[section];
+    if (cur || par) {
+      result[section] = {
+        ...cur,
+        ...par,
+        runtimes: (cur?.runtimes || par?.runtimes)
+          ? { ...cur?.runtimes, ...par?.runtimes }
           : undefined,
-      }
-    : undefined;
+      };
+    }
+  }
 
-  return {
-    ...current,
-    ...partial,
-    review: mergedReview,
-  };
+  return result as PromptConfig;
 }
 
 export interface PlannotatorConfig {

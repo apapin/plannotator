@@ -56,7 +56,14 @@ import {
   handleArchiveCommand,
   type CommandDeps,
 } from "./commands";
-import { planDenyFeedback } from "@plannotator/shared/feedback-templates";
+import {
+  getPlanDeniedPrompt,
+  getPlanApprovedPrompt,
+  getPlanApprovedWithNotesPrompt,
+  getPlanToolName,
+  buildPlanFileRule,
+  getAnnotateMessageFeedbackPrompt,
+} from "@plannotator/shared/prompts";
 import {
   stripConflictingPlanModeRules,
 } from "./plan-mode";
@@ -389,7 +396,7 @@ Do NOT proceed with implementation until your plan is approved.`);
             body: {
               parts: [{
                 type: "text",
-                text: `# Message Annotations\n\n${feedback}\n\nPlease address the annotation feedback above.`,
+                text: getAnnotateMessageFeedbackPrompt("opencode", undefined, { feedback }),
               }],
             },
           });
@@ -520,22 +527,22 @@ Use /plannotator-last or /plannotator-annotate for manual review, or set workflo
             }
 
             if (result.feedback) {
-              return `Plan approved with notes!
-${result.savedPath ? `Saved to: ${result.savedPath}` : ""}
-
-## Implementation Notes
-
-The user approved your plan but added the following notes to consider during implementation:
-
-${result.feedback}
-
-Proceed with implementation, incorporating these notes where applicable.`;
+              return getPlanApprovedWithNotesPrompt("opencode", undefined, {
+                planFilePath: sourceFilePath,
+                doneMsg: result.savedPath ? `Saved to: ${result.savedPath}` : "",
+                feedback: result.feedback,
+              });
             }
 
-            return `Plan approved!${result.savedPath ? ` Saved to: ${result.savedPath}` : ""}`;
-          } else {
-            return planDenyFeedback(result.feedback || "", "submit_plan", {
+            return getPlanApprovedPrompt("opencode", undefined, {
               planFilePath: sourceFilePath,
+              doneMsg: result.savedPath ? ` Saved to: ${result.savedPath}` : "",
+            });
+          } else {
+            return getPlanDeniedPrompt("opencode", undefined, {
+              toolName: getPlanToolName("opencode"),
+              planFileRule: buildPlanFileRule(getPlanToolName("opencode"), sourceFilePath),
+              feedback: result.feedback || "Plan changes requested",
             }) + "\n\nAfter making your revisions, call `submit_plan` again to resubmit for review.";
           }
         },

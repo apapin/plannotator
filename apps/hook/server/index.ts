@@ -76,12 +76,17 @@ import { resolveMarkdownFile, resolveUserPath, hasMarkdownFiles } from "@plannot
 import { FILE_BROWSER_EXCLUDED } from "@plannotator/shared/reference-common";
 import { statSync, rmSync, realpathSync, existsSync } from "fs";
 import { parseRemoteUrl } from "@plannotator/shared/repo";
-import { getReviewApprovedPrompt } from "@plannotator/shared/prompts";
+import {
+  getReviewApprovedPrompt,
+  getReviewDeniedSuffix,
+  getPlanDeniedPrompt,
+  getPlanToolName,
+  buildPlanFileRule,
+} from "@plannotator/shared/prompts";
 import { registerSession, unregisterSession, listSessions } from "@plannotator/server/sessions";
 import { openBrowser } from "@plannotator/server/browser";
 import { detectProjectName } from "@plannotator/server/project";
 import { hostnameOrFallback } from "@plannotator/shared/project";
-import { planDenyFeedback } from "@plannotator/shared/feedback-templates";
 import { readImprovementHook } from "@plannotator/shared/improvement-hooks";
 import { AGENT_CONFIG, type Origin } from "@plannotator/shared/agents";
 import {
@@ -154,7 +159,13 @@ if (hookFlag) gateFlag = true;
 //
 // Plaintext (default):
 //   Close → empty. Approve → "The user approved." Annotate → feedback.
-export const APPROVED_PLAINTEXT_MARKER = "The user approved.";
+//
+// TODO: The plaintext --gate approval sentinel must stay as the exact string
+// "The user approved." because slash command templates (plannotator-annotate.md,
+// plannotator-last.md) instruct the agent to match it literally. Making this
+// configurable requires updating those templates to accept dynamic values or
+// switching gate mode to structured output only.
+const APPROVED_PLAINTEXT_MARKER = "The user approved.";
 
 function emitAnnotateOutcome(result: {
   feedback: string;
@@ -549,7 +560,7 @@ if (args[0] === "sessions") {
   } else {
     console.log(result.feedback);
     if (!isPRMode) {
-      console.log("\nThe reviewer has identified issues above. You must address all of them.");
+      console.log(getReviewDeniedSuffix(detectedOrigin));
     }
   }
   process.exit(0);
@@ -950,10 +961,11 @@ if (args[0] === "sessions") {
       permissionDecision: "allow",
     }));
   } else {
-    const feedback = planDenyFeedback(
-      result.feedback || "",
-      "exit_plan_mode",
-    );
+    const feedback = getPlanDeniedPrompt("copilot-cli", undefined, {
+      toolName: getPlanToolName("copilot-cli"),
+      planFileRule: "",
+      feedback: result.feedback || "Plan changes requested",
+    });
     console.log(JSON.stringify({
       permissionDecision: "deny",
       permissionDecisionReason: feedback,
@@ -1151,8 +1163,10 @@ if (args[0] === "sessions") {
       console.log(
         JSON.stringify({
           decision: "deny",
-          reason: planDenyFeedback(result.feedback || "", "exit_plan_mode", {
-            planFilePath: planFilename,
+          reason: getPlanDeniedPrompt("gemini-cli", undefined, {
+            toolName: getPlanToolName("gemini-cli"),
+            planFileRule: buildPlanFileRule(getPlanToolName("gemini-cli"), planFilename),
+            feedback: result.feedback || "Plan changes requested",
           }),
         })
       );
@@ -1187,7 +1201,11 @@ if (args[0] === "sessions") {
             hookEventName: "PermissionRequest",
             decision: {
               behavior: "deny",
-              message: planDenyFeedback(result.feedback || "", "ExitPlanMode"),
+              message: getPlanDeniedPrompt(detectedOrigin, undefined, {
+                toolName: getPlanToolName(detectedOrigin),
+                planFileRule: "",
+                feedback: result.feedback || "Plan changes requested",
+              }),
             },
           },
         })

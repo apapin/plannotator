@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { DiffOptionsPopover } from './DiffOptionsPopover';
 
 interface FileHeaderProps {
   filePath: string;
@@ -196,6 +197,7 @@ export const FileHeader: React.FC<FileHeaderProps> = ({
             </>
           )}
         </button>
+        <DiffOptionsPopover />
       </div>
     </div>
   );

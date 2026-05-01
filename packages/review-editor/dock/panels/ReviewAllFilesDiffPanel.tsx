@@ -14,6 +14,7 @@ export const ReviewAllFilesDiffPanel: React.FC<IDockviewPanelProps> = () => {
       pendingSelection={state.pendingSelection}
       onLineSelection={state.onLineSelection}
       onAddAnnotation={state.onAddAnnotationForFile}
+      onAddFileComment={state.onAddFileCommentForFile}
       onEditAnnotation={state.onEditAnnotation}
       onSelectAnnotation={state.onSelectAnnotation}
       onDeleteAnnotation={state.onDeleteAnnotation}

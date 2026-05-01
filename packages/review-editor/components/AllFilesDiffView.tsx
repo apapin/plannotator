@@ -11,6 +11,7 @@ import { InlineAnnotation } from './InlineAnnotation';
 import { AnnotationToolbar } from './AnnotationToolbar';
 import { SuggestionModal } from './SuggestionModal';
 import { FileHeader } from './FileHeader';
+import { CommentPopover } from '@plannotator/ui/components/CommentPopover';
 import { detectLanguage } from '../utils/detectLanguage';
 import type { DiffFile } from '../types';
 import { buildFileTree, getVisualFileOrder } from '../utils/buildFileTree';
@@ -23,6 +24,7 @@ interface AllFilesDiffViewProps {
   pendingSelection: SelectedLineRange | null;
   onLineSelection: (range: SelectedLineRange | null) => void;
   onAddAnnotation: (filePath: string, type: CodeAnnotationType, text?: string, suggestedCode?: string, originalCode?: string, conventionalLabel?: ConventionalLabel, decorations?: ConventionalDecoration[], tokenMeta?: TokenAnnotationMeta) => void;
+  onAddFileComment?: (filePath: string, text: string) => void;
   onEditAnnotation: (id: string, text?: string, suggestedCode?: string, originalCode?: string, conventionalLabel?: ConventionalLabel | null, decorations?: ConventionalDecoration[]) => void;
   onSelectAnnotation: (id: string | null) => void;
   onDeleteAnnotation: (id: string) => void;
@@ -55,6 +57,7 @@ export const AllFilesDiffView: React.FC<AllFilesDiffViewProps> = ({
   pendingSelection,
   onLineSelection,
   onAddAnnotation,
+  onAddFileComment,
   onEditAnnotation,
   onSelectAnnotation,
   onDeleteAnnotation,
@@ -84,6 +87,7 @@ export const AllFilesDiffView: React.FC<AllFilesDiffViewProps> = ({
   const pendingToolbarRange = useRef<SelectedLineRange | null>(null);
   const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set());
   const collapseHistory = useRef<string[]>([]);
+  const [fileCommentAnchor, setFileCommentAnchor] = useState<{ el: HTMLElement; filePath: string } | null>(null);
 
   useEffect(() => {
     setActiveFilePath(null);
@@ -233,9 +237,21 @@ export const AllFilesDiffView: React.FC<AllFilesDiffViewProps> = ({
         return;
       }
 
-      if (e.key === 'c' && currentPath) {
+      if (e.key === 'x' && currentPath) {
         e.preventDefault();
         toggleCollapse(currentPath);
+        return;
+      }
+
+      if (e.key === 'c' && currentPath && onAddFileComment) {
+        e.preventDefault();
+        const header = headerRefs.current.get(currentPath);
+        if (header) {
+          const btn = header.querySelector<HTMLElement>('[title="Add file-scoped comment"]');
+          if (btn) {
+            setFileCommentAnchor({ el: btn, filePath: currentPath });
+          }
+        }
         return;
       }
 
@@ -285,7 +301,7 @@ export const AllFilesDiffView: React.FC<AllFilesDiffViewProps> = ({
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [isActive, sortedFiles, collapsedFiles, activeFilePath, toggleCollapse, viewedFiles, onToggleViewed, canStageFiles, onStage]);
+  }, [isActive, sortedFiles, collapsedFiles, activeFilePath, toggleCollapse, viewedFiles, onToggleViewed, canStageFiles, onStage, onAddFileComment]);
 
   // Click-and-drag line selection in diff content
   useEffect(() => {
@@ -412,6 +428,7 @@ export const AllFilesDiffView: React.FC<AllFilesDiffViewProps> = ({
                   </button>
                 }
                 onCollapseToggle={() => toggleCollapse(file.path)}
+                onFileComment={onAddFileComment ? (anchorEl) => setFileCommentAnchor({ el: anchorEl, filePath: file.path }) : undefined}
               />
             </div>
             {!isCollapsed && (
@@ -520,6 +537,19 @@ export const AllFilesDiffView: React.FC<AllFilesDiffViewProps> = ({
           modalLayout={toolbar.modalLayout}
           setModalLayout={toolbar.setModalLayout}
           onClose={() => toolbar.setShowCodeModal(false)}
+        />
+      )}
+
+      {fileCommentAnchor && onAddFileComment && (
+        <CommentPopover
+          anchorEl={fileCommentAnchor.el}
+          contextText={fileCommentAnchor.filePath.split('/').pop() || fileCommentAnchor.filePath}
+          isGlobal={false}
+          onSubmit={(text) => {
+            onAddFileComment(fileCommentAnchor.filePath, text);
+            setFileCommentAnchor(null);
+          }}
+          onClose={() => setFileCommentAnchor(null)}
         />
       )}
     </div>

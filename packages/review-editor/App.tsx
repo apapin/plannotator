@@ -893,6 +893,26 @@ const ReviewApp: React.FC = () => {
     setAnnotations(prev => [...prev, withPRContext(newAnnotation)]);
   }, [files, activeFileIndex, identity, withPRContext]);
 
+  const handleAddFileCommentForFile = useCallback((filePath: string, text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    const newAnnotation: CodeAnnotation = {
+      id: generateId(),
+      type: 'comment',
+      scope: 'file',
+      filePath,
+      lineStart: 1,
+      lineEnd: 1,
+      side: 'new',
+      text: trimmed,
+      createdAt: Date.now(),
+      author: identity,
+    };
+
+    setAnnotations(prev => [...prev, withPRContext(newAnnotation)]);
+  }, [identity, withPRContext]);
+
   // Edit annotation
   const handleEditAnnotation = useCallback((
     id: string,
@@ -1304,6 +1324,7 @@ const ReviewApp: React.FC = () => {
     onAddAnnotation: handleAddAnnotation,
     onAddAnnotationForFile: handleAddAnnotationForFile,
     onAddFileComment: handleAddFileComment,
+    onAddFileCommentForFile: handleAddFileCommentForFile,
     onEditAnnotation: handleEditAnnotation,
     onSelectAnnotation: handleSelectAnnotation,
     onDeleteAnnotation: handleDeleteAnnotation,
@@ -1344,7 +1365,7 @@ const ReviewApp: React.FC = () => {
     diffFontFamily, diffFontSize, activeDiffBase, committedBase, feedbackDiffContext, prReviewScopeLabel, prDiffScope,
     allAnnotations, externalAnnotations,
     selectedAnnotationId, pendingSelection, handleLineSelection,
-    handleAddAnnotation, handleAddFileComment, handleEditAnnotation,
+    handleAddAnnotation, handleAddFileComment, handleAddFileCommentForFile, handleEditAnnotation,
     handleSelectAnnotation, handleDeleteAnnotation, viewedFiles,
     handleToggleViewed, stagedFiles, stagingFile, stageFile,
     canStageFiles, stageError, isSearchPending, debouncedSearchQuery,
